@@ -1,16 +1,14 @@
 import './style.css';
-import { eventBus, GameEvents } from './shared/EventBus';
+import { GameEngine }     from './logic/GameEngine';
+import { createPhaserGame } from './client/PhaserGame';
 
 console.log('Inicializando Core.io...');
 
-// Testando o EventBus para garantir que a arquitetura funciona
-eventBus.on(GameEvents.STATE_UPDATE, (data) => {
-    console.log('Sinal recebido da Lógica:', data);
-});
+// 1. Sobe a lógica (física, colisões, state machine)
+const engine = new GameEngine();
 
-// Simulando um evento (Você pode apagar isso depois)
-eventBus.emit(GameEvents.STATE_UPDATE, { mensagem: 'O EventBus está operacional!' });
+// 2. Sobe o cliente visual (Phaser 3 + EventBus listeners)
+createPhaserGame();
 
-// TODO
-// 1. Importar o GameState da src/logic
-// 2. Importar o Phaser Game da src/client
+// 3. Dispara o loop da lógica
+engine.start();
