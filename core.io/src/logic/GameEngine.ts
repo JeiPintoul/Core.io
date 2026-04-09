@@ -59,6 +59,7 @@ export class GameEngine {
     private lastSpawnTime: number = 0;
     private projectileIdCounter: number = 0;
     private enemyIdCounter: number = 0;
+    private isRunning: boolean = false;
 
     private spawnConfig: SpawnConfig;
 
@@ -104,12 +105,17 @@ export class GameEngine {
             this.currentInput = input;
         });
 
-        // Ouvir quando inimigo morre (do sistema de Entity)
         eventBus.on('entity_destroyed', (data: { id: string }) => {
+            // SE QUEM MORREU FOI O PLAYER
+            if (data.id === this.player.id) {
+                eventBus.emit(GameEvents.GAME_OVER);
+                return;
+            }
+
+            // SE FOI INIMIGO (código que você já tinha)
             const enemyIndex = this.enemies.findIndex(e => e.id === data.id);
             if (enemyIndex !== -1) {
                 const enemy = this.enemies[enemyIndex];
-                // Emitir novo evento com XP para o Player ouvir
                 eventBus.emit('enemy_destroyed', {
                     id: enemy.id,
                     xpDropped: this.spawnConfig.xpDrop
@@ -119,11 +125,30 @@ export class GameEngine {
     }
 
     public start() {
+        if (this.isRunning) return; // Evita rodar dois loops ao mesmo tempo
+        this.isRunning = true;
         this.lastTick = performance.now();
         this.tick();
     }
 
+    public stop() {
+        this.isRunning = false;
+    }
+
+    public reset() {
+        // Recria o player com a vida cheia e no centro
+        this.player = new Player('player_1', 1000, 1000, 100, 100, 150);
+        // Zera os arrays
+        this.enemies = [];
+        this.projectiles = [];
+        // Reseta os tempos
+        this.lastTick = performance.now();
+        this.lastShotTime = performance.now();
+        this.lastSpawnTime = performance.now();
+    }
+
     private tick() {
+        if (!this.isRunning) return;
         const now = performance.now();
         const dt = (now - this.lastTick) / 1000;
         this.lastTick = now;
