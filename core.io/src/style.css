@@ -31,3 +31,45 @@ body {
   z-index: 10; /* A interface fica por cima do jogo */
   pointer-events: none; /* Deixa os cliques passarem pro jogo quando não clicar na UI */
 }
+/* Adicione isso no final do seu style.css */
+
+#menu-inicial {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-color: rgba(26, 26, 46, 0.85); /* Cor do fundo do seu jogo com transparência */
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  pointer-events: auto; /* IMPORTANTE: Permite clicar no botão mesmo com a ui-layer bloqueada */
+  backdrop-filter: blur(4px); /* Dá um efeitinho de desfoque no fundo do canvas */
+}
+
+#menu-inicial h1 {
+  font-size: 5rem;
+  margin-bottom: 2rem;
+  color: #fff;
+  letter-spacing: 5px;
+  text-shadow: 0 0 10px #4488ff; /* Brilho azul combinando com o player */
+}
+
+#btn-jogar {
+  padding: 15px 60px;
+  font-size: 2rem;
+  font-weight: bold;
+  cursor: pointer;
+  background-color: #4488ff; /* Cor do PLAYER que está no GameConstants */
+  color: white;
+  border: 2px solid #ffffff;
+  border-radius: 8px;
+  transition: all 0.2s ease-in-out;
+}
+
+#btn-jogar:hover {
+  transform: scale(1.1);
+  background-color: #2266cc;
+  box-shadow: 0 0 15px #4488ff;
+}

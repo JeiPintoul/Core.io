@@ -2,16 +2,20 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Core.io</title>
   </head>
   <body>
-    <!-- A interface em HTML (HUD, Menus) ficará aqui no futuro -->
-    <div id="ui-layer"></div>
-    
-    <!-- O Phaser vai desenhar o jogo dentro desta div -->
     <div id="game-container"></div>
-    
+
+    <div id="ui-layer">
+      <div id="menu-inicial">
+        <h1>CORE.IO</h1>
+        <button id="btn-jogar">JOGAR</button>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

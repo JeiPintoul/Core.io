@@ -1,6 +1,6 @@
 import { Entity } from "./Entity";
 
-export class Enenmy extends Entity {
+export class Enemy extends Entity {
     public damage: number; 
 
     constructor(id:string, x:number, y:number, health:number, maxHealth: number, speed:number, damage: number){
@@ -15,17 +15,16 @@ export class Enenmy extends Entity {
         const dx = targetX - this.x; 
         const dy = targetY - this.y;
 
-        //Malditop pitagoras 
-        const distance =  Math.sqrt(dx * dx + dy * dy);
+        //Distância usando Pitágoras
+        const distance = Math.sqrt(dx * dx + dy * dy);
 
         if (distance < 1) return;
 
-        //Normalizar o vetor
-        const moveX = (dx / distance) / this.speed * deltaTime;
-        const moveY = (dy / distance) / this.speed * deltaTime;
+        //Normalizar o vetor e aplicar velocidade
+        const moveX = (dx / distance) * this.speed * deltaTime;
+        const moveY = (dy / distance) * this.speed * deltaTime;
 
-
-        //atualiza posição do inimigo
+        //Aturaliza posição do inimigo
         this.x += moveX;
         this.y += moveY;
     }
