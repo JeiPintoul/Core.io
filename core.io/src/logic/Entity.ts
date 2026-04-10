@@ -29,7 +29,7 @@ export class Entity {
   }
 
   //Logica da morte 
-  private die():void{
+  protected die():void{
     //Aqui quando a gente avisar que o cara morreu com essa logica (A gente troca o som, ou ele sumir da tela sla)
     eventBus.emit('entity_destroyed', {id: this.id});
   }
