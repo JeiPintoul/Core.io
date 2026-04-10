@@ -14,7 +14,7 @@ export class Entity {
     this.x = x;
     this.y = y;
     this.health = health;
-    this.maxHealth = health;
+    this.maxHealth = maxHealth;
     this.speed = speed;
   }
 
