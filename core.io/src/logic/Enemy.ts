@@ -29,6 +29,3 @@ export class Enemy extends Entity {
         this.y += moveY;
     }
 }
-/* Como ngm ta fazendo nada, n faço ideia se funciona, se der algum problema, o maldito responsavel pela implementação que se 
-vire pra arrumar. 
-ass: Ronan */

@@ -1,10 +1,11 @@
 import { Entity } from './Entity';
-import { eventBus } from '../shared/EventBus';
+import { emitGameEvent, GameEvents, onGameEvent } from '../shared/EventBus';
 
 export class Player extends Entity {
     public level: number;
     public currentXp: number;
     public xpToNextLevel: number;
+    private unsubscribeEnemyDestroyed: (() => void) | null = null;
 
     constructor(id: string, x: number, y: number, health: number, maxHealth: number, speed: number) {
 
@@ -18,22 +19,32 @@ export class Player extends Entity {
 
     private setupListeners(): void {
         //Aqui quando ouvir que o inimmigo dropa xp, ele vai la e coleta 
-        eventBus.on('enemy_destroyed', (data: {id: string, xpDropped: number}) => {
+        this.unsubscribeEnemyDestroyed = onGameEvent(GameEvents.ENEMY_DESTROYED, (data) => {
             this.gainXp(data.xpDropped);
         });
+    }
+
+    public destroy(): void {
+        if (this.unsubscribeEnemyDestroyed) {
+            this.unsubscribeEnemyDestroyed();
+            this.unsubscribeEnemyDestroyed = null;
+        }
     }
 
     //Logica do ganho de xp 
     public gainXp(amount: number): void {
         this.currentXp += amount; 
 
-        //Avisa a UI pra encher a barra de xp na tela
-        eventBus.emit('xp_update', {currentXp: this.currentXp, requires: this.xpToNextLevel});
-
-        //Um gatilho automatico so pra checar se pegou a cota
-        if (this.currentXp >= this.xpToNextLevel) {
+        // Resolve all pending level transitions when a large XP burst is received.
+        while (this.currentXp >= this.xpToNextLevel) {
             this.levelUp();
         }
+
+        // Avisa a UI com os valores já estabilizados pós-level-up.
+        emitGameEvent(GameEvents.XP_UPDATE, {
+            currentXp: this.currentXp,
+            requires: this.xpToNextLevel
+        });
     }
 
     // Gatilho de subida de nível
@@ -45,7 +56,7 @@ export class Player extends Entity {
     this.xpToNextLevel = Math.floor(this.xpToNextLevel * 1.5);
 
     // Dispara o evento que vai fazer o motor do jogo pausar e abrir o menu
-    eventBus.emit('level_up', { newLevel: this.level });
+        emitGameEvent(GameEvents.LEVEL_UP, { newLevel: this.level });
   }
 
 
