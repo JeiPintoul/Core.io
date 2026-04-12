@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { InputState } from '../../shared/Types';
-import { eventBus, GameEvents } from '../../shared/EventBus';
+import { emitGameEvent, GameEvents } from '../../shared/EventBus';
 
 export class InputHandler {
     private keys: {
@@ -13,6 +13,7 @@ export class InputHandler {
         a: Phaser.Input.Keyboard.Key;
         d: Phaser.Input.Keyboard.Key;
     };
+    private isEnabled = true;
 
     constructor(
         private scene: Phaser.Scene,
@@ -36,6 +37,10 @@ export class InputHandler {
      * e emite evento para a GameEngine processar
      */
     handleInput(): void {
+        if (!this.isEnabled) {
+            return;
+        }
+
         const k = this.keys;
 
         const movingUp = k.up.isDown || k.w.isDown;
@@ -60,6 +65,29 @@ export class InputHandler {
             isShooting,
         };
 
-        eventBus.emit(GameEvents.PLAYER_INPUT, input);
+        emitGameEvent(GameEvents.PLAYER_INPUT, input);
+    }
+
+    public disable(): void {
+        if (!this.isEnabled) {
+            return;
+        }
+
+        this.isEnabled = false;
+
+        // Garante parada imediata de movimento e tiro no backend.
+        emitGameEvent(GameEvents.PLAYER_INPUT, {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            targetX: this.scene.input.activePointer.worldX,
+            targetY: this.scene.input.activePointer.worldY,
+            isShooting: false
+        });
+    }
+
+    public enable(): void {
+        this.isEnabled = true;
     }
 }

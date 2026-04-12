@@ -23,9 +23,11 @@ export const COLORS = {
 };
 
 export const ARENA = {
-    width: 2000,
-    height: 2000,
+    width: 5000,
+    height: 5000,
 };
+
+export const DEATH_ANIMATION_DURATION_MS = 800;
 
 // Visual constants
 export const VISUAL = {
@@ -35,6 +37,7 @@ export const VISUAL = {
         barrelLengthFactor: 1.6,
         barrelWidthFactor: 0.55,
         barrelOffsetFactor: 0.4,
+        deathRiseDistance: 50,
     },
     
     HEALTH_BAR: {

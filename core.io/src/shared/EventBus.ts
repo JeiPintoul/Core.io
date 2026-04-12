@@ -1,4 +1,5 @@
 import { EventEmitter } from 'eventemitter3';
+import type { GameEventPayloads } from './Types';
 
 /**
  * EventBus Central do Core.io
@@ -14,5 +15,25 @@ export const GameEvents = {
     LEVEL_UP: 'level_up',         // Quando o inimigo morre e o jogador passa de nível
     GAME_OVER: 'game_over',        // Quando a vida chega a zero, etc
     ENTITY_DAMAGE: 'entity_damage',
-    ENTITY_DESTROYED: 'entity_destroyed'
-};
+    ENTITY_DESTROYED: 'entity_destroyed',
+    ENEMY_DESTROYED: 'enemy_destroyed',
+    XP_UPDATE: 'xp_update'
+} as const;
+
+export type GameEventName = keyof GameEventPayloads;
+
+export function emitGameEvent<K extends GameEventName>(
+    event: K,
+    payload: GameEventPayloads[K]
+): void {
+    eventBus.emit(event, payload);
+}
+
+export function onGameEvent<K extends GameEventName>(
+    event: K,
+    handler: (payload: GameEventPayloads[K]) => void
+): () => void {
+    const typedHandler = handler as (payload: unknown) => void;
+    eventBus.on(event, typedHandler);
+    return () => eventBus.off(event, typedHandler);
+}
