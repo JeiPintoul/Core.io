@@ -20,6 +20,7 @@ export class GameScene extends Phaser.Scene {
     private unsubscribeEntityDestroyed: (() => void) | null = null;
     private unsubscribeEnemyDestroyed: (() => void) | null = null;
     private unsubscribeProjectileDestroyed: (() => void) | null = null;
+    private unsubscribeProjectileFired: (() => void) | null = null;
     private unsubscribeGameOver: (() => void) | null = null;
     private cameraFollowTarget!: Phaser.GameObjects.Zone;
 
@@ -72,6 +73,11 @@ export class GameScene extends Phaser.Scene {
 
         this.unsubscribeProjectileDestroyed = onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction }) => {
             this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction);
+        });
+
+        this.unsubscribeProjectileFired = onGameEvent(GameEvents.PROJECTILE_FIRED, ({ shooterId, recoilStrength, faction }) => {
+            const isPlayer = faction === 'player';
+            this.gameRenderer.playFiringRecoil(shooterId, recoilStrength, isPlayer);
         });
 
         this.unsubscribeEnemyDestroyed = onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, radius }) => {
@@ -142,6 +148,11 @@ export class GameScene extends Phaser.Scene {
         if (this.unsubscribeProjectileDestroyed) {
             this.unsubscribeProjectileDestroyed();
             this.unsubscribeProjectileDestroyed = null;
+        }
+
+        if (this.unsubscribeProjectileFired) {
+            this.unsubscribeProjectileFired();
+            this.unsubscribeProjectileFired = null;
         }
 
         if (this.unsubscribeGameOver) {

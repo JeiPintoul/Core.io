@@ -20,9 +20,11 @@ export class GameRenderer {
     private isPlayerDeathAnimating = false;
     private playerNameText: Phaser.GameObjects.Text | null = null;
     private cursorWorldPoint = new Phaser.Geom.Point(0, 0);
+    private readonly playerBarrelRetraction = { value: 0 };
+    private readonly enemyBarrelRetractions = new Map<string, { value: number }>();
+    private readonly enemyRecoilTweens = new Map<string, Phaser.Tweens.Tween>();
+    private playerRecoilTween: Phaser.Tweens.Tween | null = null;
 
-    private readonly minimapSize = 170;
-    private readonly minimapPadding = 24;
     private readonly minimapBackground = 0x060b1f;
     private readonly minimapBorder = 0x79a6ff;
     private readonly minimapPlayerDot = 0xffffff;
@@ -53,6 +55,7 @@ export class GameRenderer {
         this.drawPlayer(state, activeEntityIds);
         this.updatePlayerName(state.player);
         this.drawMinimap(state.player.x, state.player.y);
+        this.pruneEnemyBarrelRetraction(activeEntityIds);
 
         this.healthBarRenderer.pruneWorldHealthBars(activeEntityIds);
         this.pruneEntitySnapshots();
@@ -279,7 +282,7 @@ export class GameRenderer {
         const angle = Math.atan2(worldPoint.y - y, worldPoint.x - x);
 
         // Draw barrel
-        this.drawPlayerBarrel(radius, angle);
+        this.drawPlayerBarrel(radius, angle, this.playerBarrelRetraction.value);
 
         // Draw body
         this.drawPlayerBody(radius);
@@ -320,8 +323,10 @@ export class GameRenderer {
                 continue;
             }
 
+            const barrelRetraction = this.enemyBarrelRetractions.get(enemy.id)?.value ?? 0;
+
             if (enemyType === 'RANGED' && typeof aimAngle === 'number') {
-                this.drawEnemyBarrel(x, y, radius, aimAngle);
+                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
 
             this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
@@ -360,16 +365,18 @@ export class GameRenderer {
         }
     }
 
-    private drawEnemyBarrel(x: number, y: number, radius: number, angle: number): void {
-        const barrelMetrics = this.getBarrelMetrics(radius);
+    private drawEnemyBarrel(x: number, y: number, radius: number, angle: number, retraction: number): void {
+        const barrelMetrics = this.getBarrelMetrics(radius, retraction);
         const bx = x + Math.cos(angle) * barrelMetrics.offset;
         const by = y + Math.sin(angle) * barrelMetrics.offset;
 
-        this.gfxGame.fillStyle(this.getDarkenedColor(COLORS.ENEMY, 25));
+        this.gfxGame.fillStyle(COLORS.PLAYER_BARREL);
+        this.gfxGame.lineStyle(2, COLORS.BARREL_OUTLINE, 1);
         this.gfxGame.save();
         this.gfxGame.translateCanvas(bx, by);
         this.gfxGame.rotateCanvas(angle);
         this.gfxGame.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
+        this.gfxGame.strokeRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
         this.gfxGame.restore();
     }
 
@@ -395,16 +402,18 @@ export class GameRenderer {
     /**
      * Helper: desenha cano do player
      */
-    private drawPlayerBarrel(radius: number, angle: number) {
-        const barrelMetrics = this.getBarrelMetrics(radius);
+    private drawPlayerBarrel(radius: number, angle: number, retraction: number) {
+        const barrelMetrics = this.getBarrelMetrics(radius, retraction);
         const bx = Math.cos(angle) * barrelMetrics.offset;
         const by = Math.sin(angle) * barrelMetrics.offset;
 
         this.gfxPlayer.fillStyle(COLORS.PLAYER_BARREL);
+        this.gfxPlayer.lineStyle(2, COLORS.BARREL_OUTLINE, 1);
         this.gfxPlayer.save();
         this.gfxPlayer.translateCanvas(bx, by);
         this.gfxPlayer.rotateCanvas(angle);
         this.gfxPlayer.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
+        this.gfxPlayer.strokeRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
         this.gfxPlayer.restore();
     }
 
@@ -417,11 +426,15 @@ export class GameRenderer {
         this.gfxPlayer.strokePath();
     }
 
-    private getBarrelMetrics(radius: number): { length: number; width: number; offset: number } {
+    private getBarrelMetrics(radius: number, retraction: number = 0): { length: number; width: number; offset: number } {
+        const baseLength = radius * VISUAL.PLAYER.barrelLengthFactor;
+        const baseOffset = radius * VISUAL.PLAYER.barrelOffsetFactor;
+        const clampedRetraction = Phaser.Math.Clamp(retraction, 0, radius * 0.62);
+
         return {
-            length: radius * VISUAL.PLAYER.barrelLengthFactor,
+            length: Math.max(radius * 0.44, baseLength - clampedRetraction),
             width: radius * VISUAL.PLAYER.barrelWidthFactor,
-            offset: radius * VISUAL.PLAYER.barrelOffsetFactor
+            offset: Math.max(radius * 0.08, baseOffset - (clampedRetraction * 0.45))
         };
     }
 
@@ -473,23 +486,32 @@ export class GameRenderer {
         this.playerNameText.setVisible(false);
     }
 
+    private getMinimapMetrics(): { size: number; padding: number } {
+        if (this.camera.height <= 1120) {
+            return { size: 168, padding: 22 };
+        }
+
+        return { size: 192, padding: 28 };
+    }
+
     private drawMinimap(playerX: number, playerY: number): void {
-        const x = this.camera.width - this.minimapSize - this.minimapPadding;
-        const y = this.camera.height - this.minimapSize - this.minimapPadding;
+        const metrics = this.getMinimapMetrics();
+        const x = this.camera.width - metrics.size - metrics.padding;
+        const y = this.camera.height - metrics.size - metrics.padding;
 
         this.gfxHud.fillStyle(this.minimapBackground, 0.65);
-        this.gfxHud.fillRoundedRect(x - 6, y - 6, this.minimapSize + 12, this.minimapSize + 12, 8);
+        this.gfxHud.fillRoundedRect(x - 6, y - 6, metrics.size + 12, metrics.size + 12, 8);
 
         this.gfxHud.fillStyle(0x10183a, 0.95);
-        this.gfxHud.fillRect(x, y, this.minimapSize, this.minimapSize);
+        this.gfxHud.fillRect(x, y, metrics.size, metrics.size);
 
         this.gfxHud.lineStyle(2, this.minimapBorder, 1);
-        this.gfxHud.strokeRect(x, y, this.minimapSize, this.minimapSize);
+        this.gfxHud.strokeRect(x, y, metrics.size, metrics.size);
 
         const mapX = Phaser.Math.Clamp(playerX, 0, ARENA.width);
         const mapY = Phaser.Math.Clamp(playerY, 0, ARENA.height);
-        const dotX = x + (mapX / ARENA.width) * this.minimapSize;
-        const dotY = y + (mapY / ARENA.height) * this.minimapSize;
+        const dotX = x + (mapX / ARENA.width) * metrics.size;
+        const dotY = y + (mapY / ARENA.height) * metrics.size;
 
         this.gfxHud.fillStyle(this.minimapPlayerDot, 1);
         this.gfxHud.fillCircle(dotX, dotY, 4);
@@ -519,7 +541,79 @@ export class GameRenderer {
         this.cursorWorldPoint = new Phaser.Geom.Point(x, y);
     }
 
+    public playFiringRecoil(shooterId: string, recoilStrength: number, isPlayer: boolean): void {
+        const retractionDistance = Phaser.Math.Clamp(recoilStrength, 2, 16);
+
+        if (isPlayer) {
+            if (this.playerRecoilTween) {
+                this.playerRecoilTween.stop();
+                this.playerRecoilTween = null;
+            }
+
+            this.playerBarrelRetraction.value = retractionDistance;
+
+            this.playerRecoilTween = this.scene.tweens.add({
+                targets: this.playerBarrelRetraction,
+                value: 0,
+                duration: 132,
+                ease: 'Cubic.easeOut',
+                onComplete: () => {
+                    this.playerRecoilTween = null;
+                }
+            });
+            return;
+        }
+
+        const state = this.enemyBarrelRetractions.get(shooterId) ?? { value: 0 };
+        state.value = retractionDistance;
+        this.enemyBarrelRetractions.set(shooterId, state);
+
+        const existingTween = this.enemyRecoilTweens.get(shooterId);
+        if (existingTween) {
+            existingTween.stop();
+            this.enemyRecoilTweens.delete(shooterId);
+        }
+
+        const tween = this.scene.tweens.add({
+            targets: state,
+            value: 0,
+            duration: 138,
+            ease: 'Cubic.easeOut',
+            onComplete: () => {
+                this.enemyRecoilTweens.delete(shooterId);
+            }
+        });
+
+        this.enemyRecoilTweens.set(shooterId, tween);
+    }
+
+    private pruneEnemyBarrelRetraction(activeEntityIds: Set<string>): void {
+        for (const enemyId of this.enemyBarrelRetractions.keys()) {
+            if (activeEntityIds.has(enemyId)) {
+                continue;
+            }
+
+            this.enemyBarrelRetractions.delete(enemyId);
+            const tween = this.enemyRecoilTweens.get(enemyId);
+            if (tween) {
+                tween.stop();
+                this.enemyRecoilTweens.delete(enemyId);
+            }
+        }
+    }
+
     public destroy(): void {
+        if (this.playerRecoilTween) {
+            this.playerRecoilTween.stop();
+            this.playerRecoilTween = null;
+        }
+
+        for (const tween of this.enemyRecoilTweens.values()) {
+            tween.stop();
+        }
+
+        this.enemyRecoilTweens.clear();
+    this.enemyBarrelRetractions.clear();
         this.entitySnapshots.clear();
         this.healthBarRenderer.pruneWorldHealthBars(new Set<string>());
 

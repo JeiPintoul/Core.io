@@ -14,6 +14,9 @@
   --hud-danger: #ff7373;
   --hud-positive: #66e6a6;
   --hud-negative: #ff8b8b;
+  --minimap-size: 192px;
+  --minimap-padding: 28px;
+  --counter-gap: clamp(8px, 1.05vh, 16px);
 }
 
 body {
@@ -63,15 +66,15 @@ body {
 
 #hud-wave-header {
   position: absolute;
-  top: 20px;
+  top: clamp(12px, 1.5vh, 20px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 220px;
-  padding: 10px 18px;
+  min-width: clamp(198px, 13.5vw, 250px);
+  padding: clamp(8px, 1.05vh, 12px) clamp(14px, 1.1vw, 20px);
   text-align: center;
-  letter-spacing: 1.5px;
+  letter-spacing: clamp(1.1px, 0.1vw, 1.8px);
   font-weight: 700;
-  font-size: 1.2rem;
+  font-size: clamp(1rem, 1.07vw, 1.34rem);
   text-transform: uppercase;
 }
 
@@ -103,17 +106,17 @@ body {
 
 #btn-pause {
   position: absolute;
-  top: 20px;
-  right: 20px;
-  width: 46px;
-  height: 46px;
+  top: clamp(12px, 1.5vh, 20px);
+  right: clamp(12px, 1.2vw, 20px);
+  width: clamp(40px, 2.45vw, 46px);
+  height: clamp(40px, 2.45vw, 46px);
   border-radius: 10px;
   display: flex;
   justify-content: center;
   align-items: center;
   padding: 0;
   line-height: 1;
-  font-size: 1.1rem;
+  font-size: clamp(0.98rem, 0.85vw, 1.1rem);
   font-weight: 800;
   color: var(--hud-accent-strong);
   cursor: pointer;
@@ -127,21 +130,23 @@ body {
 
 #hud-enemy-counter {
   position: absolute;
-  right: 210px;
-  bottom: 230px;
-  padding: 10px 14px;
-  font-size: 1rem;
-  letter-spacing: 0.4px;
+  right: var(--minimap-padding);
+  bottom: calc(var(--minimap-padding) + var(--minimap-size) + var(--counter-gap));
+  width: min(var(--minimap-size), 36vw);
+  text-align: center;
+  padding: clamp(8px, 0.95vh, 12px) clamp(10px, 1vw, 16px);
+  font-size: clamp(0.86rem, 0.88vw, 1.08rem);
+  letter-spacing: clamp(0.2px, 0.05vw, 0.5px);
   color: var(--hud-accent-strong);
 }
 
 #hud-xp-panel {
   position: absolute;
   left: 50%;
-  bottom: 24px;
+  bottom: clamp(14px, 2.1vh, 24px);
   transform: translateX(-50%);
-  width: min(680px, 80vw);
-  padding: 12px 14px;
+  width: min(680px, 82vw);
+  padding: clamp(9px, 1.05vh, 12px) clamp(11px, 1vw, 14px);
 }
 
 #hud-level-label {
@@ -149,17 +154,18 @@ body {
   margin-bottom: 3px;
   text-align: center;
   text-transform: uppercase;
-  letter-spacing: 1.2px;
+  letter-spacing: clamp(0.8px, 0.09vw, 1.4px);
   font-weight: 700;
+  font-size: clamp(0.88rem, 0.78vw, 1.02rem);
 }
 
 #hud-xp-progress {
   display: block;
-  margin-bottom: 8px;
+  margin-bottom: clamp(6px, 0.7vh, 8px);
   text-align: center;
-  font-size: 0.86rem;
+  font-size: clamp(0.78rem, 0.74vw, 0.98rem);
   color: var(--hud-muted);
-  letter-spacing: 0.3px;
+  letter-spacing: clamp(0.18px, 0.04vw, 0.35px);
 }
 
 #hud-xp-track {
@@ -181,10 +187,10 @@ body {
 
 #hud-stats {
   position: absolute;
-  left: 20px;
-  bottom: 20px;
-  width: 54px;
-  height: 54px;
+  left: clamp(12px, 1.2vw, 20px);
+  bottom: clamp(12px, 1.2vw, 20px);
+  width: clamp(48px, 3.35vw, 60px);
+  height: clamp(48px, 3.35vw, 60px);
   border-radius: 999px;
   display: grid;
   place-items: center;
@@ -192,19 +198,23 @@ body {
   z-index: 30;
 }
 
+#hud-stats.is-hidden {
+  display: none;
+}
+
 .hud-stats-icon {
   color: var(--hud-accent-strong);
-  font-size: 1.2rem;
+  font-size: clamp(1.05rem, 1vw, 1.32rem);
   font-weight: 800;
 }
 
 .hud-stats-panel {
   position: absolute;
   left: 0;
-  bottom: 66px;
-  min-width: 280px;
-  max-width: 340px;
-  padding: 14px;
+  bottom: clamp(58px, 5.5vw, 74px);
+  min-width: clamp(250px, 19vw, 320px);
+  max-width: clamp(305px, 23vw, 390px);
+  padding: clamp(11px, 1.1vw, 16px);
   border-radius: 12px;
   background: rgba(7, 12, 27, 0.95);
   border: 1px solid var(--hud-border);
@@ -217,9 +227,9 @@ body {
 }
 
 .hud-stats-panel h2 {
-  margin-bottom: 10px;
-  font-size: 0.95rem;
-  letter-spacing: 1px;
+  margin-bottom: clamp(8px, 0.9vh, 12px);
+  font-size: clamp(0.88rem, 0.8vw, 1.04rem);
+  letter-spacing: clamp(0.6px, 0.07vw, 1.15px);
   text-transform: uppercase;
   color: var(--hud-muted);
 }
@@ -234,7 +244,7 @@ body {
   display: flex;
   justify-content: space-between;
   gap: 12px;
-  font-size: 0.92rem;
+  font-size: clamp(0.83rem, 0.72vw, 1rem);
   color: var(--hud-text);
 }
 
@@ -361,6 +371,47 @@ body {
   }
 }
 
+@media (max-height: 1120px) {
+  :root {
+    --minimap-size: 168px;
+    --minimap-padding: 22px;
+  }
+
+  #upgrade-modal {
+    padding: 14px;
+  }
+
+  #upgrade-modal-panel {
+    width: min(980px, 95vw);
+    padding: 18px;
+  }
+
+  #upgrade-modal-panel h2 {
+    font-size: 1.42rem;
+  }
+
+  .upgrade-cards {
+    gap: 14px;
+  }
+
+  .upgrade-card {
+    min-height: 300px;
+    padding: 13px;
+  }
+
+  .upgrade-card-name {
+    font-size: 1.14rem;
+  }
+
+  .upgrade-card-description {
+    font-size: 0.89rem;
+  }
+
+  .upgrade-card-art {
+    min-height: 100px;
+  }
+}
+
 @media (max-width: 980px), (max-height: 760px) {
   #btn-pause {
     top: 12px;
@@ -371,13 +422,12 @@ body {
 
   #hud-wave-header {
     top: 12px;
-    font-size: 1rem;
+    font-size: 1.08rem;
     min-width: 180px;
   }
 
   #hud-enemy-counter {
-    right: 166px;
-    bottom: 192px;
+    width: min(var(--minimap-size), 60vw);
   }
 
   #hud-stats {
@@ -409,16 +459,16 @@ body {
 }
 
 #pause-menu h2 {
-  font-size: 2.2rem;
-  letter-spacing: 3px;
+  font-size: 2.45rem;
+  letter-spacing: 3.3px;
   color: #ffffff;
   text-shadow: 0 0 14px rgba(89, 167, 255, 0.8);
 }
 
 #pause-menu button {
   width: min(320px, 72vw);
-  padding: 12px 16px;
-  font-size: 1.25rem;
+  padding: 14px 18px;
+  font-size: 1.36rem;
   font-weight: 700;
   cursor: pointer;
   color: #f0f6ff;
@@ -453,8 +503,8 @@ body {
 }
 
 #upgrade-modal-panel {
-  width: min(1020px, 96vw);
-  padding: 20px;
+  width: min(1120px, 96vw);
+  padding: 24px;
   border-radius: 18px;
   border: 1px solid rgba(126, 172, 255, 0.7);
   background:
@@ -466,29 +516,30 @@ body {
 
 #upgrade-modal-panel h2 {
   text-transform: uppercase;
-  letter-spacing: 2px;
-  margin-bottom: 8px;
+  letter-spacing: 2.2px;
+  margin-bottom: 10px;
+  font-size: 1.72rem;
 }
 
 #upgrade-remaining {
   color: var(--hud-accent-strong);
-  margin-bottom: 14px;
-  letter-spacing: 0.6px;
+  margin-bottom: 16px;
+  letter-spacing: 0.8px;
   text-transform: uppercase;
-  font-size: 0.82rem;
+  font-size: 0.95rem;
 }
 
 .upgrade-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 18px;
+  gap: 20px;
 }
 
 .upgrade-card {
   --upgrade-card-color: var(--hud-accent);
   aspect-ratio: 2 / 3;
-  min-height: 320px;
-  padding: 14px;
+  min-height: 356px;
+  padding: 16px;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--upgrade-card-color), #ffffff 10%);
   color: var(--hud-text);
@@ -502,9 +553,9 @@ body {
   text-align: left;
   cursor: pointer;
   display: grid;
-  grid-template-rows: auto auto 1fr auto auto;
+  grid-template-rows: auto auto auto auto 1fr auto;
   align-items: start;
-  gap: 10px;
+  gap: 11px;
   position: relative;
   overflow: hidden;
   transition: transform 160ms ease, box-shadow 160ms ease, border-color 160ms ease;
@@ -550,49 +601,137 @@ body {
 
 .upgrade-card-rarity {
   display: inline-block;
-  font-size: 0.7rem;
-  letter-spacing: 1.4px;
+  font-size: 0.78rem;
+  letter-spacing: 1.5px;
   color: var(--upgrade-card-color);
   text-transform: uppercase;
   font-weight: 700;
 }
 
 .upgrade-card-name {
-  font-size: 1.22rem;
+  font-size: 1.33rem;
   line-height: 1.12;
-  letter-spacing: 0.4px;
+  letter-spacing: 0.45px;
   color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 26%);
 }
 
 .upgrade-card-art {
   border: 1px solid color-mix(in srgb, var(--upgrade-card-color), #ffffff 16%);
   border-radius: 10px;
-  min-height: 104px;
+  min-height: 120px;
   display: grid;
-  place-items: center;
+  align-content: center;
+  justify-items: center;
+  gap: 8px;
+  padding: 10px 12px;
   background:
     radial-gradient(circle at 50% 38%, color-mix(in srgb, var(--upgrade-card-color), transparent 80%), transparent 65%),
     linear-gradient(180deg, rgba(6, 12, 30, 0.72), rgba(3, 8, 18, 0.9));
 }
 
 .upgrade-card-art-symbol {
-  font-size: 2rem;
+  font-size: 2.08rem;
   font-weight: 800;
   letter-spacing: 2px;
   color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 40%);
   text-shadow: 0 0 14px color-mix(in srgb, var(--upgrade-card-color), transparent 55%);
 }
 
+.upgrade-card-art-flavor {
+  text-align: center;
+  font-size: 0.83rem;
+  line-height: 1.22;
+  letter-spacing: 0.2px;
+  color: #c8d9fb;
+}
+
 .upgrade-card-description {
-  font-size: 0.92rem;
-  line-height: 1.36;
+  font-size: 0.99rem;
+  line-height: 1.35;
   color: #d7e5ff;
+}
+
+.upgrade-card-modifiers {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.upgrade-modifier {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(8, 16, 36, 0.7);
+}
+
+.upgrade-modifier-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  color: #ffffff;
+}
+
+.upgrade-modifier-label {
+  font-size: 0.75rem;
+  letter-spacing: 0.3px;
+  color: #d6e5ff;
+}
+
+.upgrade-modifier-value {
+  font-size: 0.78rem;
+  letter-spacing: 0.3px;
+  color: #ffffff;
+}
+
+.upgrade-modifier--offense {
+  border-color: rgba(255, 150, 150, 0.45);
+  background: rgba(58, 18, 20, 0.64);
+}
+
+.upgrade-modifier--offense .upgrade-modifier-icon {
+  background: rgba(166, 46, 54, 0.7);
+}
+
+.upgrade-modifier--defense {
+  border-color: rgba(130, 200, 255, 0.45);
+  background: rgba(16, 38, 66, 0.68);
+}
+
+.upgrade-modifier--defense .upgrade-modifier-icon {
+  background: rgba(37, 89, 148, 0.72);
+}
+
+.upgrade-modifier--mobility {
+  border-color: rgba(137, 255, 188, 0.45);
+  background: rgba(18, 48, 34, 0.65);
+}
+
+.upgrade-modifier--mobility .upgrade-modifier-icon {
+  background: rgba(34, 115, 72, 0.7);
+}
+
+.upgrade-modifier--utility {
+  border-color: rgba(255, 224, 145, 0.45);
+  background: rgba(66, 52, 19, 0.65);
+}
+
+.upgrade-modifier--utility .upgrade-modifier-icon {
+  background: rgba(150, 109, 20, 0.72);
 }
 
 .upgrade-card-footer {
   margin-top: auto;
   text-align: center;
-  font-size: 0.72rem;
+  font-size: 0.79rem;
   letter-spacing: 1.4px;
   text-transform: uppercase;
   color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%);
@@ -614,12 +753,12 @@ body {
   }
 
   .upgrade-card {
-    min-height: 250px;
+    min-height: 272px;
     aspect-ratio: auto;
-    grid-template-rows: auto auto auto 1fr auto;
+    grid-template-rows: auto auto auto auto 1fr auto;
   }
 
   .upgrade-card-art {
-    min-height: 74px;
+    min-height: 90px;
   }
 }

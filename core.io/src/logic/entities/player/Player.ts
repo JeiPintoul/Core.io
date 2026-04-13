@@ -45,6 +45,18 @@ export class Player extends Entity {
         this.appliedUpgradeColors = [];
         this.baseStats = { ...baseStats };
         this.bonusStats = { ...ZERO_BONUS_STATS };
+        this.setBarrels([
+            {
+                id: 'player_front_barrel',
+                offsetX: 34,
+                offsetY: 0,
+                angleOffset: 0,
+                recoilForce: 20,
+                damageMultiplier: 1,
+                speedMultiplier: 1,
+                lifespanMultiplier: 1
+            }
+        ]);
 
         this.setupListeners();
     }

@@ -121,10 +121,29 @@ export class HudController {
         );
 
         this.unsubscribers.push(
-            onGameEvent(GameEvents.WAVE_CLEARED, ({ waveCleared, nextWave }) => {
+            onGameEvent(GameEvents.WAVE_CLEARED, ({ nextWave }) => {
                 this.currentHorde = Math.max(1, nextWave);
                 this.renderWaveHeader();
-                this.playWaveTransitionSequence(waveCleared, nextWave);
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, ({ waveCleared, nextWave, durationMs }) => {
+                this.currentHorde = Math.max(1, nextWave);
+                this.renderWaveHeader();
+                this.playWaveMessage(`WAVE ${waveCleared} CLEARED`, true, durationMs);
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, ({ wave, durationMs }) => {
+                this.playWaveMessage(`WAVE ${wave} STARTING...`, false, durationMs);
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, () => {
+                this.hideWaveTransition();
             })
         );
 
@@ -339,20 +358,14 @@ export class HudController {
         }
     }
 
-    private playWaveTransitionSequence(waveCleared: number, nextWave: number): void {
+    private playWaveMessage(text: string, isDanger: boolean, durationMs: number): void {
         this.clearWaveTransitionTimers();
-        this.showWaveTransition(`WAVE ${waveCleared} CLEARED`, true);
-
-        this.waveTransitionTimeoutIds.push(
-            window.setTimeout(() => {
-                this.showWaveTransition(`WAVE ${nextWave} STARTING...`, false);
-            }, 1150)
-        );
+        this.showWaveTransition(text, isDanger);
 
         this.waveTransitionTimeoutIds.push(
             window.setTimeout(() => {
                 this.hideWaveTransition();
-            }, 2350)
+            }, Math.max(250, durationMs))
         );
     }
 

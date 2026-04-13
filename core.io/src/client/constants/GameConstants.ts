@@ -4,7 +4,8 @@
 
 export const COLORS = {
     PLAYER:          0x4488ff,
-    PLAYER_BARREL:   0x2266cc,
+    PLAYER_BARREL:   0x8d929c,
+    BARREL_OUTLINE:  0x525861,
 
     ENEMY:           0xff4444,
 
@@ -31,8 +32,8 @@ export const VISUAL = {
     GRID_STEP: 100,
     
     PLAYER: {
-        barrelLengthFactor: 1.6,
-        barrelWidthFactor: 0.65,
+        barrelLengthFactor: 1.38,
+        barrelWidthFactor: 0.78,
         barrelOffsetFactor: 0.4,
         deathRiseDistance: 50,
     },

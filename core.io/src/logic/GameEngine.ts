@@ -12,7 +12,6 @@ import {
     ENEMY_STAT_MULTIPLIER_PER_WAVE,
     ENEMY_XP_DROP,
     WAVE_SPAWN_INTERVAL_SECONDS,
-    WAVE_UPGRADE_PHASE_DURATION_MS,
     getEnemyFirstWave,
     getWaveMilestone
 } from './constants/WaveConfig';
@@ -27,6 +26,7 @@ class Projectile {
     velocityY: number;
     damage: number;
     health: number;
+    penetrationPower: number;
     lifespan: number;
     radius: number;
 
@@ -40,8 +40,9 @@ class Projectile {
         velocityY: number,
         damage: number,
         health: number,
+        penetrationPower: number,
         radius: number,
-        lifespan: number = 2.0
+        lifespan: number
     ) {
         this.id = id;
         this.ownerId = ownerId;
@@ -52,6 +53,7 @@ class Projectile {
         this.velocityY = velocityY;
         this.damage = damage;
         this.health = health;
+        this.penetrationPower = penetrationPower;
         this.lifespan = lifespan;
         this.radius = radius;
     }
@@ -59,7 +61,9 @@ class Projectile {
 
 enum EngineState {
     WAVE_ACTIVE = 'WAVE_ACTIVE',
-    UPGRADE_PHASE = 'UPGRADE_PHASE'
+    WAVE_CLEAR_ANIMATION = 'WAVE_CLEAR_ANIMATION',
+    UPGRADE_PHASE = 'UPGRADE_PHASE',
+    WAVE_STARTING_ANIMATION = 'WAVE_STARTING_ANIMATION'
 }
 
 type HostileEnemy = Enemy | RangedEnemy;
@@ -71,19 +75,36 @@ export class GameEngine {
     private readonly arenaSize: { width: number; height: number };
     private readonly playerBaseStats: EntityStats;
     private readonly upgradeManager: UpgradeManager;
+
     private readonly playerRadius = 24;
     private readonly enemyRadius = 24;
     private readonly projectileRadius = 9;
-    private readonly projectileSpawnOffset = 10;
-    private readonly enemySpawnRadius = 300;
+    private readonly projectileBaseHealth = 10;
+
     private readonly collisionMicroCooldownMs = 100;
     private readonly collisionKnockbackImpulse = 240;
     private readonly collisionKnockbackOverlapBonus = 6;
-    private readonly knockbackDampingPerTick = 0.85;
-    private readonly knockbackStopThreshold = 5;
-    private readonly projectileBaseHealth = 10;
+    private readonly knockbackDampingPerTick = 0.93;
+    private readonly knockbackStopThreshold = 1.25;
+
     private readonly outOfCombatRegenDelayMs = 10000;
     private readonly outOfCombatBonusRegenPerSecond = 5;
+
+    private readonly waveTransitionAnimationDurationMs = 1000;
+    private readonly viewportSafeSpawnRadius = Math.max(1100, Math.hypot(1920 / 2, 1080 / 2) + 120);
+    private readonly minimumSpawnDistance = 1100;
+
+    private readonly projectileKnockbackBase = 22;
+    private readonly projectileKnockbackSpeedFactor = 0.035;
+    private readonly projectileKnockbackPenetrationFactor = 14;
+    private readonly recoilForceMultiplier = 1.85;
+
+    private readonly glancingAlignmentThreshold = 0.58;
+    private readonly glancingEdgeThresholdFactor = 0.78;
+    private readonly glancingMaxPenetrationDepth = 5.5;
+    private readonly glancingDamageFactor = 0.35;
+    private readonly glancingProjectileHealthCostFactor = 0.35;
+    private readonly glancingDeflectionScale = 1.2;
 
     private currentInput: InputState;
     private lastTick: number;
@@ -98,7 +119,9 @@ export class GameEngine {
     private currentWave = 1;
     private enemiesSpawnedThisWave = 0;
     private enemiesKilledThisWave = 0;
-    private upgradePhaseEndsAtMs = 0;
+    private waveClearAnimationEndsAtMs = 0;
+    private waveStartingAnimationEndsAtMs = 0;
+
     private readonly processedEnemyDeathIds = new Set<string>();
 
     constructor() {
@@ -258,7 +281,8 @@ export class GameEngine {
         this.currentWave = 1;
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
-        this.upgradePhaseEndsAtMs = 0;
+        this.waveClearAnimationEndsAtMs = 0;
+        this.waveStartingAnimationEndsAtMs = 0;
         this.player.isUpgrading = false;
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
     }
@@ -287,17 +311,12 @@ export class GameEngine {
 
     private update(dt: number, currentTime: number): void {
         const playerStats = this.syncPlayerCoreStats();
+        const playerLockedForUpgrade = this.engineState === EngineState.UPGRADE_PHASE && this.player.isUpgrading;
 
-        if (this.player.isUpgrading) {
-            if (this.engineState === EngineState.UPGRADE_PHASE) {
-                this.tryResumeWave(currentTime);
-            }
-
-            return;
+        if (!playerLockedForUpgrade) {
+            this.updatePlayerMovement(dt);
+            this.tryPlayerShoot(currentTime, playerStats);
         }
-
-        this.updatePlayerMovement(dt);
-        this.tryPlayerShoot(currentTime, playerStats);
 
         this.updateEnemies(dt, currentTime);
 
@@ -313,13 +332,7 @@ export class GameEngine {
         }
 
         this.checkCollisions(currentTime);
-
-        if (this.engineState === EngineState.WAVE_ACTIVE) {
-            this.tryEnterUpgradePhase(currentTime);
-            return;
-        }
-
-        this.tryResumeWave(currentTime);
+        this.advanceWaveState(currentTime);
     }
 
     private emitStateUpdate(): void {
@@ -418,17 +431,8 @@ export class GameEngine {
             return;
         }
 
-        this.createProjectile(
-            this.player.id,
-            'player',
-            this.player.x,
-            this.player.y,
-            dx / distance,
-            dy / distance,
-            playerStats,
-            this.playerRadius
-        );
-
+        const aimAngle = Math.atan2(dy, dx);
+        this.fireEntityBarrels(this.player, 'player', aimAngle, playerStats);
         this.lastShotTime = currentTime;
     }
 
@@ -436,7 +440,7 @@ export class GameEngine {
         for (const enemy of this.enemies) {
             if (enemy instanceof RangedEnemy) {
                 enemy.update(this.player.x, this.player.y, dt, currentTime, (request) => {
-                    this.spawnEnemyProjectile(request);
+                    this.handleRangedEnemyShootRequest(enemy, request);
                 });
             } else {
                 enemy.update(this.player.x, this.player.y, dt);
@@ -445,6 +449,84 @@ export class GameEngine {
             this.applyKnockbackMotion(enemy, dt);
             this.clampToArena(enemy);
         }
+    }
+
+    private handleRangedEnemyShootRequest(shooter: RangedEnemy, request: RangedShootRequest): void {
+        this.fireEntityBarrels(shooter, 'enemy', request.aimAngle, request.stats);
+    }
+
+    private fireEntityBarrels(
+        shooter: Entity,
+        faction: ProjectileFaction,
+        baseAimAngle: number,
+        sourceStats: EntityStats
+    ): void {
+        const equippedBarrels = shooter.barrels.length > 0
+            ? shooter.barrels
+            : [
+                {
+                    id: 'default_barrel',
+                    offsetX: 24,
+                    offsetY: 0,
+                    angleOffset: 0,
+                    recoilForce: 16,
+                    damageMultiplier: 1,
+                    speedMultiplier: 1,
+                    lifespanMultiplier: 1
+                }
+            ];
+
+        const baseForwardX = Math.cos(baseAimAngle);
+        const baseForwardY = Math.sin(baseAimAngle);
+        const baseRightX = -baseForwardY;
+        const baseRightY = baseForwardX;
+
+        for (const barrel of equippedBarrels) {
+            const shotAngle = baseAimAngle + barrel.angleOffset;
+            const dirX = Math.cos(shotAngle);
+            const dirY = Math.sin(shotAngle);
+            const spawnX = shooter.x + (baseForwardX * barrel.offsetX) + (baseRightX * barrel.offsetY);
+            const spawnY = shooter.y + (baseForwardY * barrel.offsetX) + (baseRightY * barrel.offsetY);
+
+            const projectileDamage = sourceStats.bulletDamage * barrel.damageMultiplier;
+            const projectilePenetration = Math.max(0.1, sourceStats.bulletPenetration);
+            const projectileSpeed = Math.max(1, sourceStats.bulletSpeed * barrel.speedMultiplier);
+            const projectileLifespan = Math.max(0.2, 2.0 * barrel.lifespanMultiplier);
+
+            this.createProjectile(
+                shooter.id,
+                faction,
+                spawnX,
+                spawnY,
+                dirX,
+                dirY,
+                projectileDamage,
+                projectilePenetration,
+                projectileSpeed,
+                projectileLifespan
+            );
+
+            this.applyShotRecoil(shooter, dirX, dirY, barrel.recoilForce);
+
+            emitGameEvent(GameEvents.PROJECTILE_FIRED, {
+                shooterId: shooter.id,
+                faction,
+                x: spawnX,
+                y: spawnY,
+                angle: shotAngle,
+                recoilStrength: Math.max(2, barrel.recoilForce * 0.45)
+            });
+        }
+    }
+
+    private applyShotRecoil(
+        shooter: Entity,
+        shotDirX: number,
+        shotDirY: number,
+        recoilForce: number
+    ): void {
+        const recoilImpulse = Math.max(0, recoilForce) * this.recoilForceMultiplier;
+        shooter.applyImpulse(-shotDirX * recoilImpulse, -shotDirY * recoilImpulse);
     }
 
     private updateProjectiles(dt: number): void {
@@ -496,20 +578,37 @@ export class GameEngine {
     private spawnEnemyForWave(weights: Partial<Record<EnemyType, number>>): void {
         const enemyType = this.rollEnemyType(weights);
         const enemyStats = this.buildScaledEnemyStats(enemyType);
-
-        const angle = Math.random() * Math.PI * 2;
-        const x = this.player.x + Math.cos(angle) * this.enemySpawnRadius;
-        const y = this.player.y + Math.sin(angle) * this.enemySpawnRadius;
-
-        const safeX = Math.max(0, Math.min(x, this.arenaSize.width));
-        const safeY = Math.max(0, Math.min(y, this.arenaSize.height));
+        const spawnPoint = this.rollOffscreenSpawnPoint();
         const enemyId = `enemy_${this.enemyIdCounter++}`;
 
         const enemy = enemyType === 'RANGED'
-            ? new RangedEnemy(enemyId, safeX, safeY, enemyStats)
-            : new Enemy(enemyId, safeX, safeY, enemyStats);
+            ? new RangedEnemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats)
+            : new Enemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
 
         this.enemies.push(enemy);
+    }
+
+    private rollOffscreenSpawnPoint(): { x: number; y: number } {
+        let fallbackX = this.player.x;
+        let fallbackY = this.player.y;
+
+        for (let attempt = 0; attempt < 16; attempt++) {
+            const angle = Math.random() * Math.PI * 2;
+            const desiredX = this.player.x + Math.cos(angle) * this.viewportSafeSpawnRadius;
+            const desiredY = this.player.y + Math.sin(angle) * this.viewportSafeSpawnRadius;
+            const clampedX = Math.max(0, Math.min(desiredX, this.arenaSize.width));
+            const clampedY = Math.max(0, Math.min(desiredY, this.arenaSize.height));
+            const playerDistance = Math.hypot(clampedX - this.player.x, clampedY - this.player.y);
+
+            fallbackX = clampedX;
+            fallbackY = clampedY;
+
+            if (playerDistance >= this.minimumSpawnDistance) {
+                return { x: clampedX, y: clampedY };
+            }
+        }
+
+        return { x: fallbackX, y: fallbackY };
     }
 
     private buildScaledEnemyStats(enemyType: EnemyType): EntityStats {
@@ -551,20 +650,6 @@ export class GameEngine {
         return weightedEntries[weightedEntries.length - 1][0];
     }
 
-    private spawnEnemyProjectile(request: RangedShootRequest): void {
-        this.createProjectile(
-            request.ownerId,
-            'enemy',
-            request.spawnX,
-            request.spawnY,
-            request.dirX,
-            request.dirY,
-            request.stats,
-            0,
-            0
-        );
-    }
-
     private createProjectile(
         ownerId: string,
         faction: ProjectileFaction,
@@ -572,27 +657,27 @@ export class GameEngine {
         originY: number,
         dirX: number,
         dirY: number,
-        stats: EntityStats,
-        sourceRadius: number,
-        spawnOffset: number = this.projectileSpawnOffset
+        projectileDamage: number,
+        projectilePenetration: number,
+        projectileSpeed: number,
+        projectileLifespan: number
     ): void {
-        const spawnDistance = sourceRadius + spawnOffset;
-        const spawnX = originX + (dirX * spawnDistance);
-        const spawnY = originY + (dirY * spawnDistance);
-        const velocityX = dirX * stats.bulletSpeed;
-        const velocityY = dirY * stats.bulletSpeed;
+        const velocityX = dirX * projectileSpeed;
+        const velocityY = dirY * projectileSpeed;
 
         const projectile = new Projectile(
             `proj_${this.projectileIdCounter++}`,
             ownerId,
             faction,
-            spawnX,
-            spawnY,
+            originX,
+            originY,
             velocityX,
             velocityY,
-            stats.bulletDamage,
-            stats.bulletPenetration * this.projectileBaseHealth,
-            this.projectileRadius
+            projectileDamage,
+            projectilePenetration * this.projectileBaseHealth,
+            projectilePenetration,
+            this.projectileRadius,
+            projectileLifespan
         );
 
         this.projectiles.push(projectile);
@@ -773,10 +858,8 @@ export class GameEngine {
     ): void {
         const impulseStrength = this.collisionKnockbackImpulse + (overlap * this.collisionKnockbackOverlapBonus);
 
-        entityA.knockbackVelocity.x -= normalX * impulseStrength;
-        entityA.knockbackVelocity.y -= normalY * impulseStrength;
-        entityB.knockbackVelocity.x += normalX * impulseStrength;
-        entityB.knockbackVelocity.y += normalY * impulseStrength;
+        entityA.applyImpulse(-normalX * impulseStrength, -normalY * impulseStrength);
+        entityB.applyImpulse(normalX * impulseStrength, normalY * impulseStrength);
     }
 
     private tryApplyBurstCollisionDamage(target: Entity, attacker: Entity, currentTime: number): void {
@@ -813,14 +896,15 @@ export class GameEngine {
         entity.x += entity.knockbackVelocity.x * dt;
         entity.y += entity.knockbackVelocity.y * dt;
 
-        entity.knockbackVelocity.x *= this.knockbackDampingPerTick;
-        entity.knockbackVelocity.y *= this.knockbackDampingPerTick;
+        const frameScale = Math.max(0.25, dt * 60);
+        const damping = Math.pow(this.knockbackDampingPerTick, frameScale);
 
-        if (Math.abs(entity.knockbackVelocity.x) < this.knockbackStopThreshold) {
+        entity.knockbackVelocity.x *= damping;
+        entity.knockbackVelocity.y *= damping;
+
+        const speed = Math.hypot(entity.knockbackVelocity.x, entity.knockbackVelocity.y);
+        if (speed < this.knockbackStopThreshold) {
             entity.knockbackVelocity.x = 0;
-        }
-
-        if (Math.abs(entity.knockbackVelocity.y) < this.knockbackStopThreshold) {
             entity.knockbackVelocity.y = 0;
         }
     }
@@ -832,7 +916,7 @@ export class GameEngine {
 
         let totalRegen = stats.healthRegen * dt;
 
-        if (entity.getTimeSinceLastDamage(currentTime) > this.outOfCombatRegenDelayMs) {
+        if (entity instanceof Player && entity.getTimeSinceLastDamage(currentTime) > this.outOfCombatRegenDelayMs) {
             totalRegen += this.outOfCombatBonusRegenPerSecond * dt;
         }
 
@@ -870,8 +954,54 @@ export class GameEngine {
             return true;
         }
 
+        const targetRadius = this.getEntityRadius(target);
+        const dx = projectile.x - target.x;
+        const dy = projectile.y - target.y;
+        const distanceToTargetCenter = Math.hypot(dx, dy);
+        const projectileSpeed = Math.hypot(projectile.velocityX, projectile.velocityY);
+        const safeDistance = Math.max(distanceToTargetCenter, 0.0001);
+
+        let normalX = dx / safeDistance;
+        let normalY = dy / safeDistance;
+
+        if (distanceToTargetCenter <= 0.0001) {
+            if (projectileSpeed > 0.0001) {
+                normalX = -projectile.velocityX / projectileSpeed;
+                normalY = -projectile.velocityY / projectileSpeed;
+            } else {
+                normalX = 1;
+                normalY = 0;
+            }
+        }
+
+        const projectileDirX = projectileSpeed <= 0.0001 ? normalX : projectile.velocityX / projectileSpeed;
+        const projectileDirY = projectileSpeed <= 0.0001 ? normalY : projectile.velocityY / projectileSpeed;
+
+        const alignmentToCenter = Math.max(0, (-projectileDirX * normalX) + (-projectileDirY * normalY));
+        const impactNearEdge = distanceToTargetCenter >= (targetRadius * this.glancingEdgeThresholdFactor);
+        const penetrationDepth = Math.max(0, (targetRadius + projectile.radius) - distanceToTargetCenter);
+        const isShallowPenetration = penetrationDepth <= this.glancingMaxPenetrationDepth;
+        const isGlancingHit = impactNearEdge && isShallowPenetration && alignmentToCenter < this.glancingAlignmentThreshold;
+
+        if (isGlancingHit) {
+            const glancingDamage = effectiveDamage * this.glancingDamageFactor;
+
+            if (glancingDamage > 0) {
+                target.takeDamage(glancingDamage);
+                target.registerCollisionDamageFrom(`projectile:${projectile.id}`, currentTime);
+            }
+
+            this.applyProjectileImpactImpulse(target, projectile, true);
+            this.applyGlancingDeflection(projectile, normalX, normalY);
+            projectile.health -= Math.max(1, targetBodyDamage * this.glancingProjectileHealthCostFactor);
+
+            return projectile.health <= 0;
+        }
+
         target.takeDamage(effectiveDamage);
-        target.registerCollisionDamageFrom(`projectile:${projectile.ownerId}`, currentTime);
+        target.registerCollisionDamageFrom(`projectile:${projectile.id}`, currentTime);
+        this.applyProjectileImpactImpulse(target, projectile, false);
+
         projectile.health -= targetBodyDamage;
 
         if (target.health > 0) {
@@ -881,24 +1011,138 @@ export class GameEngine {
         return projectile.health <= 0;
     }
 
-    private tryEnterUpgradePhase(currentTime: number): void {
+    private applyProjectileImpactImpulse(target: Entity, projectile: Projectile, isGlancing: boolean): void {
+        const speed = Math.hypot(projectile.velocityX, projectile.velocityY);
+        if (speed <= 0.0001) {
+            return;
+        }
+
+        const dirX = projectile.velocityX / speed;
+        const dirY = projectile.velocityY / speed;
+        let impulse = this.projectileKnockbackBase
+            + (speed * this.projectileKnockbackSpeedFactor)
+            + (projectile.penetrationPower * this.projectileKnockbackPenetrationFactor);
+
+        if (isGlancing) {
+            impulse *= 0.45;
+        }
+
+        target.applyImpulse(dirX * impulse, dirY * impulse);
+    }
+
+    private applyGlancingDeflection(projectile: Projectile, normalX: number, normalY: number): void {
+        const originalSpeed = Math.hypot(projectile.velocityX, projectile.velocityY);
+        if (originalSpeed <= 0.0001) {
+            return;
+        }
+
+        const dotProduct = (projectile.velocityX * normalX) + (projectile.velocityY * normalY);
+        let reflectedX = projectile.velocityX - (2 * dotProduct * normalX * this.glancingDeflectionScale);
+        let reflectedY = projectile.velocityY - (2 * dotProduct * normalY * this.glancingDeflectionScale);
+
+        if (!Number.isFinite(reflectedX) || !Number.isFinite(reflectedY)) {
+            reflectedX = normalX;
+            reflectedY = normalY;
+        }
+
+        let reflectedDot = (reflectedX * normalX) + (reflectedY * normalY);
+
+        // Enforce an outward bounce. If it still points inward, rebuild direction with outward + tangent components.
+        if (reflectedDot <= 0) {
+            const tangentX = -normalY;
+            const tangentY = normalX;
+            const tangentDot = (projectile.velocityX * tangentX) + (projectile.velocityY * tangentY);
+            const tangentSign = tangentDot >= 0 ? 1 : -1;
+            const outwardSpeed = Math.max(18, originalSpeed * 0.4);
+            const tangentSpeed = Math.max(originalSpeed * 0.25, Math.abs(tangentDot) * 0.6);
+
+            reflectedX = (normalX * outwardSpeed) + (tangentX * tangentSpeed * tangentSign);
+            reflectedY = (normalY * outwardSpeed) + (tangentY * tangentSpeed * tangentSign);
+            reflectedDot = (reflectedX * normalX) + (reflectedY * normalY);
+
+            if (reflectedDot <= 0) {
+                reflectedX = normalX * outwardSpeed;
+                reflectedY = normalY * outwardSpeed;
+            }
+        }
+
+        const reflectedSpeed = Math.hypot(reflectedX, reflectedY);
+        if (reflectedSpeed <= 0.0001) {
+            projectile.velocityX = normalX * (originalSpeed * 0.75);
+            projectile.velocityY = normalY * (originalSpeed * 0.75);
+            return;
+        }
+
+        const preservedSpeed = originalSpeed * 0.88;
+        projectile.velocityX = (reflectedX / reflectedSpeed) * preservedSpeed;
+        projectile.velocityY = (reflectedY / reflectedSpeed) * preservedSpeed;
+    }
+
+    private advanceWaveState(currentTime: number): void {
+        if (this.engineState === EngineState.WAVE_ACTIVE) {
+            this.tryEnterWaveClearAnimation(currentTime);
+            return;
+        }
+
+        if (this.engineState === EngineState.WAVE_CLEAR_ANIMATION) {
+            if (currentTime >= this.waveClearAnimationEndsAtMs) {
+                this.enterUpgradePhase(currentTime);
+            }
+            return;
+        }
+
+        if (this.engineState === EngineState.UPGRADE_PHASE) {
+            if (!this.player.isUpgrading) {
+                this.startWaveStartingAnimation(currentTime);
+            }
+            return;
+        }
+
+        if (this.engineState === EngineState.WAVE_STARTING_ANIMATION && currentTime >= this.waveStartingAnimationEndsAtMs) {
+            this.resumeWaveSpawning(currentTime);
+        }
+    }
+
+    private tryEnterWaveClearAnimation(currentTime: number): void {
         const totalToSpawn = this.getCurrentWaveTotalToSpawn();
 
         if (this.enemiesKilledThisWave < totalToSpawn) {
             return;
         }
 
-        this.engineState = EngineState.UPGRADE_PHASE;
-        this.upgradePhaseEndsAtMs = currentTime + WAVE_UPGRADE_PHASE_DURATION_MS;
+        if (this.enemies.length > 0) {
+            return;
+        }
 
         const waveCleared = this.currentWave;
-        this.currentWave += 1;
+        const nextWave = waveCleared + 1;
+
+        this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
+        this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
+
+        this.currentWave = nextWave;
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
 
         emitGameEvent(GameEvents.WAVE_CLEARED, {
             waveCleared,
-            nextWave: this.currentWave
+            nextWave
+        });
+
+        emitGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, {
+            wave: waveCleared,
+            waveCleared,
+            nextWave,
+            durationMs: this.waveTransitionAnimationDurationMs
+        });
+    }
+
+    private enterUpgradePhase(currentTime: number): void {
+        this.engineState = EngineState.UPGRADE_PHASE;
+
+        emitGameEvent(GameEvents.UPGRADE_PHASE_STARTED, {
+            wave: this.currentWave,
+            pendingUpgrades: this.player.pendingUpgrades
         });
 
         if (this.player.pendingUpgrades > 0) {
@@ -910,19 +1154,30 @@ export class GameEngine {
         }
 
         this.player.isUpgrading = false;
+        this.startWaveStartingAnimation(currentTime);
     }
 
-    private tryResumeWave(currentTime: number): void {
-        if (currentTime < this.upgradePhaseEndsAtMs) {
+    private startWaveStartingAnimation(currentTime: number): void {
+        if (this.engineState === EngineState.WAVE_STARTING_ANIMATION) {
             return;
         }
 
-        if (this.player.isUpgrading) {
-            return;
-        }
+        this.engineState = EngineState.WAVE_STARTING_ANIMATION;
+        this.waveStartingAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
 
+        emitGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, {
+            wave: this.currentWave,
+            durationMs: this.waveTransitionAnimationDurationMs
+        });
+    }
+
+    private resumeWaveSpawning(currentTime: number): void {
         this.engineState = EngineState.WAVE_ACTIVE;
         this.lastSpawnTime = currentTime;
+
+        emitGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, {
+            wave: this.currentWave
+        });
     }
 
     private getEntityRadius(entity: Entity): number {
