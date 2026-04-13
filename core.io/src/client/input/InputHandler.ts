@@ -13,7 +13,7 @@ export class InputHandler {
         a: Phaser.Input.Keyboard.Key;
         d: Phaser.Input.Keyboard.Key;
     };
-    private isEnabled = true;
+    private isEnabled = false;
 
     constructor(
         private scene: Phaser.Scene,

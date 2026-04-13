@@ -5,13 +5,10 @@
 export const COLORS = {
     PLAYER:          0x4488ff,
     PLAYER_BARREL:   0x2266cc,
-    PLAYER_OUTLINE:  0xffffff,
 
     ENEMY:           0xff4444,
-    ENEMY_OUTLINE:   0xaa0000,
 
     BULLET:          0xffee44,
-    BULLET_OUTLINE:  0xcc9900,
 
     HEALTH_BG:       0x330000,
     HEALTH_BAR:      0x44ff44,
@@ -35,7 +32,7 @@ export const VISUAL = {
     
     PLAYER: {
         barrelLengthFactor: 1.6,
-        barrelWidthFactor: 0.55,
+        barrelWidthFactor: 0.65,
         barrelOffsetFactor: 0.4,
         deathRiseDistance: 50,
     },
@@ -50,9 +47,9 @@ export const VISUAL = {
     },
     
     STROKE: {
-        player: 2,
-        enemy: 2,
-        bullet: 1,
+        player: 3,
+        enemy: 3,
+        bullet: 2,
         healthBar: 1,
         arenaBorder: 3,
         gridLine: 0.5,

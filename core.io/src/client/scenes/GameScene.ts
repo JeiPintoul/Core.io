@@ -18,9 +18,10 @@ export class GameScene extends Phaser.Scene {
     private latestState: GameState | null = null;
     private unsubscribeStateUpdate: (() => void) | null = null;
     private unsubscribeEntityDestroyed: (() => void) | null = null;
+    private unsubscribeEnemyDestroyed: (() => void) | null = null;
+    private unsubscribeProjectileDestroyed: (() => void) | null = null;
     private unsubscribeGameOver: (() => void) | null = null;
     private cameraFollowTarget!: Phaser.GameObjects.Zone;
-    private isInputLockedByDeath = false;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -28,14 +29,12 @@ export class GameScene extends Phaser.Scene {
 
     create() {
         // Configurar câmera
-        this.cameras.main.setBounds(0, 0, ARENA.width, ARENA.height);
+        this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
         this.cameras.main.setZoom(1);
 
         // Target invisivel para follow suave da camera.
         this.cameraFollowTarget = this.add.zone(ARENA.width / 2, ARENA.height / 2, 1, 1);
-        this.cameras.main.startFollow(this.cameraFollowTarget, true, 0.1, 0.1);
-        this.scale.on(Phaser.Scale.Events.RESIZE, this.handleResize, this);
-        this.handleResize(this.scale.gameSize);
+        this.cameras.main.startFollow(this.cameraFollowTarget, true, 0.3, 0.3);
 
         // Criar graphics objects (ordem define z-order)
         const gfxWorld = this.add.graphics(); // grid + arena
@@ -45,8 +44,9 @@ export class GameScene extends Phaser.Scene {
         gfxHud.setScrollFactor(0);
 
         // Inicializar renderer e input handler
-        this.gameRenderer = new GameRenderer(this, gfxWorld, gfxGame, gfxPlayer, gfxHud);
+        this.gameRenderer = new GameRenderer(this, this.cameras.main, gfxWorld, gfxGame, gfxPlayer, gfxHud);
         this.inputHandler = new InputHandler(this, this.cameras.main);
+        this.inputHandler.disable();
 
         // Desenhar mundo estático
         this.gameRenderer.drawStaticWorld();
@@ -55,9 +55,8 @@ export class GameScene extends Phaser.Scene {
         this.unsubscribeStateUpdate = onGameEvent(GameEvents.STATE_UPDATE, (state: GameState) => {
             this.latestState = state;
 
-            if (this.isInputLockedByDeath && state.player.health > 0) {
+            if (state.player.health > 0) {
                 this.inputHandler.enable();
-                this.isInputLockedByDeath = false;
             }
 
             this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
@@ -69,6 +68,14 @@ export class GameScene extends Phaser.Scene {
             if (this.latestState && id === this.latestState.player.id) {
                 this.lockInputAfterDeath();
             }
+        });
+
+        this.unsubscribeProjectileDestroyed = onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction }) => {
+            this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction);
+        });
+
+        this.unsubscribeEnemyDestroyed = onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, radius }) => {
+            this.gameRenderer.playFloatingText(x, y - radius - 30, `+${xpDropped} XP`, '#44ff44');
         });
 
         this.unsubscribeGameOver = onGameEvent(GameEvents.GAME_OVER, () => {
@@ -91,14 +98,12 @@ export class GameScene extends Phaser.Scene {
         this.inputHandler.handleInput();
 
         // Mira visual usa exclusivamente vetor mouse->player no frame atual.
-        this.updateCursorWorldPoint();
+        if (!state.isPaused) {
+            this.updateCursorWorldPoint();
+        }
 
         // Renderizar frame
-        this.gameRenderer.renderFrame(state, this.scale.height);
-    }
-
-    private handleResize(gameSize: Phaser.Structs.Size): void {
-        this.cameras.main.setSize(gameSize.width, gameSize.height);
+        this.gameRenderer.renderFrame(state);
     }
 
     private updateCursorWorldPoint(): void {
@@ -109,12 +114,11 @@ export class GameScene extends Phaser.Scene {
 
     private lockInputAfterDeath(): void {
         this.inputHandler.disable();
-        this.isInputLockedByDeath = true;
     }
 
     private cleanupListeners(): void {
-        this.scale.off(Phaser.Scale.Events.RESIZE, this.handleResize, this);
         this.cameras.main.stopFollow();
+        this.gameRenderer.destroy();
 
         if (this.cameraFollowTarget) {
             this.cameraFollowTarget.destroy();
@@ -128,6 +132,16 @@ export class GameScene extends Phaser.Scene {
         if (this.unsubscribeEntityDestroyed) {
             this.unsubscribeEntityDestroyed();
             this.unsubscribeEntityDestroyed = null;
+        }
+
+        if (this.unsubscribeEnemyDestroyed) {
+            this.unsubscribeEnemyDestroyed();
+            this.unsubscribeEnemyDestroyed = null;
+        }
+
+        if (this.unsubscribeProjectileDestroyed) {
+            this.unsubscribeProjectileDestroyed();
+            this.unsubscribeProjectileDestroyed = null;
         }
 
         if (this.unsubscribeGameOver) {

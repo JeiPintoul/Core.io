@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { GameState } from '../../shared/Types';
+import type { GameState, ProjectileFaction } from '../../shared/Types';
 import { COLORS, ARENA, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
 
@@ -18,9 +18,18 @@ export class GameRenderer {
     private readonly entitySnapshots = new Map<string, EntityRenderSnapshot>();
     private currentPlayerId: string | null = null;
     private isPlayerDeathAnimating = false;
+    private playerNameText: Phaser.GameObjects.Text | null = null;
+    private cursorWorldPoint = new Phaser.Geom.Point(0, 0);
+
+    private readonly minimapSize = 170;
+    private readonly minimapPadding = 24;
+    private readonly minimapBackground = 0x060b1f;
+    private readonly minimapBorder = 0x79a6ff;
+    private readonly minimapPlayerDot = 0xffffff;
 
     constructor(
         private scene: Phaser.Scene,
+        private camera: Phaser.Cameras.Scene2D.Camera,
         private gfxWorld: Phaser.GameObjects.Graphics,
         private gfxGame: Phaser.GameObjects.Graphics,
         private gfxPlayer: Phaser.GameObjects.Graphics,
@@ -32,7 +41,7 @@ export class GameRenderer {
     /**
      * Desenha o estado completo do jogo para um frame
      */
-    renderFrame(state: GameState, screenHeight: number) {
+    renderFrame(state: GameState) {
         this.gfxGame.clear();
         this.gfxHud.clear();
         this.currentPlayerId = state.player.id;
@@ -42,7 +51,8 @@ export class GameRenderer {
         this.drawProjectiles(state);
         this.drawEnemies(state, activeEntityIds);
         this.drawPlayer(state, activeEntityIds);
-        this.drawHud(state, screenHeight);
+        this.updatePlayerName(state.player);
+        this.drawMinimap(state.player.x, state.player.y);
 
         this.healthBarRenderer.pruneWorldHealthBars(activeEntityIds);
         this.pruneEntitySnapshots();
@@ -50,6 +60,7 @@ export class GameRenderer {
 
     public playEntityDestroyedAnimation(entityId: string): void {
         if (this.currentPlayerId && entityId === this.currentPlayerId) {
+            this.hidePlayerName();
             this.playPlayerDeathAnimation();
             return;
         }
@@ -78,6 +89,49 @@ export class GameRenderer {
         });
     }
 
+    public playProjectileDeathAnimation(x: number, y: number, radius: number, faction: ProjectileFaction): void {
+        const isPlayerProjectile = faction === 'player';
+        const pulseColor = isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY;
+        const pulseOutlineColor = this.getDarkenedColor(pulseColor, 42);
+        const pulse = this.scene.add.circle(x, y, radius, pulseColor, 1);
+        pulse.setStrokeStyle(VISUAL.STROKE.bullet, pulseOutlineColor, 1);
+
+        this.scene.tweens.add({
+            targets: pulse,
+            scaleX: 0,
+            scaleY: 0,
+            alpha: 0,
+            duration: 150,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                pulse.destroy();
+            }
+        });
+    }
+
+    public playFloatingText(x: number, y: number, text: string, color: string): void {
+        const floatingText = this.scene.add.text(x, y, text, {
+            fontFamily: 'Trebuchet MS, sans-serif',
+            fontSize: '18px',
+            color,
+            stroke: '#0b122d',
+            strokeThickness: 3
+        });
+        floatingText.setOrigin(0.5, 0.5);
+        floatingText.setDepth(20);
+
+        this.scene.tweens.add({
+            targets: floatingText,
+            y: y - 40,
+            alpha: 0,
+            duration: 800,
+            ease: 'Quad.easeOut',
+            onComplete: () => {
+                floatingText.destroy();
+            }
+        });
+    }
+
     private playPlayerDeathAnimation(): void {
         if (this.isPlayerDeathAnimating) {
             return;
@@ -97,6 +151,7 @@ export class GameRenderer {
             onComplete: () => {
                 this.isPlayerDeathAnimating = false;
                 this.gfxPlayer.clear();
+                this.hidePlayerName();
             }
         });
     }
@@ -107,9 +162,10 @@ export class GameRenderer {
         y: number,
         radius: number,
         fillColor: number,
-        outlineColor: number,
         strokeWidth: number
     ): void {
+        const outlineColor = this.getDarkenedColor(fillColor, 40);
+
         this.entitySnapshots.set(entityId, {
             x,
             y,
@@ -139,9 +195,30 @@ export class GameRenderer {
     drawStaticWorld() {
         this.gfxWorld.clear();
 
-        // Arena background
+        const abyssPadding = 400;
+        const edgeShadeSize = 200;
+        const abyssColor = 0x0f0f1a;
+        const arenaEdgeShade = 0x11172d;
+
+        // Abyss outside the playable arena.
+        this.gfxWorld.fillStyle(abyssColor);
+        this.gfxWorld.fillRect(
+            -abyssPadding,
+            -abyssPadding,
+            ARENA.width + (abyssPadding * 2),
+            ARENA.height + (abyssPadding * 2)
+        );
+
+        // Main playable arena surface.
         this.gfxWorld.fillStyle(COLORS.ARENA_BG);
         this.gfxWorld.fillRect(0, 0, ARENA.width, ARENA.height);
+
+        // Subtle dark shade just inside the arena border to emphasize map edge.
+        this.gfxWorld.fillStyle(arenaEdgeShade, 0.5);
+        this.gfxWorld.fillRect(0, 0, ARENA.width, edgeShadeSize);
+        this.gfxWorld.fillRect(0, ARENA.height - edgeShadeSize, ARENA.width, edgeShadeSize);
+        this.gfxWorld.fillRect(0, edgeShadeSize, edgeShadeSize, ARENA.height - (edgeShadeSize * 2));
+        this.gfxWorld.fillRect(ARENA.width - edgeShadeSize, edgeShadeSize, edgeShadeSize, ARENA.height - (edgeShadeSize * 2));
 
         // Grid
         const STEP = VISUAL.GRID_STEP;
@@ -185,6 +262,8 @@ export class GameRenderer {
                 this.gfxPlayer.clear();
             }
 
+            this.hidePlayerName();
+
             return;
         }
 
@@ -210,7 +289,6 @@ export class GameRenderer {
             y,
             radius,
             COLORS.PLAYER,
-            COLORS.PLAYER_OUTLINE,
             VISUAL.STROKE.player
         );
 
@@ -218,7 +296,7 @@ export class GameRenderer {
         this.healthBarRenderer.drawWorldHealthBar(
             state.player.id,
             x,
-            y - radius - VISUAL.HEALTH_BAR.offsetAboveEntity,
+            y + radius + VISUAL.HEALTH_BAR.offsetAboveEntity,
             radius * 2,
             health,
             stats.maxHealth
@@ -230,7 +308,7 @@ export class GameRenderer {
      */
     private drawEnemies(state: GameState, activeEntityIds: Set<string>) {
         for (const enemy of state.enemies) {
-            const { x, y, radius, health, stats, isDead } = enemy;
+            const { x, y, radius, health, stats, isDead, enemyType, aimAngle } = enemy;
 
             if (isDead) {
                 continue;
@@ -238,14 +316,21 @@ export class GameRenderer {
 
             activeEntityIds.add(enemy.id);
 
-            this.drawCircle(x, y, radius, COLORS.ENEMY, COLORS.ENEMY_OUTLINE);
+            if (!this.isInCameraView(x, y, radius, 80)) {
+                continue;
+            }
+
+            if (enemyType === 'RANGED' && typeof aimAngle === 'number') {
+                this.drawEnemyBarrel(x, y, radius, aimAngle);
+            }
+
+            this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
                 enemy.id,
                 x,
                 y,
                 radius,
                 COLORS.ENEMY,
-                COLORS.ENEMY_OUTLINE,
                 VISUAL.STROKE.enemy
             );
 
@@ -265,21 +350,27 @@ export class GameRenderer {
      */
     private drawProjectiles(state: GameState) {
         for (const proj of state.projectiles) {
-            this.drawCircle(proj.x, proj.y, proj.radius, COLORS.BULLET, COLORS.BULLET_OUTLINE);
+            if (!this.isInCameraView(proj.x, proj.y, proj.radius, 20)) {
+                continue;
+            }
+
+            const isPlayerProjectile = proj.faction === 'player';
+            const fillColor = isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY;
+            this.drawCircle(proj.x, proj.y, proj.radius, fillColor, VISUAL.STROKE.bullet);
         }
     }
 
-    /**
-     * Desenha barra de HP do player no HUD (canto inferior da tela)
-     */
-    private drawHud(state: GameState, screenHeight: number) {
-        const { health, stats } = state.player;
-        this.healthBarRenderer.drawHudHealthBar(
-            this.gfxHud,
-            health,
-            stats.maxHealth,
-            screenHeight
-        );
+    private drawEnemyBarrel(x: number, y: number, radius: number, angle: number): void {
+        const barrelMetrics = this.getBarrelMetrics(radius);
+        const bx = x + Math.cos(angle) * barrelMetrics.offset;
+        const by = y + Math.sin(angle) * barrelMetrics.offset;
+
+        this.gfxGame.fillStyle(this.getDarkenedColor(COLORS.ENEMY, 25));
+        this.gfxGame.save();
+        this.gfxGame.translateCanvas(bx, by);
+        this.gfxGame.rotateCanvas(angle);
+        this.gfxGame.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
+        this.gfxGame.restore();
     }
 
     /**
@@ -290,9 +381,9 @@ export class GameRenderer {
         y: number,
         radius: number,
         fillColor: number,
-        outlineColor: number,
         strokeWidth: number = 2
-    ) {
+    ): void {
+        const outlineColor = this.getDarkenedColor(fillColor, 40);
         this.gfxGame.lineStyle(strokeWidth, outlineColor, 1);
         this.gfxGame.fillStyle(fillColor);
         this.gfxGame.beginPath();
@@ -305,26 +396,113 @@ export class GameRenderer {
      * Helper: desenha cano do player
      */
     private drawPlayerBarrel(radius: number, angle: number) {
-        const barrelLen = radius * VISUAL.PLAYER.barrelLengthFactor;
-        const barrelWidth = radius * VISUAL.PLAYER.barrelWidthFactor;
-        const bx = Math.cos(angle) * (radius * VISUAL.PLAYER.barrelOffsetFactor);
-        const by = Math.sin(angle) * (radius * VISUAL.PLAYER.barrelOffsetFactor);
+        const barrelMetrics = this.getBarrelMetrics(radius);
+        const bx = Math.cos(angle) * barrelMetrics.offset;
+        const by = Math.sin(angle) * barrelMetrics.offset;
 
         this.gfxPlayer.fillStyle(COLORS.PLAYER_BARREL);
         this.gfxPlayer.save();
         this.gfxPlayer.translateCanvas(bx, by);
         this.gfxPlayer.rotateCanvas(angle);
-        this.gfxPlayer.fillRect(0, -barrelWidth / 2, barrelLen, barrelWidth);
+        this.gfxPlayer.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
         this.gfxPlayer.restore();
     }
 
     private drawPlayerBody(radius: number): void {
-        this.gfxPlayer.lineStyle(VISUAL.STROKE.player, COLORS.PLAYER_OUTLINE, 1);
+        this.gfxPlayer.lineStyle(VISUAL.STROKE.player, this.getDarkenedColor(COLORS.PLAYER, 40), 1);
         this.gfxPlayer.fillStyle(COLORS.PLAYER);
         this.gfxPlayer.beginPath();
         this.gfxPlayer.arc(0, 0, radius, 0, Math.PI * 2);
         this.gfxPlayer.fillPath();
         this.gfxPlayer.strokePath();
+    }
+
+    private getBarrelMetrics(radius: number): { length: number; width: number; offset: number } {
+        return {
+            length: radius * VISUAL.PLAYER.barrelLengthFactor,
+            width: radius * VISUAL.PLAYER.barrelWidthFactor,
+            offset: radius * VISUAL.PLAYER.barrelOffsetFactor
+        };
+    }
+
+    private getDarkenedColor(color: number, darkenPercent: number): number {
+        const clampedPercent = Phaser.Math.Clamp(darkenPercent, 0, 95);
+        const factor = (100 - clampedPercent) / 100;
+        const red = Math.round(((color >> 16) & 0xff) * factor);
+        const green = Math.round(((color >> 8) & 0xff) * factor);
+        const blue = Math.round((color & 0xff) * factor);
+
+        return (red << 16) | (green << 8) | blue;
+    }
+
+    private ensurePlayerNameText(): Phaser.GameObjects.Text {
+        if (this.playerNameText) {
+            return this.playerNameText;
+        }
+
+        this.playerNameText = this.scene.add.text(0, 0, '', {
+            fontFamily: 'Trebuchet MS, sans-serif',
+            fontSize: '16px',
+            color: '#ffffff',
+            stroke: '#0d1736',
+            strokeThickness: 4
+        });
+        this.playerNameText.setOrigin(0.5, 1);
+        this.playerNameText.setDepth(10);
+
+        return this.playerNameText;
+    }
+
+    private updatePlayerName(player: GameState['player']): void {
+        if (player.isDead || !player.name) {
+            this.hidePlayerName();
+            return;
+        }
+
+        const playerNameText = this.ensurePlayerNameText();
+        playerNameText.setText(player.name);
+        playerNameText.setPosition(player.x, player.y - player.radius - 18);
+        playerNameText.setVisible(this.isInCameraView(player.x, player.y, player.radius, 150));
+    }
+
+    private hidePlayerName(): void {
+        if (!this.playerNameText) {
+            return;
+        }
+
+        this.playerNameText.setVisible(false);
+    }
+
+    private drawMinimap(playerX: number, playerY: number): void {
+        const x = this.camera.width - this.minimapSize - this.minimapPadding;
+        const y = this.camera.height - this.minimapSize - this.minimapPadding;
+
+        this.gfxHud.fillStyle(this.minimapBackground, 0.65);
+        this.gfxHud.fillRoundedRect(x - 6, y - 6, this.minimapSize + 12, this.minimapSize + 12, 8);
+
+        this.gfxHud.fillStyle(0x10183a, 0.95);
+        this.gfxHud.fillRect(x, y, this.minimapSize, this.minimapSize);
+
+        this.gfxHud.lineStyle(2, this.minimapBorder, 1);
+        this.gfxHud.strokeRect(x, y, this.minimapSize, this.minimapSize);
+
+        const mapX = Phaser.Math.Clamp(playerX, 0, ARENA.width);
+        const mapY = Phaser.Math.Clamp(playerY, 0, ARENA.height);
+        const dotX = x + (mapX / ARENA.width) * this.minimapSize;
+        const dotY = y + (mapY / ARENA.height) * this.minimapSize;
+
+        this.gfxHud.fillStyle(this.minimapPlayerDot, 1);
+        this.gfxHud.fillCircle(dotX, dotY, 4);
+    }
+
+    private isInCameraView(x: number, y: number, radius: number, padding = 0): boolean {
+        const worldView = this.camera.worldView;
+        return (
+            x + radius + padding >= worldView.left &&
+            x - radius - padding <= worldView.right &&
+            y + radius + padding >= worldView.top &&
+            y - radius - padding <= worldView.bottom
+        );
     }
 
     /**
@@ -337,9 +515,19 @@ export class GameRenderer {
     /**
      * Setter para atualizar ponto do cursor
      */
-    setCursorWorldPoint(x: number, y: number) {
+    setCursorWorldPoint(x: number, y: number): void {
         this.cursorWorldPoint = new Phaser.Geom.Point(x, y);
     }
 
-    private cursorWorldPoint = new Phaser.Geom.Point(0, 0);
+    public destroy(): void {
+        this.entitySnapshots.clear();
+        this.healthBarRenderer.pruneWorldHealthBars(new Set<string>());
+
+        if (!this.playerNameText) {
+            return;
+        }
+
+        this.playerNameText.destroy();
+        this.playerNameText = null;
+    }
 }
