@@ -1,12 +1,15 @@
-import { Entity } from "./Entity";
+import { Entity } from '../../Entity';
+import type { EntityStats, EnemyType } from '../../../shared/Types';
 
 export class Enemy extends Entity {
-    public damage: number; 
+    public readonly enemyType: EnemyType = 'KAMIKAZE';
+    public readonly stats: EntityStats;
+    public damage: number;
 
-    constructor(id:string, x:number, y:number, health:number, maxHealth: number, speed:number, damage: number){
-
-        super(id, x, y, health, maxHealth, speed);
-        this.damage = damage;
+    constructor(id: string, x: number, y: number, stats: EntityStats) {
+        super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed);
+        this.stats = { ...stats };
+        this.damage = stats.bodyDamage;
     }
 
     //Aqui vai a logica do swarm, e o bagulho de perseguir o jogador usando os vetores 

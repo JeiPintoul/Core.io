@@ -36,6 +36,22 @@ export class Entity {
     this.damageTimers.set(attackerId, currentTime);
   }
 
+  public getTimeSinceLastDamage(currentTime: number): number {
+    if (this.damageTimers.size === 0) {
+      return Infinity;
+    }
+
+    let mostRecentDamageTime = -Infinity;
+
+    for (const damageTime of this.damageTimers.values()) {
+      if (damageTime > mostRecentDamageTime) {
+        mostRecentDamageTime = damageTime;
+      }
+    }
+
+    return currentTime - mostRecentDamageTime;
+  }
+
   public takeDamage(amount: number): void {
     this.health -= amount; 
     // Event consumed by UI/FX systems to display damage feedback.
