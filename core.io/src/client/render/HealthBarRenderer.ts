@@ -80,6 +80,10 @@ export class HealthBarRenderer {
         health: number,
         maxHealth: number
     ) {
+        if (health >= maxHealth) {
+            return;
+        }
+
         const targetRatio = Math.max(0, health / maxHealth);
         const state = this.getOrCreateWorldState(entityId, targetRatio);
         const ratio = this.resolveSmoothedRatio(state, targetRatio);

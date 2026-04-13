@@ -23,7 +23,12 @@ export const GameEvents = {
     ENEMY_DESTROYED: 'enemy_destroyed',
     XP_UPDATE: 'xp_update',
     PROJECTILE_DESTROYED: 'projectile_destroyed',
-    WAVE_CLEARED: 'wave_cleared'
+    WAVE_CLEARED: 'wave_cleared',
+    WAVE_CLEAR_ANIMATION_START: 'wave_clear_animation_start',
+    UPGRADE_PHASE_STARTED: 'upgrade_phase_started',
+    WAVE_STARTING_ANIMATION_START: 'wave_starting_animation_start',
+    WAVE_SPAWNING_RESUMED: 'wave_spawning_resumed',
+    PROJECTILE_FIRED: 'projectile_fired'
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

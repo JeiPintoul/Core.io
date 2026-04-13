@@ -1,5 +1,6 @@
 
 import { emitGameEvent, GameEvents } from '../shared/EventBus';
+import type { BarrelConfig } from '../shared/Types';
 
 export class Entity { 
     public id: string; 
@@ -10,6 +11,7 @@ export class Entity {
     public speed: number; 
   public knockbackVelocity: { x: number; y: number };
   public damageTimers: Map<string, number>;
+  public barrels: BarrelConfig[];
 
   constructor(id:string, x:number, y:number, health:number, maxHealth: number, speed:number ){
     this.id = id;
@@ -20,6 +22,16 @@ export class Entity {
     this.speed = speed;
     this.knockbackVelocity = { x: 0, y: 0 };
     this.damageTimers = new Map<string, number>();
+    this.barrels = [];
+  }
+
+  public setBarrels(barrels: BarrelConfig[]): void {
+    this.barrels = barrels.map((barrel) => ({ ...barrel }));
+  }
+
+  public applyImpulse(impulseX: number, impulseY: number): void {
+    this.knockbackVelocity.x += impulseX;
+    this.knockbackVelocity.y += impulseY;
   }
 
   public canReceiveCollisionDamageFrom(attackerId: string, currentTime: number, cooldownMs: number): boolean {

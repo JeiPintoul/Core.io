@@ -9,6 +9,17 @@ export interface EntityStats {
     movementSpeed: number;
 }
 
+export interface BarrelConfig {
+    id: string;
+    offsetX: number;
+    offsetY: number;
+    angleOffset: number;
+    recoilForce: number;
+    damageMultiplier: number;
+    speedMultiplier: number;
+    lifespanMultiplier: number;
+}
+
 export type StatModifiers = Partial<EntityStats>;
 export type CardRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -129,6 +140,34 @@ export interface WaveClearedPayload {
     nextWave: number;
 }
 
+export interface WaveAnimationPayload {
+    wave: number;
+    durationMs: number;
+}
+
+export interface WaveClearAnimationPayload extends WaveAnimationPayload {
+    waveCleared: number;
+    nextWave: number;
+}
+
+export interface UpgradePhaseStartedPayload {
+    wave: number;
+    pendingUpgrades: number;
+}
+
+export interface WaveSpawningResumedPayload {
+    wave: number;
+}
+
+export interface ProjectileFiredPayload {
+    shooterId: string;
+    faction: ProjectileFaction;
+    x: number;
+    y: number;
+    angle: number;
+    recoilStrength: number;
+}
+
 export interface GameEventPayloads {
     player_input: InputState;
     state_update: GameState;
@@ -144,4 +183,9 @@ export interface GameEventPayloads {
     xp_update: XpUpdatePayload;
     projectile_destroyed: ProjectileDestroyedPayload;
     wave_cleared: WaveClearedPayload;
+    wave_clear_animation_start: WaveClearAnimationPayload;
+    upgrade_phase_started: UpgradePhaseStartedPayload;
+    wave_starting_animation_start: WaveAnimationPayload;
+    wave_spawning_resumed: WaveSpawningResumedPayload;
+    projectile_fired: ProjectileFiredPayload;
 }

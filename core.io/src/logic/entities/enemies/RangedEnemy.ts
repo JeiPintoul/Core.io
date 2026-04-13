@@ -3,10 +3,7 @@ import type { EntityStats, EnemyType } from '../../../shared/Types';
 
 export interface RangedShootRequest {
     ownerId: string;
-    spawnX: number;
-    spawnY: number;
-    dirX: number;
-    dirY: number;
+    aimAngle: number;
     stats: EntityStats;
 }
 
@@ -16,13 +13,24 @@ export class RangedEnemy extends Entity {
     public aimAngle = 0;
     public damage: number;
     private readonly preferredDistance = 400;
-    private readonly barrelLength = 20;
     private lastShotAtMs = 0;
 
     constructor(id: string, x: number, y: number, stats: EntityStats) {
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed);
         this.stats = { ...stats };
         this.damage = stats.bodyDamage;
+        this.setBarrels([
+            {
+                id: 'ranged_front_barrel',
+                offsetX: 22,
+                offsetY: 0,
+                angleOffset: 0,
+                recoilForce: 14,
+                damageMultiplier: 1,
+                speedMultiplier: 1,
+                lifespanMultiplier: 1
+            }
+        ]);
     }
 
     public update(
@@ -56,15 +64,9 @@ export class RangedEnemy extends Entity {
         }
 
         this.lastShotAtMs = currentTimeMs;
-        const dirX = Math.cos(this.aimAngle);
-        const dirY = Math.sin(this.aimAngle);
-
         shootProjectile({
             ownerId: this.id,
-            spawnX: this.x + (dirX * this.barrelLength),
-            spawnY: this.y + (dirY * this.barrelLength),
-            dirX,
-            dirY,
+            aimAngle: this.aimAngle,
             stats: this.stats
         });
     }
