@@ -1,149 +1,65 @@
 # Core.io
 
-**Core.io** é um roguelike de arena web estilo *.io*, focado em sobrevivência contra hordas de inimigos. O jogador evolui seu tanque adquirindo novas habilidades a cada nível para suportar ondas progressivamente mais difíceis.
+Core.io é um roguelike de arena desenvolvido para web, inspirado na estética e mecânica de jogos estilo .io. O objetivo central é a sobrevivência contra hordas progressivas de inimigos através da evolução constante do tanque do jogador por meio de um sistema de cartas de upgrade.
 
-O projeto segue uma arquitetura **online-ready** (cliente e lógica desacoplados) para facilitar evolução futura para multiplayer.
+O projeto utiliza uma arquitetura desacoplada entre cliente (renderização) e lógica (regras de negócio), preparando o sistema para futuras implementações de modo cooperativo e multiplayer.
 
-## Visão Geral (Estado Atual)
+## Tecnologias e Ferramentas
 
-- Arena: **5000 x 5000**
-- Loop de lógica próprio (60 FPS) no `GameEngine`
-- Renderização no Phaser (cliente) via estado emitido no EventBus
-- Input desacoplado da lógica
-- Progressão com XP e level up automático
+* Linguagem: TypeScript
+* Engine Gráfica: Phaser 3
+* Comunicação: EventEmitter3 (Arquitetura orientada a eventos)
+* Bundler: Vite
+* Interface: HTML5 e CSS3 para HUD e menus
 
-## Tecnologias
+## Estrutura do Projeto
 
-- **TypeScript**
-- **Phaser 3**
-- **EventEmitter3**
-- **Vite**
-- **HTML/CSS** para HUD e menus
+O código está organizado em domínios isolados para garantir manutenibilidade:
 
-## Arquitetura (Resumo)
-
-Separação clara por domínio:
-
-- `src/logic`: regras de jogo (movimento, spawn, colisão, dano, XP)
-- `src/client`: renderização, câmera, input, HUD e animações visuais
-- `src/shared`: tipos e contratos de evento
-
-Comunicação entre lógica e cliente feita por **EventBus** (Pub/Sub), sem acoplamento direto.
-
-## Estrutura de Pastas
-
-```text
-core.io/
-├── src/
-│   ├── client/
-│   │   ├── PhaserGame.ts
-│   │   ├── scenes/GameScene.ts
-│   │   ├── render/
-│   │   │   ├── GameRenderer.ts
-│   │   │   └── HealthBarRenderer.ts
-│   │   ├── input/InputHandler.ts
-│   │   └── constants/GameConstants.ts
-│   ├── logic/
-│   │   ├── GameEngine.ts
-│   │   ├── Entity.ts
-│   │   ├── Player.ts
-│   │   └── Enemy.ts
-│   ├── shared/
-│   │   ├── EventBus.ts
-│   │   └── Types.ts
-│   ├── main.ts
-│   └── style.css
-└── README.md
-```
+* `src/logic`: Núcleo de regras de jogo, incluindo física de colisão, inteligência artificial e gestão de estado.
+    * `src/logic/entities`: Implementação de classes para o jogador e diferentes tipos de inimigos.
+    * `src/logic/constants`: Configurações de hordas (WaveConfig) e base de dados de cartas.
+* `src/client`: Camada de renderização, entrada de dados do usuário e interface visual.
+    * `src/client/render`: Lógica de desenho de entidades, projéteis e efeitos visuais.
+    * `src/client/hud`: Controladores para os menus de upgrade, pausa e status.
+* `src/shared`: Tipagens globais, contratos de eventos e utilitários matemáticos de combate.
 
 ## Mecânicas Implementadas
 
-### Movimento, Mira e Câmera
+### Sistema de Hordas e Spawn
+O jogo é processado em ondas definidas por dados. Cada horda possui pesos específicos para diferentes tipos de inimigos e multiplicadores de atributos que escalam com o tempo. O spawn ocorre fora do campo de visão do jogador para manter a fluidez do combate.
 
-- Movimento em 8 direções com normalização de diagonal
-- Mira do tanque baseada estritamente em:
-  `Math.atan2(mouse.y - player.y, mouse.x - player.x)`
-- Câmera com `startFollow` suave
-- Escala responsiva com `Phaser.Scale.RESIZE` e centralização
+### Progressão Roguelike
+Ao acumular experiência (XP), o jogador sobe de nível e acessa a fase de upgrade. Este sistema apresenta três cartas aleatórias com raridades distintas (Comum, Rara, Épica) e cores independentes que influenciarão a evolução visual futura do tanque.
 
-### Combate e Colisão
+### Física e Combate
+* Movimentação com normalização de vetores e câmera fixa em 1920x1080 para garantir equilíbrio competitivo.
+* Sistema de colisão diferenciado (Soft/Hard) para evitar sobreposição excessiva de entidades.
+* Lógica de penetração de projéteis baseada em pontos de vida da bala, permitindo que tiros poderosos atravessem múltiplos alvos.
 
-- Tiro contínuo com projétil saindo da ponta do cano
-- Colisão por raio (círculos)
-- Sistema **Soft/Hard Collision**:
-  - **Enemy x Enemy (soft):** só correção posicional suave
-  - **Player x Enemy (hard):** correção posicional + impulso de knockback
-- Knockback com velocidade dedicada (`knockbackVelocity`) + damping por tick
-- Dano de contato com **micro-cooldown por alvo e por atacante** (100ms), sem i-frame global
+## Instalação e Execução
 
-### Dano e Progressão
+Para rodar o ambiente de desenvolvimento localmente:
 
-- Dano de projétil com penetração
-- XP por inimigo derrotado
-- Level up automático
-- Burst de XP pode gerar múltiplos level ups seguidos
+1. Instalar as dependências:
+   ```bash
+   npm install
+   ```
 
-## Game Feel e Feedback Visual
+2. Executar o servidor de Desenvolvimento:
+   ```bash
+   npm run dev
+   ```
 
-- Barra de HP com suavização por tween (sem “salto seco”)
-- Animação de morte de entidade com tween
-- Duração da animação de morte centralizada em constante:
-  `DEATH_ANIMATION_DURATION_MS = 800`
-- Ao morrer:
-  - input é bloqueado imediatamente
-  - engine é pausada imediatamente
-  - menu de Game Over aparece após o delay da animação
+3. Gerar o build de Produção:
+   ```bash
+   npm run build
+   ```
 
-## Fluxo Simplificado
+## Workflow de Desenvolvimento
+O projeto segue um fluxo de trabalho baseado em branches de funcionalidade:
 
-```text
-InputHandler -> EventBus(player_input)
-GameEngine.tick/update -> EventBus(state_update)
-GameScene/GameRenderer -> desenha frame
+* `feat/`: Novas funcionalidades e mecânicas.
+* `fix/`: Correções de bugs e ajustes finos.
 
-Colisão:
-- soft (mesma facção): empurra
-- hard (facções diferentes): empurra + knockback + dano com micro-cooldown
-```
-
-## Como Rodar
-
-1. Instale dependências:
-
-```bash
-npm install
-```
-
-2. Rode em desenvolvimento:
-
-```bash
-npm run dev
-```
-
-3. Abra no navegador:
-
-```text
-http://localhost:5173
-```
-
-## Fluxo de Git da Equipe
-
-- Não commitar direto na `main`
-- Trabalhar em branch de feature/correção
-- Abrir PR para revisão
-
-Padrão de branch:
-
-- `feat/nome-da-feature`
-- `fix/nome-do-bug`
-
-## Roadmap Curto
-
-- UI de progressão (XP/nível/upgrades)
-- Balanceamento fino de combate
-- Novos tipos de inimigo
-- Multiplayer (futuro)
-
----
-
-Projeto acadêmico da equipe **Core.io**.
+As contribuições devem ser enviadas via Pull Request para revisão do Tech Lead.
