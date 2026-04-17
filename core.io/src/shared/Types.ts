@@ -83,6 +83,16 @@ export interface ProjectileData {
     radius: number;
 }
 
+export interface ObjectiveState {
+    id: string;
+    title: string;
+    description: string;
+    progress: number;
+    target: number;
+    completed: boolean;
+    failed: boolean;
+}
+
 export interface GameState {
     player: EntityData;
     enemies: EntityData[];
@@ -90,6 +100,7 @@ export interface GameState {
     arena: { width: number; height: number };
     remainingEnemies: number;
     isPaused: boolean;
+    objective: ObjectiveState | null;
 }
 
 export interface InputState {
@@ -168,6 +179,16 @@ export interface ProjectileFiredPayload {
     recoilStrength: number;
 }
 
+export interface ObjectiveCompletedPayload {
+    title: string;
+    rewardUpgrades: number;
+}
+
+export interface AudioSettingsPayload {
+    volume: number;
+    muted: boolean;
+}
+
 export interface GameEventPayloads {
     player_input: InputState;
     state_update: GameState;
@@ -188,4 +209,7 @@ export interface GameEventPayloads {
     wave_starting_animation_start: WaveAnimationPayload;
     wave_spawning_resumed: WaveSpawningResumedPayload;
     projectile_fired: ProjectileFiredPayload;
+    objective_completed: ObjectiveCompletedPayload;
+    audio_settings_changed: AudioSettingsPayload;
+    audio_restart_requested: undefined;
 }

@@ -1,6 +1,6 @@
 import { GameEvents, onGameEvent } from '../../shared/EventBus';
 import { calculatePlayerShotCooldownSeconds } from '../../shared/CombatMath';
-import type { EntityStats, GameState, StatModifiers } from '../../shared/Types';
+import type { EntityStats, GameState, ObjectiveState, StatModifiers } from '../../shared/Types';
 
 const DEFAULT_PLAYER_STATS: EntityStats = {
     maxHealth: 0,
@@ -20,7 +20,7 @@ export class HudController {
     private currentLevel = 1;
     private currentXp = 0;
     private xpRequired = 100;
-    private currentHorde = 1;
+    private currentWave = 1;
     private currentPlayerHealth = 0;
     private currentPlayerStats: EntityStats = { ...DEFAULT_PLAYER_STATS };
     private activePreviewModifiers: StatModifiers | null = null;
@@ -28,6 +28,7 @@ export class HudController {
     private readonly waveHeaderEl = this.getEl<HTMLElement>('hud-wave-header');
     private readonly waveTransitionEl = this.getEl<HTMLElement>('hud-wave-transition');
     private readonly enemyCounterEl = this.getEl<HTMLElement>('hud-enemy-counter');
+    private readonly objectiveEl = this.getEl<HTMLElement>('hud-objective');
     private readonly statsTriggerEl = this.getEl<HTMLElement>('hud-stats');
     private readonly levelLabelEl = this.getEl<HTMLElement>('hud-level-label');
     private readonly xpProgressEl = this.getEl<HTMLElement>('hud-xp-progress');
@@ -49,6 +50,7 @@ export class HudController {
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
+        this.renderObjective(null);
         this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
     }
 
@@ -56,7 +58,7 @@ export class HudController {
         this.currentLevel = 1;
         this.currentXp = 0;
         this.xpRequired = 100;
-        this.currentHorde = 1;
+        this.currentWave = 1;
         this.currentPlayerHealth = 0;
         this.currentPlayerStats = { ...DEFAULT_PLAYER_STATS };
 
@@ -69,6 +71,7 @@ export class HudController {
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
+        this.renderObjective(null);
         this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
     }
 
@@ -122,22 +125,22 @@ export class HudController {
 
         this.unsubscribers.push(
             onGameEvent(GameEvents.WAVE_CLEARED, ({ nextWave }) => {
-                this.currentHorde = Math.max(1, nextWave);
+                this.currentWave = Math.max(1, nextWave);
                 this.renderWaveHeader();
             })
         );
 
         this.unsubscribers.push(
             onGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, ({ waveCleared, nextWave, durationMs }) => {
-                this.currentHorde = Math.max(1, nextWave);
+                this.currentWave = Math.max(1, nextWave);
                 this.renderWaveHeader();
-                this.playWaveMessage(`WAVE ${waveCleared} CLEARED`, true, durationMs);
+                this.playWaveMessage(`ONDA ${waveCleared} CONCLUIDA`, true, durationMs);
             })
         );
 
         this.unsubscribers.push(
             onGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, ({ wave, durationMs }) => {
-                this.playWaveMessage(`WAVE ${wave} STARTING...`, false, durationMs);
+                this.playWaveMessage(`ONDA ${wave} INICIANDO...`, false, durationMs);
             })
         );
 
@@ -153,6 +156,13 @@ export class HudController {
                 this.hideWaveTransition();
                 this.setStatsPinned(false);
                 this.clearStatPreview();
+                this.renderObjective(null);
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.OBJECTIVE_COMPLETED, ({ title, rewardUpgrades }) => {
+                this.playWaveMessage(`${title}: +${rewardUpgrades} aprimoramento`, false, 1600);
             })
         );
     }
@@ -166,6 +176,7 @@ export class HudController {
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(state.remainingEnemies);
+        this.renderObjective(state.objective);
 
         if (this.activePreviewModifiers) {
             this.renderStatsPreview(this.activePreviewModifiers);
@@ -180,7 +191,7 @@ export class HudController {
             return;
         }
 
-        this.levelLabelEl.textContent = `Level ${this.currentLevel}`;
+        this.levelLabelEl.textContent = `Nivel ${this.currentLevel}`;
     }
 
     private renderWaveHeader(): void {
@@ -188,7 +199,7 @@ export class HudController {
             return;
         }
 
-        this.waveHeaderEl.textContent = `Horde ${this.currentHorde}`;
+        this.waveHeaderEl.textContent = `Onda ${this.currentWave}`;
     }
 
     private renderXpBar(): void {
@@ -206,7 +217,7 @@ export class HudController {
             return;
         }
 
-        this.xpProgressEl.textContent = `Level ${this.currentLevel} - ${this.fmt0(this.currentXp)}/${this.fmt0(this.xpRequired)} XP`;
+        this.xpProgressEl.textContent = `Nivel ${this.currentLevel} - ${this.fmt0(this.currentXp)}/${this.fmt0(this.xpRequired)} XP`;
     }
 
     private renderEnemyCount(count: number): void {
@@ -215,6 +226,23 @@ export class HudController {
         }
 
         this.enemyCounterEl.textContent = `Inimigos Restantes: ${Math.max(0, count)}`;
+    }
+
+    private renderObjective(objective: ObjectiveState | null): void {
+        if (!this.objectiveEl) {
+            return;
+        }
+
+        if (!objective) {
+            this.objectiveEl.textContent = 'Objetivo: --';
+            this.objectiveEl.classList.remove('is-complete', 'is-failed');
+            return;
+        }
+
+        const progressText = `${Math.floor(objective.progress)}/${Math.floor(objective.target)}`;
+        this.objectiveEl.textContent = `Objetivo: ${objective.description} (${progressText})`;
+        this.objectiveEl.classList.toggle('is-complete', objective.completed);
+        this.objectiveEl.classList.toggle('is-failed', objective.failed);
     }
 
     private renderStats(health: number, stats: EntityStats): void {

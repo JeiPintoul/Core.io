@@ -28,7 +28,10 @@ export const GameEvents = {
     UPGRADE_PHASE_STARTED: 'upgrade_phase_started',
     WAVE_STARTING_ANIMATION_START: 'wave_starting_animation_start',
     WAVE_SPAWNING_RESUMED: 'wave_spawning_resumed',
-    PROJECTILE_FIRED: 'projectile_fired'
+    PROJECTILE_FIRED: 'projectile_fired',
+    OBJECTIVE_COMPLETED: 'objective_completed',
+    AUDIO_SETTINGS_CHANGED: 'audio_settings_changed',
+    AUDIO_RESTART_REQUESTED: 'audio_restart_requested'
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

@@ -13,7 +13,7 @@
       <div id="hud-layer" aria-live="polite">
         <button id="btn-pause" class="hud-card" aria-label="Pausar">||</button>
 
-        <div id="hud-wave-header" class="hud-card">Horde 1</div>
+        <div id="hud-wave-header" class="hud-card">Onda 1</div>
 
         <div id="hud-wave-transition" class="hud-transition" hidden></div>
 
@@ -35,10 +35,11 @@
         </div>
 
         <div id="hud-enemy-counter" class="hud-card">Inimigos Restantes: 0</div>
+        <div id="hud-objective" class="hud-card">Objetivo: --</div>
 
         <div id="hud-xp-panel" class="hud-card">
-          <span id="hud-level-label">Level 1</span>
-          <span id="hud-xp-progress">Level 1 - 0/100 XP</span>
+          <span id="hud-level-label">Nivel 1</span>
+          <span id="hud-xp-progress">Nivel 1 - 0/100 XP</span>
           <div id="hud-xp-track">
             <div id="hud-xp-fill"></div>
           </div>
@@ -49,6 +50,12 @@
         <h2>PAUSED</h2>
         <button id="btn-resume">RESUME</button>
         <button id="btn-restart">RESTART</button>
+        <button id="btn-audio">AUDIO</button>
+        <div id="pause-audio-panel">
+          <button id="btn-mute" aria-label="Ativar ou desativar musica">Som: ON</button>
+          <label for="music-volume">Volume</label>
+          <input id="music-volume" type="range" min="0" max="100" value="32" />
+        </div>
       </div>
 
       <div id="upgrade-modal" aria-live="polite">

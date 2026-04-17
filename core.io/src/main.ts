@@ -15,9 +15,14 @@ const hudController = new HudController();
 type UiMode = 'INITIAL_MENU' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
 
 const menuInicial = document.getElementById('menu-inicial');
+const hudLayerEl = document.getElementById('hud-layer');
 const btnJogar = document.getElementById('btn-jogar') as HTMLButtonElement | null;
 const playerNameInput = document.getElementById('player-name') as HTMLInputElement | null;
 const btnPause = document.getElementById('btn-pause') as HTMLButtonElement | null;
+const btnAudio = document.getElementById('btn-audio') as HTMLButtonElement | null;
+const btnMute = document.getElementById('btn-mute') as HTMLButtonElement | null;
+const musicVolumeInput = document.getElementById('music-volume') as HTMLInputElement | null;
+const pauseAudioPanelEl = document.getElementById('pause-audio-panel');
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume') as HTMLButtonElement | null;
 const btnRestart = document.getElementById('btn-restart') as HTMLButtonElement | null;
@@ -30,6 +35,8 @@ const hudStatsEl = document.getElementById('hud-stats');
 let gameOverUiTimeoutId: number | null = null;
 let waitingUpgradeSelection = false;
 let uiMode: UiMode = menuInicial ? 'INITIAL_MENU' : 'IN_GAME';
+let musicMuted = false;
+let musicVolume = Number(musicVolumeInput?.value ?? '32') / 100;
 
 const RARITY_LABELS_PTBR: Record<CardRarity, string> = {
     COMMON: 'COMUM',
@@ -95,12 +102,15 @@ function setUiMode(nextMode: UiMode): void {
 }
 
 function applyUiModeEffects(): void {
-    if (!hudStatsEl) {
-        return;
-    }
+    const shouldShowHud = uiMode !== 'INITIAL_MENU' && uiMode !== 'GAME_OVER';
+    const shouldShowStats = shouldShowHud;
 
-    const shouldShowStats = uiMode !== 'INITIAL_MENU';
-    hudStatsEl.classList.toggle('is-hidden', !shouldShowStats);
+    hudLayerEl?.classList.toggle('is-hidden', !shouldShowHud);
+    hudStatsEl?.classList.toggle('is-hidden', !shouldShowStats);
+
+    if (uiMode !== 'PAUSED') {
+        setPauseAudioPanelOpen(false);
+    }
 }
 
 function applyPauseUi(isPaused: boolean): void {
@@ -112,12 +122,38 @@ function applyPauseUi(isPaused: boolean): void {
     btnPause.classList.toggle('is-paused', isPaused);
 }
 
+function emitAudioSettings(): void {
+    emitGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, {
+        volume: musicVolume,
+        muted: musicMuted
+    });
+}
+
+function updateAudioHud(): void {
+    if (btnMute) {
+        btnMute.textContent = musicMuted ? 'Som: OFF' : 'Som: ON';
+        btnMute.classList.toggle('is-muted', musicMuted);
+    }
+
+    if (musicVolumeInput) {
+        musicVolumeInput.value = Math.round(musicVolume * 100).toString();
+    }
+}
+
+function setPauseAudioPanelOpen(open: boolean): void {
+    pauseAudioPanelEl?.classList.toggle('is-open', open);
+}
+
 function setPauseMenuVisible(visible: boolean): void {
     if (!pauseMenu) {
         return;
     }
 
     pauseMenu.style.display = visible ? 'flex' : 'none';
+
+    if (!visible) {
+        setPauseAudioPanelOpen(false);
+    }
 }
 
 function isPauseMenuVisible(): boolean {
@@ -301,7 +337,7 @@ function normalizePlayerName(rawName: string): string {
     const trimmedName = rawName.trim();
 
     if (trimmedName.length === 0) {
-        return 'Player';
+        return 'Jogador';
     }
 
     return trimmedName.slice(0, 16);
@@ -389,6 +425,36 @@ if (btnPause) {
     });
 }
 
+if (btnAudio) {
+    btnAudio.addEventListener('click', () => {
+        if (!isPauseMenuVisible()) {
+            return;
+        }
+
+        const isOpen = pauseAudioPanelEl?.classList.contains('is-open') ?? false;
+        setPauseAudioPanelOpen(!isOpen);
+    });
+}
+
+if (btnMute) {
+    btnMute.addEventListener('click', () => {
+        musicMuted = !musicMuted;
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
+if (musicVolumeInput) {
+    musicVolumeInput.addEventListener('input', () => {
+        const rawValue = Number(musicVolumeInput.value);
+        const clampedValue = Math.max(0, Math.min(100, rawValue));
+        musicVolume = clampedValue / 100;
+
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
 if (btnResume) {
     btnResume.addEventListener('click', () => {
         if (!isPauseMenuVisible()) {
@@ -413,6 +479,7 @@ if (btnRestart) {
 
         engine.reset();
         engine.start();
+        emitGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, undefined);
         setUiMode('IN_GAME');
 
         if (menuInicial) {
@@ -485,7 +552,10 @@ function preventNameInputPropagation(): void {
 
 preventNameInputPropagation();
 applyUiModeEffects();
+updateAudioHud();
+emitAudioSettings();
 
 window.addEventListener('beforeunload', () => {
+    engine.destroy();
     hudController.destroy();
 });

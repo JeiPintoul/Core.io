@@ -15,6 +15,9 @@ import { ARENA } from '../constants/GameConstants';
 export class GameScene extends Phaser.Scene {
     private gameRenderer!: GameRenderer;
     private inputHandler!: InputHandler;
+    private bgm: Phaser.Sound.BaseSound | null = null;
+    private musicVolume = 0.32;
+    private isMusicMuted = false;
     private latestState: GameState | null = null;
     private unsubscribeStateUpdate: (() => void) | null = null;
     private unsubscribeEntityDestroyed: (() => void) | null = null;
@@ -22,10 +25,16 @@ export class GameScene extends Phaser.Scene {
     private unsubscribeProjectileDestroyed: (() => void) | null = null;
     private unsubscribeProjectileFired: (() => void) | null = null;
     private unsubscribeGameOver: (() => void) | null = null;
+    private unsubscribeAudioSettingsChanged: (() => void) | null = null;
+    private unsubscribeAudioRestartRequested: (() => void) | null = null;
     private cameraFollowTarget!: Phaser.GameObjects.Zone;
 
     constructor() {
         super({ key: 'GameScene' });
+    }
+
+    preload() {
+        this.load.audio('bgm', 'audio/bgm.mp3');
     }
 
     create() {
@@ -48,6 +57,7 @@ export class GameScene extends Phaser.Scene {
         this.gameRenderer = new GameRenderer(this, this.cameras.main, gfxWorld, gfxGame, gfxPlayer, gfxHud);
         this.inputHandler = new InputHandler(this, this.cameras.main);
         this.inputHandler.disable();
+        this.startBackgroundMusic();
 
         // Desenhar mundo estático
         this.gameRenderer.drawStaticWorld();
@@ -88,6 +98,16 @@ export class GameScene extends Phaser.Scene {
             this.lockInputAfterDeath();
         });
 
+        this.unsubscribeAudioSettingsChanged = onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, ({ volume, muted }) => {
+            this.musicVolume = Phaser.Math.Clamp(volume, 0, 1);
+            this.isMusicMuted = muted;
+            this.applyBackgroundMusicSettings();
+        });
+
+        this.unsubscribeAudioRestartRequested = onGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, () => {
+            this.restartBackgroundMusic();
+        });
+
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanupListeners());
         this.events.once(Phaser.Scenes.Events.DESTROY, () => this.cleanupListeners());
     }
@@ -122,9 +142,67 @@ export class GameScene extends Phaser.Scene {
         this.inputHandler.disable();
     }
 
+    private startBackgroundMusic(): void {
+        if (!this.cache.audio.exists('bgm')) {
+            return;
+        }
+
+        this.bgm = this.sound.add('bgm', {
+            loop: true,
+            volume: this.musicVolume
+        });
+        this.applyBackgroundMusicSettings();
+
+        if (this.sound.locked) {
+            this.input.once('pointerdown', () => {
+                if (this.bgm && !this.bgm.isPlaying) {
+                    this.bgm.play();
+                }
+            });
+            return;
+        }
+
+        this.bgm.play();
+    }
+
+    private applyBackgroundMusicSettings(): void {
+        if (!this.bgm) {
+            return;
+        }
+
+        const controllableBgm = this.bgm as unknown as {
+            setMute: (muted: boolean) => void;
+            setVolume: (volume: number) => void;
+        };
+
+        controllableBgm.setMute(this.isMusicMuted);
+        controllableBgm.setVolume(this.musicVolume);
+    }
+
+    private restartBackgroundMusic(): void {
+        if (!this.bgm) {
+            return;
+        }
+
+        this.bgm.stop();
+
+        if (this.sound.locked) {
+            return;
+        }
+
+        this.bgm.play();
+        this.applyBackgroundMusicSettings();
+    }
+
     private cleanupListeners(): void {
         this.cameras.main.stopFollow();
         this.gameRenderer.destroy();
+
+        if (this.bgm) {
+            this.bgm.stop();
+            this.bgm.destroy();
+            this.bgm = null;
+        }
 
         if (this.cameraFollowTarget) {
             this.cameraFollowTarget.destroy();
@@ -158,6 +236,16 @@ export class GameScene extends Phaser.Scene {
         if (this.unsubscribeGameOver) {
             this.unsubscribeGameOver();
             this.unsubscribeGameOver = null;
+        }
+
+        if (this.unsubscribeAudioSettingsChanged) {
+            this.unsubscribeAudioSettingsChanged();
+            this.unsubscribeAudioSettingsChanged = null;
+        }
+
+        if (this.unsubscribeAudioRestartRequested) {
+            this.unsubscribeAudioRestartRequested();
+            this.unsubscribeAudioRestartRequested = null;
         }
     }
 }

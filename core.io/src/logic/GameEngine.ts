@@ -1,5 +1,5 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../shared/EventBus';
-import type { CardSelectedPayload, EnemyType, EntityStats, GameState, InputState, ProjectileFaction } from '../shared/Types';
+import type { CardSelectedPayload, EnemyType, EntityStats, GameState, InputState, ObjectiveState, ProjectileFaction } from '../shared/Types';
 import { Player } from './entities/player/Player';
 import { Enemy } from './entities/enemies/Enemy';
 import { RangedEnemy, type RangedShootRequest } from './entities/enemies/RangedEnemy';
@@ -67,6 +67,20 @@ enum EngineState {
 }
 
 type HostileEnemy = Enemy | RangedEnemy;
+type ObjectiveKind = 'KILL_COUNT' | 'RANGED_KILL_COUNT' | 'NO_DAMAGE_DURATION';
+
+interface ActiveObjectiveState {
+    id: string;
+    kind: ObjectiveKind;
+    title: string;
+    description: string;
+    progress: number;
+    target: number;
+    completed: boolean;
+    failed: boolean;
+    rewardGranted: boolean;
+    createdAtMs: number;
+}
 
 export class GameEngine {
     private player: Player;
@@ -114,6 +128,9 @@ export class GameEngine {
     private enemyIdCounter = 0;
     private isRunning = false;
     private isPaused = false;
+    private animationFrameRequestId: number | null = null;
+    private readonly maxFrameDeltaSeconds = 0.05;
+    private readonly eventUnsubscribers: Array<() => void> = [];
 
     private engineState: EngineState = EngineState.WAVE_ACTIVE;
     private currentWave = 1;
@@ -121,6 +138,7 @@ export class GameEngine {
     private enemiesKilledThisWave = 0;
     private waveClearAnimationEndsAtMs = 0;
     private waveStartingAnimationEndsAtMs = 0;
+    private currentObjective: ActiveObjectiveState | null = null;
 
     private readonly processedEnemyDeathIds = new Set<string>();
 
@@ -139,7 +157,7 @@ export class GameEngine {
         this.upgradeManager = new UpgradeManager();
 
         this.arenaSize = { width: ARENA.width, height: ARENA.height };
-        this.player = this.createPlayer('Player');
+        this.player = this.createPlayer('Jogador');
         this.enemies = [];
         this.projectiles = [];
         this.currentInput = {
@@ -156,54 +174,64 @@ export class GameEngine {
         this.lastTick = now;
         this.lastShotTime = now;
         this.lastSpawnTime = now;
+        this.resetObjectiveForCurrentWave(now);
 
         this.setupListeners();
     }
 
     private setupListeners(): void {
-        onGameEvent(GameEvents.PLAYER_INPUT, (input: InputState) => {
-            this.currentInput = input;
-        });
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.PLAYER_INPUT, (input: InputState) => {
+                this.currentInput = input;
+            })
+        );
 
-        onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, () => {
-            this.handleUpgradeModalRequested();
-        });
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, () => {
+                this.handleUpgradeModalRequested();
+            })
+        );
 
-        onGameEvent(GameEvents.CARD_SELECTED, (selection) => {
-            this.handleCardSelected(selection);
-        });
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.CARD_SELECTED, (selection) => {
+                this.handleCardSelected(selection);
+            })
+        );
 
-        onGameEvent(GameEvents.ENTITY_DESTROYED, (data: { id: string }) => {
-            if (data.id === this.player.id) {
-                this.stop();
-                this.player.isUpgrading = false;
-                emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
-                emitGameEvent(GameEvents.GAME_OVER, undefined);
-                return;
-            }
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.ENTITY_DESTROYED, (data: { id: string }) => {
+                if (data.id === this.player.id) {
+                    this.stop();
+                    this.player.isUpgrading = false;
+                    emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+                    emitGameEvent(GameEvents.GAME_OVER, undefined);
+                    return;
+                }
 
-            const enemy = this.enemies.find((candidate) => candidate.id === data.id);
-            if (!enemy) {
-                return;
-            }
+                const enemy = this.enemies.find((candidate) => candidate.id === data.id);
+                if (!enemy) {
+                    return;
+                }
 
-            if (this.processedEnemyDeathIds.has(enemy.id)) {
-                return;
-            }
+                if (this.processedEnemyDeathIds.has(enemy.id)) {
+                    return;
+                }
 
-            this.processedEnemyDeathIds.add(enemy.id);
-            emitGameEvent(GameEvents.ENEMY_DESTROYED, {
-                id: enemy.id,
-                xpDropped: ENEMY_XP_DROP,
-                x: enemy.x,
-                y: enemy.y,
-                radius: this.enemyRadius
-            });
+                this.processedEnemyDeathIds.add(enemy.id);
+                emitGameEvent(GameEvents.ENEMY_DESTROYED, {
+                    id: enemy.id,
+                    xpDropped: ENEMY_XP_DROP,
+                    x: enemy.x,
+                    y: enemy.y,
+                    radius: this.enemyRadius
+                });
+                this.onEnemyKilledForObjective(enemy);
 
-            if (this.engineState === EngineState.WAVE_ACTIVE) {
-                this.enemiesKilledThisWave += 1;
-            }
-        });
+                if (this.engineState === EngineState.WAVE_ACTIVE) {
+                    this.enemiesKilledThisWave += 1;
+                }
+            })
+        );
     }
 
     private createPlayer(name: string): Player {
@@ -239,12 +267,28 @@ export class GameEngine {
         this.isRunning = true;
         this.isPaused = false;
         this.lastTick = performance.now();
-        this.tick();
+        this.scheduleNextTick();
     }
 
     public stop(): void {
         this.isRunning = false;
         this.isPaused = false;
+
+        if (this.animationFrameRequestId !== null) {
+            cancelAnimationFrame(this.animationFrameRequestId);
+            this.animationFrameRequestId = null;
+        }
+    }
+
+    public destroy(): void {
+        this.stop();
+        this.player.destroy();
+
+        for (const unsubscribe of this.eventUnsubscribers) {
+            unsubscribe();
+        }
+
+        this.eventUnsubscribers.length = 0;
     }
 
     public togglePause(): boolean {
@@ -261,7 +305,7 @@ export class GameEngine {
         return this.isPaused;
     }
 
-    public reset(playerName: string = 'Player'): void {
+    public reset(playerName: string = 'Jogador'): void {
         this.player.destroy();
         this.player = this.createPlayer(playerName);
 
@@ -283,31 +327,37 @@ export class GameEngine {
         this.enemiesKilledThisWave = 0;
         this.waveClearAnimationEndsAtMs = 0;
         this.waveStartingAnimationEndsAtMs = 0;
+        this.resetObjectiveForCurrentWave(now);
         this.player.isUpgrading = false;
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
     }
 
-    private tick(): void {
+    private scheduleNextTick(): void {
+        this.animationFrameRequestId = requestAnimationFrame(this.tick);
+    }
+
+    private tick = (currentTimeMs: number): void => {
         if (!this.isRunning) {
+            this.animationFrameRequestId = null;
             return;
         }
 
         if (this.isPaused) {
-            this.lastTick = performance.now();
+            this.lastTick = currentTimeMs;
             this.emitStateUpdate();
-            setTimeout(() => this.tick(), 1000 / 60);
+            this.scheduleNextTick();
             return;
         }
 
-        const now = performance.now();
-        const dt = (now - this.lastTick) / 1000;
-        this.lastTick = now;
+        const rawDt = (currentTimeMs - this.lastTick) / 1000;
+        const dt = Math.min(this.maxFrameDeltaSeconds, Math.max(0, rawDt));
+        this.lastTick = currentTimeMs;
 
-        this.update(dt, now);
+        this.update(dt, currentTimeMs);
         this.emitStateUpdate();
 
-        setTimeout(() => this.tick(), 1000 / 60);
-    }
+        this.scheduleNextTick();
+    };
 
     private update(dt: number, currentTime: number): void {
         const playerStats = this.syncPlayerCoreStats();
@@ -331,6 +381,7 @@ export class GameEngine {
             this.trySpawnEnemies(currentTime);
         }
 
+        this.updateObjectiveProgress(currentTime);
         this.checkCollisions(currentTime);
         this.advanceWaveState(currentTime);
     }
@@ -371,7 +422,8 @@ export class GameEngine {
             })),
             arena: this.arenaSize,
             remainingEnemies: this.getRemainingEnemiesInWave(),
-            isPaused: this.isPaused
+            isPaused: this.isPaused,
+            objective: this.buildObjectiveState()
         };
 
         emitGameEvent(GameEvents.STATE_UPDATE, exportState);
@@ -874,6 +926,10 @@ export class GameEngine {
 
         target.takeDamage(flatDamage);
         target.registerCollisionDamageFrom(attacker.id, currentTime);
+
+        if (target instanceof Player) {
+            this.onPlayerDamagedForObjective();
+        }
     }
 
     private isEnemyEntity(entity: Entity): entity is HostileEnemy {
@@ -989,6 +1045,10 @@ export class GameEngine {
             if (glancingDamage > 0) {
                 target.takeDamage(glancingDamage);
                 target.registerCollisionDamageFrom(`projectile:${projectile.id}`, currentTime);
+
+                if (target instanceof Player) {
+                    this.onPlayerDamagedForObjective();
+                }
             }
 
             this.applyProjectileImpactImpulse(target, projectile, true);
@@ -1000,6 +1060,11 @@ export class GameEngine {
 
         target.takeDamage(effectiveDamage);
         target.registerCollisionDamageFrom(`projectile:${projectile.id}`, currentTime);
+
+        if (target instanceof Player) {
+            this.onPlayerDamagedForObjective();
+        }
+
         this.applyProjectileImpactImpulse(target, projectile, false);
 
         projectile.health -= targetBodyDamage;
@@ -1174,6 +1239,7 @@ export class GameEngine {
     private resumeWaveSpawning(currentTime: number): void {
         this.engineState = EngineState.WAVE_ACTIVE;
         this.lastSpawnTime = currentTime;
+        this.resetObjectiveForCurrentWave(currentTime);
 
         emitGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, {
             wave: this.currentWave
@@ -1253,6 +1319,138 @@ export class GameEngine {
         emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
             upgradesRemaining,
             options
+        });
+    }
+
+    private resetObjectiveForCurrentWave(currentTimeMs: number): void {
+        const waveBucket = (this.currentWave - 1) % 3;
+
+        if (waveBucket === 0) {
+            this.currentObjective = {
+                id: `wave_${this.currentWave}_kills`,
+                kind: 'KILL_COUNT',
+                title: 'Eliminador',
+                description: 'Elimine 12 inimigos nesta onda',
+                progress: 0,
+                target: 12,
+                completed: false,
+                failed: false,
+                rewardGranted: false,
+                createdAtMs: currentTimeMs
+            };
+            return;
+        }
+
+        if (waveBucket === 1) {
+            this.currentObjective = {
+                id: `wave_${this.currentWave}_ranged`,
+                kind: 'RANGED_KILL_COUNT',
+                title: 'Cacador de Ranged',
+                description: 'Elimine 4 inimigos ranged nesta onda',
+                progress: 0,
+                target: 4,
+                completed: false,
+                failed: false,
+                rewardGranted: false,
+                createdAtMs: currentTimeMs
+            };
+            return;
+        }
+
+        this.currentObjective = {
+            id: `wave_${this.currentWave}_nodamage`,
+            kind: 'NO_DAMAGE_DURATION',
+            title: 'Blindagem Perfeita',
+            description: 'Fique 20s sem receber dano',
+            progress: 0,
+            target: 20,
+            completed: false,
+            failed: false,
+            rewardGranted: false,
+            createdAtMs: currentTimeMs
+        };
+    }
+
+    private buildObjectiveState(): ObjectiveState | null {
+        if (!this.currentObjective) {
+            return null;
+        }
+
+        return {
+            id: this.currentObjective.id,
+            title: this.currentObjective.title,
+            description: this.currentObjective.description,
+            progress: this.currentObjective.progress,
+            target: this.currentObjective.target,
+            completed: this.currentObjective.completed,
+            failed: this.currentObjective.failed
+        };
+    }
+
+    private updateObjectiveProgress(currentTimeMs: number): void {
+        if (!this.currentObjective || this.currentObjective.completed || this.currentObjective.failed) {
+            return;
+        }
+
+        if (this.currentObjective.kind !== 'NO_DAMAGE_DURATION') {
+            return;
+        }
+
+        const elapsedSeconds = (currentTimeMs - this.currentObjective.createdAtMs) / 1000;
+        this.currentObjective.progress = Math.min(this.currentObjective.target, elapsedSeconds);
+        this.tryGrantObjectiveReward();
+    }
+
+    private onEnemyKilledForObjective(enemy: HostileEnemy): void {
+        if (!this.currentObjective || this.currentObjective.completed || this.currentObjective.failed) {
+            return;
+        }
+
+        if (this.currentObjective.kind === 'KILL_COUNT') {
+            this.currentObjective.progress += 1;
+            this.tryGrantObjectiveReward();
+            return;
+        }
+
+        if (this.currentObjective.kind === 'RANGED_KILL_COUNT' && enemy.enemyType === 'RANGED') {
+            this.currentObjective.progress += 1;
+            this.tryGrantObjectiveReward();
+        }
+    }
+
+    private onPlayerDamagedForObjective(): void {
+        if (!this.currentObjective || this.currentObjective.completed || this.currentObjective.failed) {
+            return;
+        }
+
+        if (this.currentObjective.kind !== 'NO_DAMAGE_DURATION') {
+            return;
+        }
+
+        this.currentObjective.failed = true;
+    }
+
+    private tryGrantObjectiveReward(): void {
+        if (!this.currentObjective) {
+            return;
+        }
+
+        if (this.currentObjective.failed || this.currentObjective.rewardGranted) {
+            return;
+        }
+
+        if (this.currentObjective.progress < this.currentObjective.target) {
+            return;
+        }
+
+        this.currentObjective.progress = this.currentObjective.target;
+        this.currentObjective.completed = true;
+        this.currentObjective.rewardGranted = true;
+        this.player.pendingUpgrades += 1;
+
+        emitGameEvent(GameEvents.OBJECTIVE_COMPLETED, {
+            title: this.currentObjective.title,
+            rewardUpgrades: 1
         });
     }
 
