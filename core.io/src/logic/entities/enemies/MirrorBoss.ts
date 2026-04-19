@@ -1,5 +1,6 @@
 import { Entity } from '../../Entity';
 import type { EntityStats, EnemyType } from '../../../shared/Types';
+import { calculatePlayerShotCooldownSeconds } from '../../../shared/CombatMath';
 
 export interface MirrorShootRequest {
     ownerId: string;
@@ -63,9 +64,7 @@ export class MirrorBoss extends Entity {
         }
 
         // Atira com o mesmo timing do jogador
-        const baseReloadMs = 800;
-        const reloadReduction = this.stats.reload * 50;
-        const reloadMs = Math.max(200, baseReloadMs - reloadReduction);
+        const reloadMs = calculatePlayerShotCooldownSeconds(this.stats.reload) * 1000;
 
         if (currentTimeMs - this.lastShotAtMs >= reloadMs && distance > 0.0001) {
             this.lastShotAtMs = currentTimeMs;
