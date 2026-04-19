@@ -353,7 +353,7 @@ export class GameEngine {
 
         // FIX: resetar estado do boss
         this.isBossFightActive = false;
-        this.currentArena = { x: 0, y: 0, width: 5000, height: 5000 };
+        this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
 
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
     }
