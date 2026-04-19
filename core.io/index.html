@@ -2,16 +2,70 @@
 <html lang="pt-BR">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Core.io</title>
   </head>
   <body>
-    <!-- A interface em HTML (HUD, Menus) ficará aqui no futuro -->
-    <div id="ui-layer"></div>
-    
-    <!-- O Phaser vai desenhar o jogo dentro desta div -->
     <div id="game-container"></div>
-    
+
+    <div id="ui-layer">
+      <div id="hud-layer" aria-live="polite">
+        <button id="btn-pause" class="hud-card" aria-label="Pausar">||</button>
+
+        <div id="hud-wave-header" class="hud-card">Horde 1</div>
+
+        <div id="hud-wave-transition" class="hud-transition" hidden></div>
+
+        <div id="hud-stats" class="hud-card" role="button" tabindex="0" aria-label="Player stats">
+          <span class="hud-stats-icon">i</span>
+          <div id="hud-stats-panel" class="hud-stats-panel">
+            <h2>Status</h2>
+            <ul>
+              <li><span>Vida</span><strong id="stat-health">0 / 0</strong></li>
+              <li><span>Regeneracao</span><strong id="stat-health-regen">0</strong></li>
+              <li><span>Dano de Contato</span><strong id="stat-body-damage">0</strong></li>
+              <li><span>Dano de Projetil</span><strong id="stat-bullet-damage">0</strong></li>
+              <li><span>Velocidade de Projetil</span><strong id="stat-bullet-speed">0</strong></li>
+              <li><span>Penetracao</span><strong id="stat-bullet-penetration">0</strong></li>
+              <li><span>Recarga</span><strong id="stat-reload">0</strong></li>
+              <li><span>Velocidade</span><strong id="stat-move-speed">0</strong></li>
+            </ul>
+          </div>
+        </div>
+
+        <div id="hud-enemy-counter" class="hud-card">Inimigos Restantes: 0</div>
+
+        <div id="hud-xp-panel" class="hud-card">
+          <span id="hud-level-label">Level 1</span>
+          <span id="hud-xp-progress">Level 1 - 0/100 XP</span>
+          <div id="hud-xp-track">
+            <div id="hud-xp-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <div id="pause-menu">
+        <h2>PAUSED</h2>
+        <button id="btn-resume">RESUME</button>
+        <button id="btn-restart">RESTART</button>
+      </div>
+
+      <div id="upgrade-modal" aria-live="polite">
+        <div id="upgrade-modal-panel" class="hud-card">
+          <h2>Escolha um Aprimoramento</h2>
+          <p id="upgrade-remaining">Aprimoramentos Restantes: 0</p>
+          <div id="upgrade-cards" class="upgrade-cards"></div>
+        </div>
+      </div>
+
+      <div id="menu-inicial">
+        <h1>CORE.IO</h1>
+        <input type="text" id="player-name" placeholder="Digite seu Nome" />
+        <button id="btn-jogar">JOGAR</button>
+      </div>
+    </div>
+
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

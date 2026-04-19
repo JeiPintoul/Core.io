@@ -1,66 +1,65 @@
 # Core.io
 
-**Core.io** é um roguelike de arena web estilo *.io*, focado em sobrevivência contra hordas de inimigos. O jogador evolui seu tanque adquirindo novas habilidades a cada nível para suportar ondas progressivamente mais difíceis.
+Core.io é um roguelike de arena desenvolvido para web, inspirado na estética e mecânica de jogos estilo .io. O objetivo central é a sobrevivência contra hordas progressivas de inimigos através da evolução constante do tanque do jogador por meio de um sistema de cartas de upgrade.
 
-Este projeto foi construído com uma arquitetura **"Online-Ready"** (Servidor Simulado), preparando o terreno para futuras implementações de multiplayer cooperativo e competitivo.
+O projeto utiliza uma arquitetura desacoplada entre cliente (renderização) e lógica (regras de negócio), preparando o sistema para futuras implementações de modo cooperativo e multiplayer.
 
-## Tecnologias Utilizadas
+## Tecnologias e Ferramentas
 
-O ecossistema do projeto foi escolhido para garantir alta performance e manutenibilidade por uma equipe de múltiplos desenvolvedores:
+* Linguagem: TypeScript
+* Engine Gráfica: Phaser 3
+* Comunicação: EventEmitter3 (Arquitetura orientada a eventos)
+* Bundler: Vite
+* Interface: HTML5 e CSS3 para HUD e menus
 
-* **Linguagem:** [TypeScript](https://www.typescriptlang.org/) (Tipagem estática e segurança).
-* **Game Engine:** [Phaser 3](https://phaser.io/) (Renderização 2D via WebGL/Canvas e Arcade Physics).
-* **Mensageria:** [EventEmitter3](https://github.com/primus/eventemitter3) (Padrão Pub/Sub para comunicação assíncrona).
-* **Bundler / Dev Server:** [Vite](https://vitejs.dev/) (Build super rápido e Hot Module Replacement).
-* **Interface (UI):** HTML5 e CSS3 (Menus, HUD e telas sobrepostas ao jogo).
+## Estrutura do Projeto
 
-## Arquitetura: Servidor Simulado (Monorepo)
+O código está organizado em domínios isolados para garantir manutenibilidade:
 
-Para evitar código "espaguete" e garantir uma transição suave para um futuro multiplayer online, o projeto adota uma rigorosa **separação de domínios**. A lógica matemática do jogo nunca interage diretamente com as funções de desenho na tela.
+* `src/logic`: Núcleo de regras de jogo, incluindo física de colisão, inteligência artificial e gestão de estado.
+    * `src/logic/entities`: Implementação de classes para o jogador e diferentes tipos de inimigos.
+    * `src/logic/constants`: Configurações de hordas (WaveConfig) e base de dados de cartas.
+* `src/client`: Camada de renderização, entrada de dados do usuário e interface visual.
+    * `src/client/render`: Lógica de desenho de entidades, projéteis e efeitos visuais.
+    * `src/client/hud`: Controladores para os menus de upgrade, pausa e status.
+* `src/shared`: Tipagens globais, contratos de eventos e utilitários matemáticos de combate.
 
-A ponte entre esses dois mundos é feita exclusivamente pelo `EventBus` (Padrão Publish-Subscribe).
+## Mecânicas Implementadas
 
-### Estrutura de Diretórios
+### Sistema de Hordas e Spawn
+O jogo é processado em ondas definidas por dados. Cada horda possui pesos específicos para diferentes tipos de inimigos e multiplicadores de atributos que escalam com o tempo. O spawn ocorre fora do campo de visão do jogador para manter a fluidez do combate.
 
-    core.io/
-    ├── public/              # Assets estáticos puros.
-    │   └── assets/          # Imagens, sprites, sons e arquivos JSON.
-    ├── src/
-    │   ├── client/          # Frontend: Renderização visual. Exclusivo para Phaser e UI.
-    │   ├── logic/           # Backend Local: Matemática pura. Gerencia colisões (AABB), IA e estado.
-    │   ├── shared/          # Base: Constantes de balanceamento e a instância do EventBus.
-    │   ├── style.css        # Estilos globais para a UI e contêiner do jogo.
-    │   └── main.ts          # Ponto de entrada que inicializa a Lógica e o Cliente.
+### Progressão Roguelike
+Ao acumular experiência (XP), o jogador sobe de nível e acessa a fase de upgrade. Este sistema apresenta três cartas aleatórias com raridades distintas (Comum, Rara, Épica) e cores independentes que influenciarão a evolução visual futura do tanque.
 
-## Como Rodar o Projeto Localmente
+### Física e Combate
+* Movimentação com normalização de vetores e câmera fixa em 1920x1080 para garantir equilíbrio competitivo.
+* Sistema de colisão diferenciado (Soft/Hard) para evitar sobreposição excessiva de entidades.
+* Lógica de penetração de projéteis baseada em pontos de vida da bala, permitindo que tiros poderosos atravessem múltiplos alvos.
 
-Certifique-se de ter o [Node.js](https://nodejs.org/) instalado em sua máquina.
+## Instalação e Execução
 
-1. **Clone o repositório:**
-   `git clone https://github.com/SEU-USUARIO/core.io.git`
-   `cd core.io`
+Para rodar o ambiente de desenvolvimento localmente:
 
-2. **Instale as dependências:**
-   `npm install`
+1. Instalar as dependências:
+   ```bash
+   npm install
+   ```
 
-3. **Inicie o servidor de desenvolvimento:**
-   `npm run dev`
+2. Executar o servidor de Desenvolvimento:
+   ```bash
+   npm run dev
+   ```
 
-4. Acesse `http://localhost:5173` no seu navegador.
+3. Gerar o build de Produção:
+   ```bash
+   npm run build
+   ```
 
-## Fluxo de Trabalho (Para a Equipe)
+## Workflow de Desenvolvimento
+O projeto segue um fluxo de trabalho baseado em branches de funcionalidade:
 
-Estamos utilizando o padrão **GitHub Flow** com bloqueio da branch `main`. Todo código deve ser aprovado via Pull Request (PR).
+* `feat/`: Novas funcionalidades e mecânicas.
+* `fix/`: Correções de bugs e ajustes finos.
 
-### Regras de Versionamento:
-1. **Nunca** faça commits diretos na branch `main`.
-2. Antes de iniciar uma tarefa, sempre atualize seu repositório local:
-   `git pull origin main`
-3. Crie uma branch nomeada de acordo com o escopo da tarefa:
-   * Funcionalidades: `feat/nome-da-tarefa` (ex: `feat/menu-inicial`)
-   * Correções: `fix/nome-do-bug` (ex: `fix/colisao-inimigo`)
-   * Assets/Artes: `assets/novas-texturas`
-4. Após finalizar, faça o push da sua branch e abra um **Pull Request** para a `main` solicitando revisão de pelo menos um colega.
-
-### Padronização de Código (Prettier):
-Recomendamos o uso da extensão **Prettier** no VS Code. O projeto possui um arquivo `.prettierrc` e as configurações no `.vscode/settings.json` garantem que o código seja formatado automaticamente ao salvar (`Format on Save`).
+As contribuições devem ser enviadas via Pull Request para revisão do Tech Lead.
