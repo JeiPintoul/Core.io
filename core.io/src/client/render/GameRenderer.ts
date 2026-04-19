@@ -344,8 +344,6 @@ export class GameRenderer {
             }
 
 // ...drawCircle genérico existente continua aqui...
-this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
-
             this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
                 enemy.id,
