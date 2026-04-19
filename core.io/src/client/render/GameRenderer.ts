@@ -311,7 +311,7 @@ export class GameRenderer {
      */
     private drawEnemies(state: GameState, activeEntityIds: Set<string>) {
         for (const enemy of state.enemies) {
-            const { x, y, radius, health, stats, isDead, enemyType, aimAngle } = enemy;
+            const { x, y, radius, health, stats, isDead, enemyType, aimAngle, sentinelTriangles } = enemy;
 
             if (isDead) {
                 continue;
@@ -328,6 +328,23 @@ export class GameRenderer {
             if (enemyType === 'RANGED' && typeof aimAngle === 'number') {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
+            // Adicionar ANTES do drawCircle genérico dos inimigos:
+            if (enemyType === 'MIRROR_BOSS' && typeof aimAngle === 'number') {
+                // Boss tem barrel prateado apontando pro jogador
+                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
+                this.drawCircle(x, y, radius, 0xdde8ff, VISUAL.STROKE.enemy); // corpo prateado/espelho
+                // Aura pulsante
+                this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
+                this.gfxGame.strokeCircle(x, y, radius + 8);
+                this.gfxGame.lineStyle(1, 0xaabbff, 0.15);
+                this.gfxGame.strokeCircle(x, y, radius + 16);
+                this.rememberEntitySnapshot(enemy.id, x, y, radius, 0xdde8ff, VISUAL.STROKE.enemy);
+                this.healthBarRenderer.drawWorldHealthBar(enemy.id, x, y - radius - 10, radius * 2, health, stats.maxHealth);
+                continue; // pula o drawCircle genérico abaixo
+            }
+
+// ...drawCircle genérico existente continua aqui...
+this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
 
             this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
@@ -347,6 +364,25 @@ export class GameRenderer {
                 health,
                 stats.maxHealth
             );
+
+            // Draw sentinel triangles if present
+            if (sentinelTriangles) {
+                for (const triangle of sentinelTriangles) {
+                    if (!this.isInCameraView(triangle.x, triangle.y, 12, 20)) {
+                        continue;
+                    }
+
+                    this.drawTriangle(triangle.x, triangle.y, 12, triangle.rotation, COLORS.ENEMY, VISUAL.STROKE.enemy);
+                    this.healthBarRenderer.drawWorldHealthBar(
+                        triangle.id,
+                        triangle.x,
+                        triangle.y - 12 - 5,
+                        24,
+                        triangle.health,
+                        triangle.maxHealth
+                    );
+                }
+            }
         }
     }
 
@@ -397,6 +433,33 @@ export class GameRenderer {
         this.gfxGame.arc(x, y, radius, 0, Math.PI * 2);
         this.gfxGame.fillPath();
         this.gfxGame.strokePath();
+    }
+
+    /**
+     * Helper: desenha triângulo com outline
+     */
+    private drawTriangle(
+        x: number,
+        y: number,
+        radius: number,
+        rotation: number,
+        fillColor: number,
+        strokeWidth: number = 2
+    ): void {
+        const outlineColor = this.getDarkenedColor(fillColor, 40);
+        this.gfxGame.lineStyle(strokeWidth, outlineColor, 1);
+        this.gfxGame.fillStyle(fillColor);
+        this.gfxGame.save();
+        this.gfxGame.translateCanvas(x, y);
+        this.gfxGame.rotateCanvas(rotation);
+        this.gfxGame.beginPath();
+        this.gfxGame.moveTo(0, -radius);
+        this.gfxGame.lineTo(-radius * 0.866, radius * 0.5); // cos(30°) ≈ 0.866
+        this.gfxGame.lineTo(radius * 0.866, radius * 0.5);
+        this.gfxGame.closePath();
+        this.gfxGame.fillPath();
+        this.gfxGame.strokePath();
+        this.gfxGame.restore();
     }
 
     /**
@@ -624,4 +687,66 @@ export class GameRenderer {
         this.playerNameText.destroy();
         this.playerNameText = null;
     }
+
+    public drawBossWorld(arenaX: number, arenaY: number, arenaWidth: number, arenaHeight: number): void {
+    this.gfxWorld.clear();
+
+    const abyssPadding = 400;
+    const abyssColor   = 0x050810;
+    const floorColor   = 0x0d1520;
+    const edgeColor    = 0x0a1018;
+    const edgeSize     = 150;
+
+    // Fundo externo
+    this.gfxWorld.fillStyle(abyssColor);
+    this.gfxWorld.fillRect(
+        arenaX - abyssPadding, arenaY - abyssPadding,
+        arenaWidth + abyssPadding * 2, arenaHeight + abyssPadding * 2
+    );
+
+    // Piso da arena do boss
+    this.gfxWorld.fillStyle(floorColor);
+    this.gfxWorld.fillRect(arenaX, arenaY, arenaWidth, arenaHeight);
+
+    // Sombra nas bordas
+    this.gfxWorld.fillStyle(edgeColor, 0.6);
+    this.gfxWorld.fillRect(arenaX, arenaY, arenaWidth, edgeSize);
+    this.gfxWorld.fillRect(arenaX, arenaY + arenaHeight - edgeSize, arenaWidth, edgeSize);
+    this.gfxWorld.fillRect(arenaX, arenaY + edgeSize, edgeSize, arenaHeight - edgeSize * 2);
+    this.gfxWorld.fillRect(arenaX + arenaWidth - edgeSize, arenaY + edgeSize, edgeSize, arenaHeight - edgeSize * 2);
+
+    // Grid prateado
+    const STEP = VISUAL.GRID_STEP;
+    this.gfxWorld.lineStyle(VISUAL.STROKE.gridLine, 0x8899bb, 0.5);
+    for (let x = arenaX; x <= arenaX + arenaWidth; x += STEP) {
+        this.gfxWorld.beginPath();
+        this.gfxWorld.moveTo(x, arenaY);
+        this.gfxWorld.lineTo(x, arenaY + arenaHeight);
+        this.gfxWorld.strokePath();
+    }
+    for (let y = arenaY; y <= arenaY + arenaHeight; y += STEP) {
+        this.gfxWorld.beginPath();
+        this.gfxWorld.moveTo(arenaX, y);
+        this.gfxWorld.lineTo(arenaX + arenaWidth, y);
+        this.gfxWorld.strokePath();
+    }
+
+    // Linhas diagonais — efeito espelho/reflexo
+    this.gfxWorld.lineStyle(0.5, 0xaabbdd, 0.18);
+    const diagStep = STEP * 2;
+    for (let d = 0; d <= arenaWidth + arenaHeight; d += diagStep) {
+        const x1 = arenaX + Math.min(d, arenaWidth);
+        const y1 = arenaY + Math.max(0, d - arenaWidth);
+        const x2 = arenaX + Math.max(0, d - arenaHeight);
+        const y2 = arenaY + Math.min(d, arenaHeight);
+        this.gfxWorld.beginPath();
+        this.gfxWorld.moveTo(x1, y1);
+        this.gfxWorld.lineTo(x2, y2);
+        this.gfxWorld.strokePath();
+    }
+
+    // Borda brilhante
+    this.gfxWorld.lineStyle(3, 0xccddff, 1);
+    this.gfxWorld.strokeRect(arenaX, arenaY, arenaWidth, arenaHeight);
+}
 }

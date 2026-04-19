@@ -49,7 +49,7 @@ export interface CardSelectedPayload {
     colorHex: string;
 }
 
-export type EnemyType = 'KAMIKAZE' | 'RANGED';
+export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'MIRROR_BOSS';
 export type ProjectileFaction = 'player' | 'enemy';
 
 export interface WaveMilestone {
@@ -59,6 +59,17 @@ export interface WaveMilestone {
     totalEnemiesToSpawn: number;
     sizeMultiplier: number;
 }
+
+export interface SentinelTriangleData {
+    id: string;
+    x: number;
+    y: number;
+    rotation: number;
+    mode: 'ORBIT' | 'SHIELD' | 'HOMING';
+    health: number;
+    maxHealth: number;
+}
+
 
 export interface EntityData {
     id: string;
@@ -72,6 +83,7 @@ export interface EntityData {
     stats: EntityStats;
     enemyType?: EnemyType;
     aimAngle?: number;
+    sentinelTriangles?: SentinelTriangleData[];
 }
 
 export interface ProjectileData {
@@ -82,6 +94,12 @@ export interface ProjectileData {
     y: number;
     radius: number;
 }
+export interface BossFightStartPayload {
+    bossArenaX: number;
+    bossArenaY: number;
+    bossArenaWidth: number;
+    bossArenaHeight: number;
+}
 
 export interface GameState {
     player: EntityData;
@@ -90,6 +108,10 @@ export interface GameState {
     arena: { width: number; height: number };
     remainingEnemies: number;
     isPaused: boolean;
+    //Boss 
+    isBossFight?: boolean;                    
+    arenaOffset?: { x: number; y: number };   
+
 }
 
 export interface InputState {
@@ -188,4 +210,8 @@ export interface GameEventPayloads {
     wave_starting_animation_start: WaveAnimationPayload;
     wave_spawning_resumed: WaveSpawningResumedPayload;
     projectile_fired: ProjectileFiredPayload;
+    //Eventos de boos 
+    boss_fight_start: BossFightStartPayload;
+    boss_defeated: undefined;
+
 }

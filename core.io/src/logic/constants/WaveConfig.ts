@@ -25,7 +25,29 @@ export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
         bulletDamage: 8,
         reload: 1.2,
         movementSpeed: 85
+    }, 
+    SENTINEL: {
+        maxHealth: 55,
+        healthRegen: 0,
+        bodyDamage: 6,
+        bulletSpeed: 0,
+        bulletPenetration: 0,
+        bulletDamage: 0,
+        reload: 0,
+        movementSpeed: 70
+    },
+    MIRROR_BOSS: {
+        maxHealth: 100, // placeholder — substituído pelos stats do jogador no spawn
+        healthRegen: 0,
+        bodyDamage: 10,
+        bulletSpeed: 500,
+        bulletPenetration: 1,
+        bulletDamage: 15,
+        reload: 0,
+        movementSpeed: 150
+
     }
+    
 };
 
 export const WAVE_MILESTONES: WaveMilestone[] = [
@@ -37,19 +59,23 @@ export const WAVE_MILESTONES: WaveMilestone[] = [
         sizeMultiplier: 0.08
     },
     {
-        startWave: 3,
+        startWave: 2,
         enemyWeights: { KAMIKAZE: 80, RANGED: 20 },
         maxActiveEnemies: 14,
         totalEnemiesToSpawn: 28,
         sizeMultiplier: 0.1
     },
-    {
-        startWave: 6,
-        enemyWeights: { KAMIKAZE: 65, RANGED: 35 },
+
+     {
+        startWave: 3,
+        enemyWeights: { KAMIKAZE: 60, RANGED: 30, SENTINEL: 10 },
         maxActiveEnemies: 18,
         totalEnemiesToSpawn: 36,
-        sizeMultiplier: 0.12
-    }
+        sizeMultiplier: 0.13
+    },
+    
+
+        
 ];
 
 export function getWaveMilestone(currentWave: number): WaveMilestone {
