@@ -210,7 +210,7 @@ export interface GameEventPayloads {
     wave_starting_animation_start: WaveAnimationPayload;
     wave_spawning_resumed: WaveSpawningResumedPayload;
     projectile_fired: ProjectileFiredPayload;
-    //Eventos de boos 
+    //Eventos de boss 
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
 
