@@ -89,7 +89,7 @@ export class SentinelEnemy extends Entity {
         this.updateMovement(dx, dy, distance, deltaTime);
         this.tryRespawnTriangles(currentTimeMs);
         this.updateTriangleModes(distance, currentTimeMs);
-        this.updateTrianglePositions(targetX, targetY, deltaTime);
+        this.updateTrianglePositions(targetX, targetY, deltaTime, currentTimeMs);
     }
 
     private updateMovement(dx: number, dy: number, distance: number, deltaTime: number): void {
@@ -135,7 +135,7 @@ export class SentinelEnemy extends Entity {
         }
     }
 
-    private updateTrianglePositions(targetX: number, targetY: number, deltaTime: number): void {
+    private updateTrianglePositions(targetX: number, targetY: number, deltaTime: number, currentTimeMs: number): void {
         const shieldTriangles = this.triangles.filter(t => t.mode === 'SHIELD');
         const shieldCount = shieldTriangles.length;
 
@@ -154,7 +154,7 @@ export class SentinelEnemy extends Entity {
             const tri = this.triangles[i];
 
             if (tri.health <= 0) {
-                this.destroyedTriangleTimestamps.push(Date.now());
+                this.destroyedTriangleTimestamps.push(currentTimeMs);
                 this.triangles.splice(i, 1);
                 continue;
             }
