@@ -110,6 +110,45 @@ export class GameScene extends Phaser.Scene {
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanupListeners());
         this.events.once(Phaser.Scenes.Events.DESTROY, () => this.cleanupListeners());
+
+        // transição para o mapa do boss Mirror 
+        // Transição pro mapa do boss
+onGameEvent(GameEvents.BOSS_FIGHT_START, (payload) => {
+    this.cameras.main.fadeOut(500, 255, 255, 255);
+    this.cameras.main.once(
+        Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+        () => {
+            this.gameRenderer.drawBossWorld(
+                payload.bossArenaX,
+                payload.bossArenaY,
+                payload.bossArenaWidth,
+                payload.bossArenaHeight
+            );
+            this.cameras.main.setBounds(
+                payload.bossArenaX - 400,
+                payload.bossArenaY - 400,
+                payload.bossArenaWidth + 800,
+                payload.bossArenaHeight + 800
+            );
+            this.cameras.main.fadeIn(500, 255, 255, 255);
+        }
+    );
+});
+
+// Transição de volta ao mapa normal
+onGameEvent(GameEvents.BOSS_DEFEATED, () => {
+    this.cameras.main.fadeOut(500, 255, 255, 255);
+    this.cameras.main.once(
+        Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+        () => {
+            this.gameRenderer.drawStaticWorld();
+            this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
+            this.cameras.main.fadeIn(500, 255, 255, 255);
+        }
+    );
+});
+
+
     }
 
     update() {

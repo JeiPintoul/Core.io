@@ -31,7 +31,9 @@ export const GameEvents = {
     PROJECTILE_FIRED: 'projectile_fired',
     OBJECTIVE_COMPLETED: 'objective_completed',
     AUDIO_SETTINGS_CHANGED: 'audio_settings_changed',
-    AUDIO_RESTART_REQUESTED: 'audio_restart_requested'
+    AUDIO_RESTART_REQUESTED: 'audio_restart_requested',
+    BOSS_FIGHT_START: 'boss_fight_start',
+    BOSS_DEFEATED: 'boss_defeated',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

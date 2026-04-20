@@ -3,6 +3,7 @@ import type { CardSelectedPayload, EnemyType, EntityStats, GameState, InputState
 import { Player } from './entities/player/Player';
 import { Enemy } from './entities/enemies/Enemy';
 import { RangedEnemy, type RangedShootRequest } from './entities/enemies/RangedEnemy';
+import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
 import { Entity } from './Entity';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculatePlayerShotCooldownSeconds } from '../shared/CombatMath';
@@ -15,6 +16,7 @@ import {
     getEnemyFirstWave,
     getWaveMilestone
 } from './constants/WaveConfig';
+import { MirrorBoss, type MirrorShootRequest } from './entities/enemies/MirrorBoss';
 
 class Projectile {
     id: string;
@@ -59,14 +61,16 @@ class Projectile {
     }
 }
 
+// FIX 1: vírgula faltando antes de BOSS_FIGHT
 enum EngineState {
     WAVE_ACTIVE = 'WAVE_ACTIVE',
     WAVE_CLEAR_ANIMATION = 'WAVE_CLEAR_ANIMATION',
     UPGRADE_PHASE = 'UPGRADE_PHASE',
-    WAVE_STARTING_ANIMATION = 'WAVE_STARTING_ANIMATION'
+    WAVE_STARTING_ANIMATION = 'WAVE_STARTING_ANIMATION',
+    BOSS_FIGHT = 'BOSS_FIGHT',
 }
 
-type HostileEnemy = Enemy | RangedEnemy;
+type HostileEnemy = Enemy | RangedEnemy | SentinelEnemy | MirrorBoss;
 type ObjectiveKind = 'KILL_COUNT' | 'RANGED_KILL_COUNT' | 'NO_DAMAGE_DURATION';
 
 interface ActiveObjectiveState {
@@ -142,6 +146,11 @@ export class GameEngine {
 
     private readonly processedEnemyDeathIds = new Set<string>();
 
+    // Boss Mirror
+    private isBossFightActive = false;
+    private currentArena = { x: 0, y: 0, width: 5000, height: 5000 };
+    private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+
     constructor() {
         this.playerBaseStats = {
             maxHealth: 100,
@@ -177,6 +186,63 @@ export class GameEngine {
         this.resetObjectiveForCurrentWave(now);
 
         this.setupListeners();
+    }
+
+    private resolveSentinelTriangleCollisions(currentTime: number): void {
+        const triangleRadius = 12;
+        const triangleDamageCooldownMs = 200;
+
+        for (const enemy of this.enemies) {
+            if (!(enemy instanceof SentinelEnemy)) continue;
+
+            for (let i = enemy.triangles.length - 1; i >= 0; i--) {
+                const tri = enemy.triangles[i];
+
+                if (tri.mode === 'HOMING') {
+                    const hitPlayer = this.checkCircularCollision(
+                        tri.x, tri.y, triangleRadius,
+                        this.player.x, this.player.y, this.playerRadius
+                    );
+
+                    if (hitPlayer) {
+                        const canDamage = this.player.canReceiveCollisionDamageFrom(tri.id, currentTime, triangleDamageCooldownMs);
+                        if (canDamage) {
+                            this.player.takeDamage(tri.damage);
+                            this.player.registerCollisionDamageFrom(tri.id, currentTime);
+                        }
+                        enemy.triangles.splice(i, 1);
+                        continue;
+                    }
+                }
+
+                for (let projIndex = this.projectiles.length - 1; projIndex >= 0; projIndex--) {
+                    const projectile = this.projectiles[projIndex];
+
+                    if (projectile.faction !== 'player') continue;
+
+                    const hitTriangle = this.checkCircularCollision(
+                        projectile.x, projectile.y, projectile.radius,
+                        tri.x, tri.y, triangleRadius
+                    );
+
+                    if (!hitTriangle) continue;
+
+                    const damage = Math.min(projectile.damage, projectile.health);
+                    tri.health -= damage;
+                    projectile.health -= 15;
+
+                    if (projectile.health <= 0) {
+                        this.destroyProjectile(projIndex);
+                    }
+
+                    if (tri.health <= 0) {
+                        enemy.triangles.splice(i, 1);
+                    }
+
+                    break;
+                }
+            }
+        }
     }
 
     private setupListeners(): void {
@@ -329,6 +395,11 @@ export class GameEngine {
         this.waveStartingAnimationEndsAtMs = 0;
         this.resetObjectiveForCurrentWave(now);
         this.player.isUpgrading = false;
+
+        // FIX: resetar estado do boss
+        this.isBossFightActive = false;
+        this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
+
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
     }
 
@@ -410,7 +481,20 @@ export class GameEngine {
                 radius: this.enemyRadius,
                 stats: enemy.stats,
                 enemyType: enemy.enemyType,
-                aimAngle: enemy instanceof RangedEnemy ? enemy.aimAngle : undefined
+                aimAngle: (enemy instanceof RangedEnemy || enemy instanceof MirrorBoss)
+                    ? enemy.aimAngle
+                    : undefined,
+                sentinelTriangles: enemy instanceof SentinelEnemy
+                    ? enemy.triangles.map(t => ({
+                        id: t.id,
+                        x: t.x,
+                        y: t.y,
+                        rotation: t.rotation,
+                        mode: t.mode,
+                        health: t.health,
+                        maxHealth: t.maxHealth
+                    }))
+                    : undefined
             })),
             projectiles: this.projectiles.map((projectile) => ({
                 id: projectile.id,
@@ -421,6 +505,9 @@ export class GameEngine {
                 radius: projectile.radius
             })),
             arena: this.arenaSize,
+            // ADICIONADO: estado do boss para o renderer
+            arenaOffset: { x: this.currentArena.x, y: this.currentArena.y },
+            isBossFight: this.isBossFightActive,
             remainingEnemies: this.getRemainingEnemiesInWave(),
             isPaused: this.isPaused,
             objective: this.buildObjectiveState()
@@ -433,21 +520,15 @@ export class GameEngine {
         let movementX = 0;
         let movementY = 0;
 
-        if (this.currentInput.up) {
-            movementY -= 1;
-        }
+        const up    = this.isBossFightActive ? this.currentInput.down  : this.currentInput.up;
+        const down  = this.isBossFightActive ? this.currentInput.up    : this.currentInput.down;
+        const left  = this.isBossFightActive ? this.currentInput.right : this.currentInput.left;
+        const right = this.isBossFightActive ? this.currentInput.left  : this.currentInput.right;
 
-        if (this.currentInput.down) {
-            movementY += 1;
-        }
-
-        if (this.currentInput.left) {
-            movementX -= 1;
-        }
-
-        if (this.currentInput.right) {
-            movementX += 1;
-        }
+        if (up)    movementY -= 1;
+        if (down)  movementY += 1;
+        if (left)  movementX -= 1;
+        if (right) movementX += 1;
 
         if (movementX !== 0 || movementY !== 0) {
             const magnitude = Math.hypot(movementX, movementY);
@@ -475,8 +556,15 @@ export class GameEngine {
             return;
         }
 
-        const dx = this.currentInput.targetX - this.player.x;
-        const dy = this.currentInput.targetY - this.player.y;
+        const targetX = this.isBossFightActive
+            ? 2 * this.player.x - this.currentInput.targetX
+            : this.currentInput.targetX;
+        const targetY = this.isBossFightActive
+            ? 2 * this.player.y - this.currentInput.targetY
+            : this.currentInput.targetY;
+
+        const dx = targetX - this.player.x;
+        const dy = targetY - this.player.y;
         const distance = Math.hypot(dx, dy);
 
         if (distance <= 0.0001) {
@@ -488,11 +576,18 @@ export class GameEngine {
         this.lastShotTime = currentTime;
     }
 
+    // FIX 2: else if do MirrorBoss estava depois do else — ordem corrigida
     private updateEnemies(dt: number, currentTime: number): void {
         for (const enemy of this.enemies) {
             if (enemy instanceof RangedEnemy) {
                 enemy.update(this.player.x, this.player.y, dt, currentTime, (request) => {
                     this.handleRangedEnemyShootRequest(enemy, request);
+                });
+            } else if (enemy instanceof SentinelEnemy) {
+                enemy.update(this.player.x, this.player.y, dt, currentTime);
+            } else if (enemy instanceof MirrorBoss) {
+                enemy.update(this.player.x, this.player.y, dt, currentTime, (request) => {
+                    this.handleMirrorBossShootRequest(enemy, request);
                 });
             } else {
                 enemy.update(this.player.x, this.player.y, dt);
@@ -504,6 +599,11 @@ export class GameEngine {
     }
 
     private handleRangedEnemyShootRequest(shooter: RangedEnemy, request: RangedShootRequest): void {
+        this.fireEntityBarrels(shooter, 'enemy', request.aimAngle, request.stats);
+    }
+
+    // ADICIONADO
+    private handleMirrorBossShootRequest(shooter: MirrorBoss, request: MirrorShootRequest): void {
         this.fireEntityBarrels(shooter, 'enemy', request.aimAngle, request.stats);
     }
 
@@ -581,6 +681,7 @@ export class GameEngine {
         shooter.applyImpulse(-shotDirX * recoilImpulse, -shotDirY * recoilImpulse);
     }
 
+    // FIX 3: outsideArena usa currentArena em vez de arenaSize fixo
     private updateProjectiles(dt: number): void {
         for (let projectileIndex = this.projectiles.length - 1; projectileIndex >= 0; projectileIndex--) {
             const projectile = this.projectiles[projectileIndex];
@@ -594,10 +695,10 @@ export class GameEngine {
             }
 
             const outsideArena =
-                projectile.x < 0 ||
-                projectile.x > this.arenaSize.width ||
-                projectile.y < 0 ||
-                projectile.y > this.arenaSize.height;
+                projectile.x < this.currentArena.x ||
+                projectile.x > this.currentArena.x + this.currentArena.width ||
+                projectile.y < this.currentArena.y ||
+                projectile.y > this.currentArena.y + this.currentArena.height;
 
             if (outsideArena) {
                 this.destroyProjectile(projectileIndex);
@@ -633,9 +734,14 @@ export class GameEngine {
         const spawnPoint = this.rollOffscreenSpawnPoint();
         const enemyId = `enemy_${this.enemyIdCounter++}`;
 
-        const enemy = enemyType === 'RANGED'
-            ? new RangedEnemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats)
-            : new Enemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+        let enemy: HostileEnemy;
+        if (enemyType === 'RANGED') {
+            enemy = new RangedEnemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+        } else if (enemyType === 'SENTINEL') {
+            enemy = new SentinelEnemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+        } else {
+            enemy = new Enemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+        }
 
         this.enemies.push(enemy);
     }
@@ -748,6 +854,7 @@ export class GameEngine {
 
         this.resolveProjectileVsProjectileCollisions();
         this.resolveProjectileEntityCollisions(currentTime);
+        this.resolveSentinelTriangleCollisions(currentTime);
         this.enemies = this.enemies.filter((enemy) => enemy.health > 0);
     }
 
@@ -932,8 +1039,12 @@ export class GameEngine {
         }
     }
 
+    // FIX 4: MirrorBoss adicionado
     private isEnemyEntity(entity: Entity): entity is HostileEnemy {
-        return entity instanceof Enemy || entity instanceof RangedEnemy;
+        return entity instanceof Enemy
+            || entity instanceof RangedEnemy
+            || entity instanceof SentinelEnemy
+            || entity instanceof MirrorBoss;
     }
 
     private isSameFaction(entityA: Entity, entityB: Entity): boolean {
@@ -944,8 +1055,8 @@ export class GameEngine {
     }
 
     private clampToArena(entity: Entity): void {
-        entity.x = Math.max(0, Math.min(entity.x, this.arenaSize.width));
-        entity.y = Math.max(0, Math.min(entity.y, this.arenaSize.height));
+        entity.x = Math.max(this.currentArena.x, Math.min(entity.x, this.currentArena.x + this.currentArena.width));
+        entity.y = Math.max(this.currentArena.y, Math.min(entity.y, this.currentArena.y + this.currentArena.height));
     }
 
     private applyKnockbackMotion(entity: Entity, dt: number): void {
@@ -1112,7 +1223,6 @@ export class GameEngine {
 
         let reflectedDot = (reflectedX * normalX) + (reflectedY * normalY);
 
-        // Enforce an outward bounce. If it still points inward, rebuild direction with outward + tangent components.
         if (reflectedDot <= 0) {
             const tangentX = -normalY;
             const tangentY = normalX;
@@ -1143,7 +1253,16 @@ export class GameEngine {
         projectile.velocityY = (reflectedY / reflectedSpeed) * preservedSpeed;
     }
 
+    // ADICIONADO: checagem do boss + fluxo normal
     private advanceWaveState(currentTime: number): void {
+        if (this.engineState === EngineState.BOSS_FIGHT) {
+            const bossAlive = this.enemies.some(e => e instanceof MirrorBoss);
+            if (!bossAlive) {
+                this.endBossFight(currentTime);
+            }
+            return;
+        }
+
         if (this.engineState === EngineState.WAVE_ACTIVE) {
             this.tryEnterWaveClearAnimation(currentTime);
             return;
@@ -1168,6 +1287,7 @@ export class GameEngine {
         }
     }
 
+    // ADICIONADO: trigger do boss a cada 3 waves
     private tryEnterWaveClearAnimation(currentTime: number): void {
         const totalToSpawn = this.getCurrentWaveTotalToSpawn();
 
@@ -1182,17 +1302,19 @@ export class GameEngine {
         const waveCleared = this.currentWave;
         const nextWave = waveCleared + 1;
 
-        this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
-        this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
-
         this.currentWave = nextWave;
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
 
-        emitGameEvent(GameEvents.WAVE_CLEARED, {
-            waveCleared,
-            nextWave
-        });
+        emitGameEvent(GameEvents.WAVE_CLEARED, { waveCleared, nextWave });
+
+        if (waveCleared % 3 === 0) { // Aqui determina quando o boss entra - a cada 3 waves, por exemplo
+            this.enterBossFight();
+            return;
+        }
+
+        this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
+        this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
 
         emitGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, {
             wave: waveCleared,
@@ -1200,6 +1322,48 @@ export class GameEngine {
             nextWave,
             durationMs: this.waveTransitionAnimationDurationMs
         });
+    }
+
+    // ADICIONADO
+    private enterBossFight(): void {
+        this.isBossFightActive = true;
+        this.currentArena = { ...this.BOSS_ARENA };
+
+        this.player.x = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
+        this.player.y = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
+        this.player.knockbackVelocity = { x: 0, y: 0 };
+
+        const boss = new MirrorBoss(
+            'mirror_boss',
+            this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2,
+            this.BOSS_ARENA.y + 200,
+            this.player.currentStats
+        );
+
+        this.enemies = [boss];
+        this.engineState = EngineState.BOSS_FIGHT;
+
+        emitGameEvent(GameEvents.BOSS_FIGHT_START, {
+            bossArenaX: this.BOSS_ARENA.x,
+            bossArenaY: this.BOSS_ARENA.y,
+            bossArenaWidth: this.BOSS_ARENA.width,
+            bossArenaHeight: this.BOSS_ARENA.height
+        });
+    }
+
+    // ADICIONADO
+    private endBossFight(currentTime: number): void {
+        this.isBossFightActive = false;
+        this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
+
+        this.player.x = this.arenaSize.width / 2;
+        this.player.y = this.arenaSize.height / 2;
+        this.player.knockbackVelocity = { x: 0, y: 0 };
+
+        emitGameEvent(GameEvents.BOSS_DEFEATED, undefined);
+
+        this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
+        this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
     }
 
     private enterUpgradePhase(currentTime: number): void {
@@ -1280,7 +1444,6 @@ export class GameEngine {
     }
 
     private handleUpgradeModalRequested(): void {
-        // Wait until the current XP burst processing completes to read the final queue size.
         queueMicrotask(() => {
             if (!this.player.isUpgrading || this.player.pendingUpgrades <= 0) {
                 return;
