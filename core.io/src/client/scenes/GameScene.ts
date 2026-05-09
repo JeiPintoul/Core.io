@@ -19,14 +19,7 @@ export class GameScene extends Phaser.Scene {
     private musicVolume = 0.32;
     private isMusicMuted = false;
     private latestState: GameState | null = null;
-    private unsubscribeStateUpdate: (() => void) | null = null;
-    private unsubscribeEntityDestroyed: (() => void) | null = null;
-    private unsubscribeEnemyDestroyed: (() => void) | null = null;
-    private unsubscribeProjectileDestroyed: (() => void) | null = null;
-    private unsubscribeProjectileFired: (() => void) | null = null;
-    private unsubscribeGameOver: (() => void) | null = null;
-    private unsubscribeAudioSettingsChanged: (() => void) | null = null;
-    private unsubscribeAudioRestartRequested: (() => void) | null = null;
+    private subscriptions: Array<() => void> = [];
     private cameraFollowTarget!: Phaser.GameObjects.Zone;
 
     constructor() {
@@ -59,96 +52,116 @@ export class GameScene extends Phaser.Scene {
         this.inputHandler.disable();
         this.startBackgroundMusic();
 
-        // Desenhar mundo estático
-        this.gameRenderer.drawStaticWorld();
+        this.gameRenderer.drawStaticWorld(ARENA.width, ARENA.height);
 
-        // Ouvir mudanças de estado do engine
-        this.unsubscribeStateUpdate = onGameEvent(GameEvents.STATE_UPDATE, (state: GameState) => {
-            this.latestState = state;
+        this.subscriptions.push(
+            onGameEvent(GameEvents.STATE_UPDATE, (state: GameState) => {
+                this.latestState = state;
 
-            if (state.player.health > 0) {
-                this.inputHandler.enable();
-            }
+                if (state.player.health > 0) {
+                    this.inputHandler.enable();
+                }
 
-            this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
-        });
+                this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
+            })
+        );
 
-        this.unsubscribeEntityDestroyed = onGameEvent(GameEvents.ENTITY_DESTROYED, ({ id }) => {
-            this.gameRenderer.playEntityDestroyedAnimation(id);
+        this.subscriptions.push(
+            onGameEvent(GameEvents.ENTITY_DESTROYED, ({ id }) => {
+                this.gameRenderer.playEntityDestroyedAnimation(id);
 
-            if (this.latestState && id === this.latestState.player.id) {
+                if (this.latestState && id === this.latestState.player.id) {
+                    this.lockInputAfterDeath();
+                }
+            })
+        );
+
+        this.subscriptions.push(
+            onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction }) => {
+                this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction);
+            })
+        );
+
+        this.subscriptions.push(
+            onGameEvent(GameEvents.PROJECTILE_FIRED, ({ shooterId, recoilStrength, faction }) => {
+                const isPlayer = faction === 'player';
+                this.gameRenderer.playFiringRecoil(shooterId, recoilStrength, isPlayer);
+            })
+        );
+
+        this.subscriptions.push(
+            onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, radius }) => {
+                this.gameRenderer.playFloatingText(x, y - radius - 30, `+${xpDropped} XP`, '#44ff44');
+            })
+        );
+
+        this.subscriptions.push(
+            onGameEvent(GameEvents.GAME_OVER, () => {
                 this.lockInputAfterDeath();
-            }
-        });
+            })
+        );
 
-        this.unsubscribeProjectileDestroyed = onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction }) => {
-            this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction);
-        });
+        this.subscriptions.push(
+            onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, ({ volume, muted }) => {
+                this.musicVolume = Phaser.Math.Clamp(volume, 0, 1);
+                this.isMusicMuted = muted;
+                this.applyBackgroundMusicSettings();
+            })
+        );
 
-        this.unsubscribeProjectileFired = onGameEvent(GameEvents.PROJECTILE_FIRED, ({ shooterId, recoilStrength, faction }) => {
-            const isPlayer = faction === 'player';
-            this.gameRenderer.playFiringRecoil(shooterId, recoilStrength, isPlayer);
-        });
+        this.subscriptions.push(
+            onGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, () => {
+                this.restartBackgroundMusic();
+            })
+        );
 
-        this.unsubscribeEnemyDestroyed = onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, radius }) => {
-            this.gameRenderer.playFloatingText(x, y - radius - 30, `+${xpDropped} XP`, '#44ff44');
-        });
+        this.subscriptions.push(
+            onGameEvent(GameEvents.BOSS_FIGHT_START, (payload) => {
+                this.cameras.main.fadeOut(500, 255, 255, 255);
+                this.cameras.main.once(
+                    Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+                    () => {
+                        this.gameRenderer.drawBossWorld(
+                            payload.bossArenaX,
+                            payload.bossArenaY,
+                            payload.bossArenaWidth,
+                            payload.bossArenaHeight
+                        );
+                        this.cameras.main.setBounds(
+                            payload.bossArenaX - 400,
+                            payload.bossArenaY - 400,
+                            payload.bossArenaWidth + 800,
+                            payload.bossArenaHeight + 800
+                        );
+                        this.cameras.main.fadeIn(500, 255, 255, 255);
+                    }
+                );
+            })
+        );
 
-        this.unsubscribeGameOver = onGameEvent(GameEvents.GAME_OVER, () => {
-            this.lockInputAfterDeath();
-        });
+        this.subscriptions.push(
+            onGameEvent(GameEvents.BOSS_DEFEATED, () => {
+                this.cameras.main.fadeOut(500, 255, 255, 255);
+                this.cameras.main.once(
+                    Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+                    () => {
+                        this.gameRenderer.drawStaticWorld(ARENA.width, ARENA.height);
+                        this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
+                        this.cameras.main.fadeIn(500, 255, 255, 255);
+                    }
+                );
+            })
+        );
 
-        this.unsubscribeAudioSettingsChanged = onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, ({ volume, muted }) => {
-            this.musicVolume = Phaser.Math.Clamp(volume, 0, 1);
-            this.isMusicMuted = muted;
-            this.applyBackgroundMusicSettings();
-        });
-
-        this.unsubscribeAudioRestartRequested = onGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, () => {
-            this.restartBackgroundMusic();
-        });
+        this.subscriptions.push(
+            onGameEvent(GameEvents.ARENA_RESIZED, ({ width, height }) => {
+                this.cameras.main.setBounds(-400, -400, width + 800, height + 800);
+                this.gameRenderer.drawStaticWorld(width, height);
+            })
+        );
 
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanupListeners());
         this.events.once(Phaser.Scenes.Events.DESTROY, () => this.cleanupListeners());
-
-        // transição para o mapa do boss Mirror 
-        // Transição pro mapa do boss
-onGameEvent(GameEvents.BOSS_FIGHT_START, (payload) => {
-    this.cameras.main.fadeOut(500, 255, 255, 255);
-    this.cameras.main.once(
-        Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
-        () => {
-            this.gameRenderer.drawBossWorld(
-                payload.bossArenaX,
-                payload.bossArenaY,
-                payload.bossArenaWidth,
-                payload.bossArenaHeight
-            );
-            this.cameras.main.setBounds(
-                payload.bossArenaX - 400,
-                payload.bossArenaY - 400,
-                payload.bossArenaWidth + 800,
-                payload.bossArenaHeight + 800
-            );
-            this.cameras.main.fadeIn(500, 255, 255, 255);
-        }
-    );
-});
-
-// Transição de volta ao mapa normal
-onGameEvent(GameEvents.BOSS_DEFEATED, () => {
-    this.cameras.main.fadeOut(500, 255, 255, 255);
-    this.cameras.main.once(
-        Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
-        () => {
-            this.gameRenderer.drawStaticWorld();
-            this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
-            this.cameras.main.fadeIn(500, 255, 255, 255);
-        }
-    );
-});
-
-
     }
 
     update() {
@@ -247,44 +260,10 @@ onGameEvent(GameEvents.BOSS_DEFEATED, () => {
             this.cameraFollowTarget.destroy();
         }
 
-        if (this.unsubscribeStateUpdate) {
-            this.unsubscribeStateUpdate();
-            this.unsubscribeStateUpdate = null;
+        for (const unsubscribe of this.subscriptions) {
+            unsubscribe();
         }
 
-        if (this.unsubscribeEntityDestroyed) {
-            this.unsubscribeEntityDestroyed();
-            this.unsubscribeEntityDestroyed = null;
-        }
-
-        if (this.unsubscribeEnemyDestroyed) {
-            this.unsubscribeEnemyDestroyed();
-            this.unsubscribeEnemyDestroyed = null;
-        }
-
-        if (this.unsubscribeProjectileDestroyed) {
-            this.unsubscribeProjectileDestroyed();
-            this.unsubscribeProjectileDestroyed = null;
-        }
-
-        if (this.unsubscribeProjectileFired) {
-            this.unsubscribeProjectileFired();
-            this.unsubscribeProjectileFired = null;
-        }
-
-        if (this.unsubscribeGameOver) {
-            this.unsubscribeGameOver();
-            this.unsubscribeGameOver = null;
-        }
-
-        if (this.unsubscribeAudioSettingsChanged) {
-            this.unsubscribeAudioSettingsChanged();
-            this.unsubscribeAudioSettingsChanged = null;
-        }
-
-        if (this.unsubscribeAudioRestartRequested) {
-            this.unsubscribeAudioRestartRequested();
-            this.unsubscribeAudioRestartRequested = null;
-        }
+        this.subscriptions.length = 0;
     }
 }

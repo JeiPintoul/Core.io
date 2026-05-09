@@ -1,4 +1,4 @@
-import { Entity } from '../../Entity';
+import { Entity } from '../Entity';
 import type { EntityStats, EnemyType } from '../../../shared/Types';
 import { calculatePlayerShotCooldownSeconds } from '../../../shared/CombatMath';
 

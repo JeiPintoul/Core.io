@@ -234,8 +234,7 @@ export interface GameEventPayloads {
     objective_completed: ObjectiveCompletedPayload;
     audio_settings_changed: AudioSettingsPayload;
     audio_restart_requested: undefined;
-    //Eventos de boss
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
-
+    arena_resized: { width: number; height: number };
 }

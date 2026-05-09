@@ -25,7 +25,7 @@ export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
         bulletDamage: 8,
         reload: 1.2,
         movementSpeed: 85
-    }, 
+    },
     SENTINEL: {
         maxHealth: 55,
         healthRegen: 0,
@@ -45,7 +45,6 @@ export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
         bulletDamage: 15,
         reload: 0,
         movementSpeed: 150
-
     }
     
 };
@@ -65,8 +64,7 @@ export const WAVE_MILESTONES: WaveMilestone[] = [
         totalEnemiesToSpawn: 28,
         sizeMultiplier: 0.1
     },
-
-     {
+    {
         startWave: 3,
         enemyWeights: { KAMIKAZE: 60, RANGED: 30, SENTINEL: 10 },
         maxActiveEnemies: 18,

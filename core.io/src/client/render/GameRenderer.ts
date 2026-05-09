@@ -195,7 +195,7 @@ export class GameRenderer {
     /**
      * Desenha fundo e grid (chamado apenas uma vez no create)
      */
-    drawStaticWorld() {
+    drawStaticWorld(width: number, height: number) {
         this.gfxWorld.clear();
 
         const abyssPadding = 400;
@@ -203,27 +203,23 @@ export class GameRenderer {
         const abyssColor = 0x0f0f1a;
         const arenaEdgeShade = 0x11172d;
 
-        // Abyss outside the playable arena.
         this.gfxWorld.fillStyle(abyssColor);
         this.gfxWorld.fillRect(
             -abyssPadding,
             -abyssPadding,
-            ARENA.width + (abyssPadding * 2),
-            ARENA.height + (abyssPadding * 2)
+            width + (abyssPadding * 2),
+            height + (abyssPadding * 2)
         );
 
-        // Main playable arena surface.
         this.gfxWorld.fillStyle(COLORS.ARENA_BG);
-        this.gfxWorld.fillRect(0, 0, ARENA.width, ARENA.height);
+        this.gfxWorld.fillRect(0, 0, width, height);
 
-        // Subtle dark shade just inside the arena border to emphasize map edge.
         this.gfxWorld.fillStyle(arenaEdgeShade, 0.5);
-        this.gfxWorld.fillRect(0, 0, ARENA.width, edgeShadeSize);
-        this.gfxWorld.fillRect(0, ARENA.height - edgeShadeSize, ARENA.width, edgeShadeSize);
-        this.gfxWorld.fillRect(0, edgeShadeSize, edgeShadeSize, ARENA.height - (edgeShadeSize * 2));
-        this.gfxWorld.fillRect(ARENA.width - edgeShadeSize, edgeShadeSize, edgeShadeSize, ARENA.height - (edgeShadeSize * 2));
+        this.gfxWorld.fillRect(0, 0, width, edgeShadeSize);
+        this.gfxWorld.fillRect(0, height - edgeShadeSize, width, edgeShadeSize);
+        this.gfxWorld.fillRect(0, edgeShadeSize, edgeShadeSize, height - (edgeShadeSize * 2));
+        this.gfxWorld.fillRect(width - edgeShadeSize, edgeShadeSize, edgeShadeSize, height - (edgeShadeSize * 2));
 
-        // Grid
         const STEP = VISUAL.GRID_STEP;
         this.gfxWorld.lineStyle(
             VISUAL.STROKE.gridLine,
@@ -231,27 +227,26 @@ export class GameRenderer {
             VISUAL.OPACITY.gridLine
         );
 
-        for (let x = 0; x <= ARENA.width; x += STEP) {
+        for (let x = 0; x <= width; x += STEP) {
             this.gfxWorld.beginPath();
             this.gfxWorld.moveTo(x, 0);
-            this.gfxWorld.lineTo(x, ARENA.height);
+            this.gfxWorld.lineTo(x, height);
             this.gfxWorld.strokePath();
         }
 
-        for (let y = 0; y <= ARENA.height; y += STEP) {
+        for (let y = 0; y <= height; y += STEP) {
             this.gfxWorld.beginPath();
             this.gfxWorld.moveTo(0, y);
-            this.gfxWorld.lineTo(ARENA.width, y);
+            this.gfxWorld.lineTo(width, y);
             this.gfxWorld.strokePath();
         }
 
-        // Arena border
         this.gfxWorld.lineStyle(
             VISUAL.STROKE.arenaBorder,
             COLORS.ARENA_BORDER,
             1
         );
-        this.gfxWorld.strokeRect(0, 0, ARENA.width, ARENA.height);
+        this.gfxWorld.strokeRect(0, 0, width, height);
     }
 
     /**
@@ -328,29 +323,23 @@ export class GameRenderer {
             if (enemyType === 'RANGED' && typeof aimAngle === 'number') {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
-            // Adicionar ANTES do drawCircle genérico dos inimigos:
+
             if (enemyType === 'MIRROR_BOSS' && typeof aimAngle === 'number') {
-                // Boss tem barrel prateado apontando pro jogador
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
-                this.drawCircle(x, y, radius, 0xdde8ff, VISUAL.STROKE.enemy); // corpo prateado/espelho
-                // Aura pulsante
                 this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
                 this.gfxGame.strokeCircle(x, y, radius + 8);
                 this.gfxGame.lineStyle(1, 0xaabbff, 0.15);
                 this.gfxGame.strokeCircle(x, y, radius + 16);
-                this.rememberEntitySnapshot(enemy.id, x, y, radius, 0xdde8ff, VISUAL.STROKE.enemy);
-                this.healthBarRenderer.drawWorldHealthBar(enemy.id, x, y - radius - 10, radius * 2, health, stats.maxHealth);
-                continue; // pula o drawCircle genérico abaixo
             }
 
-// ...drawCircle genérico existente continua aqui...
-            this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
+            const bodyColor = enemyType === 'MIRROR_BOSS' ? 0xdde8ff : COLORS.ENEMY;
+            this.drawCircle(x, y, radius, bodyColor, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
                 enemy.id,
                 x,
                 y,
                 radius,
-                COLORS.ENEMY,
+                bodyColor,
                 VISUAL.STROKE.enemy
             );
 

@@ -1,6 +1,6 @@
 
-import { emitGameEvent, GameEvents } from '../shared/EventBus';
-import type { BarrelConfig } from '../shared/Types';
+import { emitGameEvent, GameEvents } from '../../shared/EventBus';
+import type { BarrelConfig } from '../../shared/Types';
 
 export class Entity { 
     public id: string; 

@@ -4,7 +4,7 @@ import { Player } from './entities/player/Player';
 import { Enemy } from './entities/enemies/Enemy';
 import { RangedEnemy, type RangedShootRequest } from './entities/enemies/RangedEnemy';
 import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
-import { Entity } from './Entity';
+import { Entity } from './entities/Entity';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculatePlayerShotCooldownSeconds } from '../shared/CombatMath';
 import { UpgradeManager } from './UpgradeManager';
@@ -148,7 +148,7 @@ export class GameEngine {
 
     // Boss Mirror
     private isBossFightActive = false;
-    private currentArena = { x: 0, y: 0, width: 5000, height: 5000 };
+    private currentArena: { x: number; y: number; width: number; height: number };
     private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
 
     constructor() {
@@ -166,6 +166,7 @@ export class GameEngine {
         this.upgradeManager = new UpgradeManager();
 
         this.arenaSize = { width: ARENA.width, height: ARENA.height };
+        this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.player = this.createPlayer('Jogador');
         this.enemies = [];
         this.projectiles = [];
@@ -209,9 +210,37 @@ export class GameEngine {
                         if (canDamage) {
                             this.player.takeDamage(tri.damage);
                             this.player.registerCollisionDamageFrom(tri.id, currentTime);
+                            this.onPlayerDamagedForObjective();
                         }
-                        enemy.triangles.splice(i, 1);
+                        tri.health = 0;
                         continue;
+                    }
+                }
+
+                if (tri.mode === 'SHIELD' || tri.mode === 'ORBIT') {
+                    const dx = this.player.x - tri.x;
+                    const dy = this.player.y - tri.y;
+                    const dist = Math.hypot(dx, dy);
+                    const minDist = this.playerRadius + triangleRadius;
+
+                    if (dist < minDist && dist > 0.0001) {
+                        const nx = dx / dist;
+                        const ny = dy / dist;
+                        const overlap = minDist - dist;
+
+                        this.player.x += nx * overlap;
+                        this.player.y += ny * overlap;
+                        this.clampToArena(this.player);
+
+                        const impulse = this.collisionKnockbackImpulse + (overlap * this.collisionKnockbackOverlapBonus);
+                        this.player.applyImpulse(nx * impulse, ny * impulse);
+
+                        if (this.player.canReceiveCollisionDamageFrom(tri.id, currentTime, triangleDamageCooldownMs)) {
+                            this.player.takeDamage(tri.damage);
+                            this.player.registerCollisionDamageFrom(tri.id, currentTime);
+                            this.onPlayerDamagedForObjective();
+                            tri.health -= this.player.currentStats.bodyDamage;
+                        }
                     }
                 }
 
@@ -233,10 +262,6 @@ export class GameEngine {
 
                     if (projectile.health <= 0) {
                         this.destroyProjectile(projIndex);
-                    }
-
-                    if (tri.health <= 0) {
-                        enemy.triangles.splice(i, 1);
                     }
 
                     break;
@@ -378,6 +403,9 @@ export class GameEngine {
         this.enemies = [];
         this.projectiles = [];
         this.processedEnemyDeathIds.clear();
+        this.arenaSize.width = ARENA.width;
+        this.arenaSize.height = ARENA.height;
+        emitGameEvent(GameEvents.ARENA_RESIZED, { width: this.arenaSize.width, height: this.arenaSize.height });
 
         const now = performance.now();
         this.lastTick = now;

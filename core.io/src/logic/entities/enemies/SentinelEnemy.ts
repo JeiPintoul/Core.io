@@ -1,4 +1,4 @@
-import { Entity } from '../../Entity';
+import { Entity } from '../Entity';
 import type { EntityStats, EnemyType } from '../../../shared/Types';
 
 export interface SentinelTriangle {
@@ -28,17 +28,18 @@ export class SentinelEnemy extends Entity {
     private readonly triangleRadius = 12;
     private readonly triangleMaxHealth = 20;
     private readonly triangleDamage = 10;
-    private readonly triangleHomingSpeed = 230;
+    private readonly triangleHomingSpeed = 320;
     private readonly triangleHomingTurnRate = 4.0;
 
     private readonly shieldTriggerDistance = 280;
     private readonly homingMinDistance = 280;
     private readonly homingMaxDistance = 580;
     private readonly homingCooldownMs = 3200;
-    private readonly respawnCooldownMs = 8000;
+    private readonly respawnCooldownMs = 4000;
     private readonly preferredCombatDistance = 360;
 
     private lastHomingAtMs = 0;
+    private lastRespawnAtMs = -Infinity;
     private triangleIdCounter = 0;
     private destroyedTriangleTimestamps: number[] = [];
 
@@ -188,12 +189,15 @@ export class SentinelEnemy extends Entity {
             ts => (currentTimeMs - ts) < this.respawnCooldownMs
         );
 
-        if (this.triangles.length < this.maxTriangles && this.destroyedTriangleTimestamps.length === 0) {
-            const existingAngles = this.triangles.map(t => t.orbitAngle);
-            const newAngle = existingAngles.length > 0
-                ? existingAngles[existingAngles.length - 1] + (Math.PI * 2 / this.maxTriangles)
-                : 0;
-            this.triangles.push(this.createTriangle(newAngle));
-        }
+        if (this.triangles.length >= this.maxTriangles) return;
+        if (this.destroyedTriangleTimestamps.length > 0) return;
+        if ((currentTimeMs - this.lastRespawnAtMs) < this.respawnCooldownMs) return;
+
+        const existingAngles = this.triangles.map(t => t.orbitAngle);
+        const newAngle = existingAngles.length > 0
+            ? existingAngles[existingAngles.length - 1] + (Math.PI * 2 / this.maxTriangles)
+            : 0;
+        this.triangles.push(this.createTriangle(newAngle));
+        this.lastRespawnAtMs = currentTimeMs;
     }
 }

@@ -1,4 +1,4 @@
-import { Entity } from '../../Entity';
+import { Entity } from '../Entity';
 import { emitGameEvent, GameEvents, onGameEvent } from '../../../shared/EventBus';
 import type { EntityStats, StatModifiers } from '../../../shared/Types';
 
@@ -118,7 +118,7 @@ export class Player extends Entity {
     }
 
     private setupListeners(): void {
-        //Aqui quando ouvir que o inimmigo dropa xp, ele vai la e coleta 
+        //Aqui quando ouvir que o inimmigo dropa xp, ele vai la e coleta
         this.unsubscribeEnemyDestroyed = onGameEvent(GameEvents.ENEMY_DESTROYED, (data) => {
             this.gainXp(data.xpDropped);
         });
@@ -131,7 +131,7 @@ export class Player extends Entity {
         }
     }
 
-    //Logica do ganho de xp 
+    //Logica do ganho de xp
     public gainXp(amount: number): void {
         this.currentXp += amount;
 

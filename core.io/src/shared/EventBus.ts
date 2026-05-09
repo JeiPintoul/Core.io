@@ -34,6 +34,7 @@ export const GameEvents = {
     AUDIO_RESTART_REQUESTED: 'audio_restart_requested',
     BOSS_FIGHT_START: 'boss_fight_start',
     BOSS_DEFEATED: 'boss_defeated',
+    ARENA_RESIZED: 'arena_resized',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;
