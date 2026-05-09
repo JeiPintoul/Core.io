@@ -9,7 +9,7 @@ const DEFAULT_PLAYER_STATS: EntityStats = {
     bulletSpeed: 0,
     bulletPenetration: 0,
     bulletDamage: 0,
-    reload: 0,
+    reloadPoints: 0,
     movementSpeed: 0
 };
 
@@ -20,12 +20,12 @@ export class HudController {
     private currentLevel = 1;
     private currentXp = 0;
     private xpRequired = 100;
-    private currentWave = 1;
     private currentPlayerHealth = 0;
     private currentPlayerStats: EntityStats = { ...DEFAULT_PLAYER_STATS };
     private activePreviewModifiers: StatModifiers | null = null;
 
-    private readonly waveHeaderEl = this.getEl<HTMLElement>('hud-wave-header');
+    private readonly waveInfoTitleEl = this.getEl<HTMLElement>('hud-wave-info-title');
+    private readonly waveInfoSubEl = this.getEl<HTMLElement>('hud-wave-info-sub');
     private readonly waveTransitionEl = this.getEl<HTMLElement>('hud-wave-transition');
     private readonly enemyCounterEl = this.getEl<HTMLElement>('hud-enemy-counter');
     private readonly objectiveEl = this.getEl<HTMLElement>('hud-objective');
@@ -46,7 +46,7 @@ export class HudController {
     constructor() {
         this.bindEvents();
         this.renderLevel();
-        this.renderWaveHeader();
+        this.renderWaveInfo(1, 'CLEAR', 0, 0);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
@@ -58,7 +58,6 @@ export class HudController {
         this.currentLevel = 1;
         this.currentXp = 0;
         this.xpRequired = 100;
-        this.currentWave = 1;
         this.currentPlayerHealth = 0;
         this.currentPlayerStats = { ...DEFAULT_PLAYER_STATS };
 
@@ -67,7 +66,7 @@ export class HudController {
         this.setStatsPinned(false);
         this.clearStatPreview();
         this.renderLevel();
-        this.renderWaveHeader();
+        this.renderWaveInfo(1, 'CLEAR', 0, 0);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
@@ -124,17 +123,9 @@ export class HudController {
         );
 
         this.unsubscribers.push(
-            onGameEvent(GameEvents.WAVE_CLEARED, ({ nextWave }) => {
-                this.currentWave = Math.max(1, nextWave);
-                this.renderWaveHeader();
-            })
-        );
-
-        this.unsubscribers.push(
             onGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, ({ waveCleared, nextWave, durationMs }) => {
-                this.currentWave = Math.max(1, nextWave);
-                this.renderWaveHeader();
                 this.playWaveMessage(`ONDA ${waveCleared} CONCLUIDA`, true, durationMs);
+                void nextWave;
             })
         );
 
@@ -172,10 +163,15 @@ export class HudController {
         this.currentPlayerStats = { ...state.player.stats };
 
         this.renderLevel();
-        this.renderWaveHeader();
+        this.renderWaveInfo(
+            state.currentWave,
+            state.waveType,
+            state.remainingToKill,
+            state.surviveTimeRemainingSeconds
+        );
         this.renderXpBar();
         this.renderXpProgress();
-        this.renderEnemyCount(state.remainingEnemies);
+        this.renderEnemyCount(state.activeEnemyCount);
         this.renderObjective(state.objective);
 
         if (this.activePreviewModifiers) {
@@ -187,51 +183,51 @@ export class HudController {
     }
 
     private renderLevel(): void {
-        if (!this.levelLabelEl) {
-            return;
-        }
-
+        if (!this.levelLabelEl) return;
         this.levelLabelEl.textContent = `Nivel ${this.currentLevel}`;
     }
 
-    private renderWaveHeader(): void {
-        if (!this.waveHeaderEl) {
-            return;
+    private renderWaveInfo(
+        wave: number,
+        waveType: 'CLEAR' | 'SURVIVE',
+        remainingToKill: number,
+        surviveTimeRemaining: number
+    ): void {
+        if (this.waveInfoTitleEl) {
+            const typeLabel = waveType === 'SURVIVE' ? 'Sobrevivência' : 'Eliminação';
+            this.waveInfoTitleEl.textContent = `Onda ${wave} — ${typeLabel}`;
         }
 
-        this.waveHeaderEl.textContent = `Onda ${this.currentWave}`;
+        if (this.waveInfoSubEl) {
+            if (waveType === 'SURVIVE') {
+                this.waveInfoSubEl.textContent = `Tempo: ${this.formatCountdown(surviveTimeRemaining)}`;
+                this.waveInfoSubEl.classList.toggle('is-danger', surviveTimeRemaining <= 10);
+            } else {
+                this.waveInfoSubEl.textContent = `Restam: ${Math.max(0, remainingToKill)}`;
+                this.waveInfoSubEl.classList.remove('is-danger');
+            }
+        }
     }
 
     private renderXpBar(): void {
-        if (!this.xpFillEl) {
-            return;
-        }
-
+        if (!this.xpFillEl) return;
         const ratio = this.currentXp / Math.max(1, this.xpRequired);
         const clampedRatio = Math.max(0, Math.min(1, ratio));
         this.xpFillEl.style.width = `${(clampedRatio * 100).toFixed(2)}%`;
     }
 
     private renderXpProgress(): void {
-        if (!this.xpProgressEl) {
-            return;
-        }
-
+        if (!this.xpProgressEl) return;
         this.xpProgressEl.textContent = `Nivel ${this.currentLevel} - ${this.fmt0(this.currentXp)}/${this.fmt0(this.xpRequired)} XP`;
     }
 
-    private renderEnemyCount(count: number): void {
-        if (!this.enemyCounterEl) {
-            return;
-        }
-
-        this.enemyCounterEl.textContent = `Inimigos Restantes: ${Math.max(0, count)}`;
+    private renderEnemyCount(activeCount: number): void {
+        if (!this.enemyCounterEl) return;
+        this.enemyCounterEl.textContent = `Inimigos: ${Math.max(0, activeCount)}`;
     }
 
     private renderObjective(objective: ObjectiveState | null): void {
-        if (!this.objectiveEl) {
-            return;
-        }
+        if (!this.objectiveEl) return;
 
         if (!objective) {
             this.objectiveEl.textContent = 'Objetivo: --';
@@ -254,7 +250,7 @@ export class HudController {
         this.setText(this.statBulletDamageEl, this.fmt1(stats.bulletDamage));
         this.setText(this.statBulletSpeedEl, this.fmt1(stats.bulletSpeed));
         this.setText(this.statBulletPenetrationEl, this.fmt1(stats.bulletPenetration));
-        this.setText(this.statReloadEl, this.formatReloadValue(stats.reload));
+        this.setText(this.statReloadEl, this.formatReloadValue(stats.reloadPoints));
         this.setText(this.statMoveSpeedEl, this.fmt1(stats.movementSpeed));
     }
 
@@ -267,14 +263,12 @@ export class HudController {
         this.setPreviewNumber(this.statBulletDamageEl, this.currentPlayerStats.bulletDamage, previewStats.bulletDamage, modifiers.bulletDamage ?? 0);
         this.setPreviewNumber(this.statBulletSpeedEl, this.currentPlayerStats.bulletSpeed, previewStats.bulletSpeed, modifiers.bulletSpeed ?? 0);
         this.setPreviewNumber(this.statBulletPenetrationEl, this.currentPlayerStats.bulletPenetration, previewStats.bulletPenetration, modifiers.bulletPenetration ?? 0);
-        this.setPreviewReload(modifiers.reload ?? 0, previewStats.reload);
+        this.setPreviewReload(modifiers.reloadPoints ?? 0, previewStats.reloadPoints);
         this.setPreviewNumber(this.statMoveSpeedEl, this.currentPlayerStats.movementSpeed, previewStats.movementSpeed, modifiers.movementSpeed ?? 0);
     }
 
     private setPreviewHealth(maxHealthDelta: number, previewMaxHealth: number): void {
-        if (!this.statHealthEl) {
-            return;
-        }
+        if (!this.statHealthEl) return;
 
         const baseText = `${this.fmt0(this.currentPlayerHealth)} / ${this.fmt0(this.currentPlayerStats.maxHealth)}`;
         if (maxHealthDelta === 0) {
@@ -297,9 +291,7 @@ export class HudController {
         previewValue: number,
         delta: number
     ): void {
-        if (!element) {
-            return;
-        }
+        if (!element) return;
 
         if (delta === 0) {
             element.textContent = this.fmt1(currentValue);
@@ -313,12 +305,10 @@ export class HudController {
     }
 
     private setPreviewReload(delta: number, previewReloadPoints: number): void {
-        if (!this.statReloadEl) {
-            return;
-        }
+        if (!this.statReloadEl) return;
 
         if (delta === 0) {
-            this.statReloadEl.textContent = this.formatReloadValue(this.currentPlayerStats.reload);
+            this.statReloadEl.textContent = this.formatReloadValue(this.currentPlayerStats.reloadPoints);
             this.applyPreviewStyle(this.statReloadEl, 0);
             return;
         }
@@ -337,7 +327,7 @@ export class HudController {
             bulletSpeed: this.currentPlayerStats.bulletSpeed + (modifiers.bulletSpeed ?? 0),
             bulletPenetration: this.currentPlayerStats.bulletPenetration + (modifiers.bulletPenetration ?? 0),
             bulletDamage: this.currentPlayerStats.bulletDamage + (modifiers.bulletDamage ?? 0),
-            reload: Math.max(0, this.currentPlayerStats.reload + (modifiers.reload ?? 0)),
+            reloadPoints: Math.max(0, this.currentPlayerStats.reloadPoints + (modifiers.reloadPoints ?? 0)),
             movementSpeed: this.currentPlayerStats.movementSpeed + (modifiers.movementSpeed ?? 0)
         };
     }
@@ -347,15 +337,18 @@ export class HudController {
         return `${this.fmt1(reloadPoints)} pts (${this.fmt2(cooldown)}s)`;
     }
 
+    private formatCountdown(seconds: number): string {
+        const s = Math.max(0, Math.ceil(seconds));
+        const m = Math.floor(s / 60);
+        const rem = s % 60;
+        return `${m}:${rem.toString().padStart(2, '0')}`;
+    }
+
     private applyPreviewStyle(element: HTMLElement | null, delta: number): void {
-        if (!element) {
-            return;
-        }
+        if (!element) return;
 
         const row = element.parentElement;
-        if (!row) {
-            return;
-        }
+        if (!row) return;
 
         row.classList.remove('is-preview-positive', 'is-preview-negative');
 
@@ -398,25 +391,19 @@ export class HudController {
     }
 
     private showWaveTransition(text: string, isDanger: boolean): void {
-        if (!this.waveTransitionEl) {
-            return;
-        }
+        if (!this.waveTransitionEl) return;
 
         this.waveTransitionEl.hidden = false;
         this.waveTransitionEl.textContent = text;
         this.waveTransitionEl.classList.toggle('is-danger', isDanger);
         this.waveTransitionEl.classList.remove('show');
 
-        // Reinicia a animacao para cada mensagem da sequencia.
         void this.waveTransitionEl.offsetWidth;
         this.waveTransitionEl.classList.add('show');
     }
 
     private hideWaveTransition(): void {
-        if (!this.waveTransitionEl) {
-            return;
-        }
-
+        if (!this.waveTransitionEl) return;
         this.waveTransitionEl.classList.remove('show', 'is-danger');
         this.waveTransitionEl.hidden = true;
     }
@@ -425,15 +412,11 @@ export class HudController {
         for (const timeoutId of this.waveTransitionTimeoutIds) {
             window.clearTimeout(timeoutId);
         }
-
         this.waveTransitionTimeoutIds.length = 0;
     }
 
     private setText(element: HTMLElement | null, value: string): void {
-        if (!element) {
-            return;
-        }
-
+        if (!element) return;
         element.textContent = value;
     }
 

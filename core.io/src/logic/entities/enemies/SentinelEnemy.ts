@@ -1,5 +1,5 @@
 import { Entity } from '../Entity';
-import type { EntityStats, EnemyType } from '../../../shared/Types';
+import type { EnemyType, EntityStats } from '../../../shared/Types';
 
 export interface SentinelTriangle {
     id: string;
@@ -43,10 +43,34 @@ export class SentinelEnemy extends Entity {
     private triangleIdCounter = 0;
     private destroyedTriangleTimestamps: number[] = [];
 
-    constructor(id: string, x: number, y: number, stats: EntityStats) {
+    static readonly BASE_XP_DROP = 50;
+
+    static readonly BASE_STATS: EntityStats = {
+        maxHealth: 55,
+        healthRegen: 0,
+        bodyDamage: 6,
+        bulletSpeed: 0,
+        bulletPenetration: 0,
+        bulletDamage: 0,
+        reloadPoints: 0,
+        movementSpeed: 90
+    };
+
+    constructor(id: string, x: number, y: number, multiplier: number = 1) {
+        const stats: EntityStats = {
+            maxHealth: SentinelEnemy.BASE_STATS.maxHealth * multiplier,
+            healthRegen: 0,
+            bodyDamage: SentinelEnemy.BASE_STATS.bodyDamage * multiplier,
+            bulletSpeed: 0,
+            bulletPenetration: 0,
+            bulletDamage: 0,
+            reloadPoints: 0,
+            movementSpeed: SentinelEnemy.BASE_STATS.movementSpeed * multiplier
+        };
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed);
-        this.stats = { ...stats };
+        this.stats = stats;
         this.damage = stats.bodyDamage;
+        this.xpDrop = Math.round(SentinelEnemy.BASE_XP_DROP * multiplier);
         this.triangles = this.spawnInitialTriangles();
     }
 

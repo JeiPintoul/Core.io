@@ -59,7 +59,7 @@ const MODIFIER_META: Record<keyof EntityStats, { label: string; icon: string; to
     bulletSpeed: { label: 'Vel. Tiro', icon: 'SP', tone: 'offense' },
     bulletPenetration: { label: 'Penetracao', icon: 'PN', tone: 'offense' },
     bulletDamage: { label: 'Dano Tiro', icon: 'DM', tone: 'offense' },
-    reload: { label: 'Recarga', icon: 'RL', tone: 'utility' },
+    reloadPoints: { label: 'Recarga', icon: 'RL', tone: 'utility' },
     movementSpeed: { label: 'Velocidade', icon: 'MV', tone: 'mobility' }
 };
 
@@ -94,7 +94,7 @@ function getUpgradeCardFlavor(cardId: string): string {
 function formatModifierValue(stat: keyof EntityStats, value: number): string {
     const sign = value >= 0 ? '+' : '';
 
-    if (stat === 'reload') {
+    if (stat === 'reloadPoints') {
         return `${sign}${value.toFixed(1)} pts`;
     }
 

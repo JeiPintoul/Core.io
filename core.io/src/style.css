@@ -69,18 +69,33 @@ body {
   backdrop-filter: blur(3px);
 }
 
-#hud-wave-header {
+#hud-wave-info {
   position: absolute;
   top: clamp(12px, 1.5vh, 20px);
-  left: 50%;
-  transform: translateX(-50%);
-  min-width: clamp(198px, 13.5vw, 250px);
+  left: clamp(12px, 1.2vw, 20px);
+  min-width: clamp(180px, 14vw, 260px);
   padding: clamp(8px, 1.05vh, 12px) clamp(14px, 1.1vw, 20px);
-  text-align: center;
-  letter-spacing: clamp(1.1px, 0.1vw, 1.8px);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+#hud-wave-info-title {
   font-weight: 700;
-  font-size: clamp(1rem, 1.07vw, 1.34rem);
+  font-size: clamp(0.9rem, 0.95vw, 1.18rem);
+  letter-spacing: clamp(0.8px, 0.07vw, 1.4px);
   text-transform: uppercase;
+  color: var(--hud-accent-strong);
+}
+
+#hud-wave-info-sub {
+  font-size: clamp(0.8rem, 0.82vw, 1rem);
+  color: var(--hud-muted);
+  letter-spacing: 0.2px;
+}
+
+#hud-wave-info-sub.is-danger {
+  color: var(--hud-danger);
 }
 
 #hud-wave-transition {
@@ -199,7 +214,7 @@ body {
 #hud-objective {
   position: absolute;
   left: 50%;
-  top: calc(clamp(12px, 1.5vh, 20px) + clamp(46px, 4vh, 58px));
+  top: clamp(12px, 1.5vh, 20px);
   transform: translateX(-50%);
   min-width: min(680px, 90vw);
   max-width: min(760px, 92vw);

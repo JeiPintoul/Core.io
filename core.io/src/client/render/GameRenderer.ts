@@ -324,7 +324,7 @@ export class GameRenderer {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
 
-            if (enemyType === 'MIRROR_BOSS' && typeof aimAngle === 'number') {
+            if (enemyType === 'ANOMALY' && typeof aimAngle === 'number') {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
                 this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
                 this.gfxGame.strokeCircle(x, y, radius + 8);
@@ -332,7 +332,7 @@ export class GameRenderer {
                 this.gfxGame.strokeCircle(x, y, radius + 16);
             }
 
-            const bodyColor = enemyType === 'MIRROR_BOSS' ? 0xdde8ff : COLORS.ENEMY;
+            const bodyColor = enemyType === 'ANOMALY' ? 0xdde8ff : COLORS.ENEMY;
             this.drawCircle(x, y, radius, bodyColor, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
                 enemy.id,

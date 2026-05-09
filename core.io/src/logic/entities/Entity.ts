@@ -2,13 +2,14 @@
 import { emitGameEvent, GameEvents } from '../../shared/EventBus';
 import type { BarrelConfig } from '../../shared/Types';
 
-export class Entity { 
-    public id: string; 
-    public x : number; 
+export class Entity {
+    public id: string;
+    public x : number;
     public y: number;
     public health: number;
     public maxHealth: number;
-    public speed: number; 
+    public speed: number;
+    public xpDrop = 0;
   public knockbackVelocity: { x: number; y: number };
   public damageTimers: Map<string, number>;
   public barrels: BarrelConfig[];

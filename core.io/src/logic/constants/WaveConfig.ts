@@ -1,80 +1,42 @@
-import type { EnemyType, EntityStats, WaveMilestone } from '../../shared/Types';
+import type { EnemyType, WaveMilestone, WaveType } from '../../shared/Types';
 
 export const ENEMY_STAT_MULTIPLIER_PER_WAVE = 0.05;
 export const WAVE_UPGRADE_PHASE_DURATION_MS = 3000;
 export const WAVE_SPAWN_INTERVAL_SECONDS = 0.45;
-export const ENEMY_XP_DROP = 25;
-
-export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
-    KAMIKAZE: {
-        maxHealth: 30,
-        healthRegen: 0,
-        bodyDamage: 5,
-        bulletSpeed: 0,
-        bulletPenetration: 0,
-        bulletDamage: 0,
-        reload: 0,
-        movementSpeed: 140
-    },
-    RANGED: {
-        maxHealth: 22,
-        healthRegen: 0,
-        bodyDamage: 3,
-        bulletSpeed: 320,
-        bulletPenetration: 1,
-        bulletDamage: 8,
-        reload: 2,
-        movementSpeed: 105
-    },
-    SENTINEL: {
-        maxHealth: 55,
-        healthRegen: 0,
-        bodyDamage: 6,
-        bulletSpeed: 0,
-        bulletPenetration: 0,
-        bulletDamage: 0,
-        reload: 20,
-        movementSpeed: 90
-    },
-    MIRROR_BOSS: {
-        maxHealth: 100, // placeholder — substituído pelos stats do jogador no spawn
-        healthRegen: 0,
-        bodyDamage: 10,
-        bulletSpeed: 500,
-        bulletPenetration: 1,
-        bulletDamage: 15,
-        reload: 0,
-        movementSpeed: 150
-    }
-    
-};
 
 export const WAVE_MILESTONES: WaveMilestone[] = [
     {
         startWave: 1,
         enemyWeights: { KAMIKAZE: 100 },
         maxActiveEnemies: 10,
+        maxActiveEnemiesSurvive: 8,
         totalEnemiesToSpawn: 20,
-        sizeMultiplier: 0.08
+        sizeMultiplier: 0.08,
+        surviveDurationSeconds: 40
     },
     {
         startWave: 2,
         enemyWeights: { KAMIKAZE: 80, RANGED: 20 },
         maxActiveEnemies: 14,
+        maxActiveEnemiesSurvive: 10,
         totalEnemiesToSpawn: 28,
-        sizeMultiplier: 0.1
+        sizeMultiplier: 0.1,
+        surviveDurationSeconds: 45
     },
     {
         startWave: 3,
         enemyWeights: { KAMIKAZE: 60, RANGED: 30, SENTINEL: 10 },
         maxActiveEnemies: 18,
+        maxActiveEnemiesSurvive: 12,
         totalEnemiesToSpawn: 36,
-        sizeMultiplier: 0.13
+        sizeMultiplier: 0.13,
+        surviveDurationSeconds: 50
     },
-    
-
-        
 ];
+
+export function getRandomWaveType(): WaveType {
+    return Math.random() < 0.8 ? 'CLEAR' : 'SURVIVE';
+}
 
 export function getWaveMilestone(currentWave: number): WaveMilestone {
     let selectedMilestone = WAVE_MILESTONES[0];

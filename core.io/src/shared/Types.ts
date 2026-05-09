@@ -1,3 +1,7 @@
+export const MAX_RELOAD_POINTS = 12;
+
+export type WaveType = 'CLEAR' | 'SURVIVE';
+
 export interface EntityStats {
     maxHealth: number;
     healthRegen: number;
@@ -5,7 +9,7 @@ export interface EntityStats {
     bulletSpeed: number;
     bulletPenetration: number;
     bulletDamage: number;
-    reload: number;
+    reloadPoints: number;
     movementSpeed: number;
 }
 
@@ -49,15 +53,17 @@ export interface CardSelectedPayload {
     colorHex: string;
 }
 
-export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'MIRROR_BOSS';
+export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'ANOMALY';
 export type ProjectileFaction = 'player' | 'enemy';
 
 export interface WaveMilestone {
     startWave: number;
     enemyWeights: Partial<Record<EnemyType, number>>;
     maxActiveEnemies: number;
+    maxActiveEnemiesSurvive: number;
     totalEnemiesToSpawn: number;
     sizeMultiplier: number;
+    surviveDurationSeconds: number;
 }
 
 export interface SentinelTriangleData {
@@ -116,13 +122,15 @@ export interface GameState {
     enemies: EntityData[];
     projectiles: ProjectileData[];
     arena: { width: number; height: number };
-    remainingEnemies: number;
+    currentWave: number;
+    waveType: WaveType;
+    remainingToKill: number;
+    activeEnemyCount: number;
+    surviveTimeRemainingSeconds: number;
     isPaused: boolean;
     objective: ObjectiveState | null;
-    //Boss
     isBossFight?: boolean;
     arenaOffset?: { x: number; y: number };
-
 }
 
 export interface InputState {

@@ -1,29 +1,33 @@
 import { Entity } from '../Entity';
 import type { EntityStats, EnemyType } from '../../../shared/Types';
-import { calculatePlayerShotCooldownSeconds } from '../../../shared/CombatMath';
+import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../shared/CombatMath';
 
-export interface MirrorShootRequest {
+export interface AnomalyShootRequest {
     ownerId: string;
     aimAngle: number;
     stats: EntityStats;
 }
 
-export class MirrorBoss extends Entity {
-    public readonly enemyType: EnemyType = 'MIRROR_BOSS';
+export class Anomaly extends Entity {
+    public readonly enemyType: EnemyType = 'ANOMALY';
     public readonly stats: EntityStats;
     public aimAngle = 0;
     public damage: number;
+    public readonly spawnCount: number;
+
+    static readonly BASE_XP_DROP = 300;
 
     private readonly preferredDistance = 380;
     private lastShotAtMs = 0;
 
-    constructor(id: string, x: number, y: number, playerStats: EntityStats) {
+    constructor(id: string, x: number, y: number, playerStats: EntityStats, spawnCount: number) {
         super(id, x, y, playerStats.maxHealth, playerStats.maxHealth, playerStats.movementSpeed);
         this.stats = { ...playerStats };
         this.damage = playerStats.bodyDamage;
-        // Mesmo barrel do jogador
+        this.xpDrop = Anomaly.BASE_XP_DROP;
+        this.spawnCount = spawnCount;
         this.setBarrels([{
-            id: 'mirror_front_barrel',
+            id: 'anomaly_front_barrel',
             offsetX: 34,
             offsetY: 0,
             angleOffset: 0,
@@ -39,7 +43,7 @@ export class MirrorBoss extends Entity {
         targetY: number,
         deltaTime: number,
         currentTimeMs: number,
-        shootProjectile: (request: MirrorShootRequest) => void
+        shootProjectile: (request: AnomalyShootRequest) => void
     ): void {
         const dx = targetX - this.x;
         const dy = targetY - this.y;
@@ -49,7 +53,6 @@ export class MirrorBoss extends Entity {
             this.aimAngle = Math.atan2(dy, dx);
         }
 
-        // Movimentação tática: mantém distância preferida
         if (distance > 0.0001) {
             const normalizedX = dx / distance;
             const normalizedY = dy / distance;
@@ -63,8 +66,7 @@ export class MirrorBoss extends Entity {
             }
         }
 
-        // Atira com o mesmo timing do jogador
-        const reloadMs = calculatePlayerShotCooldownSeconds(this.stats.reload) * 1000;
+        const reloadMs = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, this.stats.reloadPoints) * 1000;
 
         if (currentTimeMs - this.lastShotAtMs >= reloadMs && distance > 0.0001) {
             this.lastShotAtMs = currentTimeMs;

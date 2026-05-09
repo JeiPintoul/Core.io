@@ -1,22 +1,22 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../shared/EventBus';
-import type { CardSelectedPayload, EnemyType, EntityStats, GameState, InputState, ObjectiveState, ProjectileFaction } from '../shared/Types';
+import type { CardSelectedPayload, EnemyType, EntityStats, GameState, InputState, ProjectileFaction, WaveType } from '../shared/Types';
+import { Entity } from './entities/Entity';
 import { Player } from './entities/player/Player';
 import { Enemy } from './entities/enemies/Enemy';
 import { RangedEnemy, type RangedShootRequest } from './entities/enemies/RangedEnemy';
 import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
-import { Entity } from './entities/Entity';
 import { ARENA } from '../client/constants/GameConstants';
-import { calculatePlayerShotCooldownSeconds } from '../shared/CombatMath';
+import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../shared/CombatMath';
 import { UpgradeManager } from './UpgradeManager';
+import { MissionManager } from './MissionManager';
 import {
-    ENEMY_BASE_STATS,
     ENEMY_STAT_MULTIPLIER_PER_WAVE,
-    ENEMY_XP_DROP,
     WAVE_SPAWN_INTERVAL_SECONDS,
     getEnemyFirstWave,
+    getRandomWaveType,
     getWaveMilestone
 } from './constants/WaveConfig';
-import { MirrorBoss, type MirrorShootRequest } from './entities/enemies/MirrorBoss';
+import { Anomaly, type AnomalyShootRequest } from './entities/enemies/Anomaly';
 
 class Projectile {
     id: string;
@@ -61,7 +61,6 @@ class Projectile {
     }
 }
 
-// FIX 1: vírgula faltando antes de BOSS_FIGHT
 enum EngineState {
     WAVE_ACTIVE = 'WAVE_ACTIVE',
     WAVE_CLEAR_ANIMATION = 'WAVE_CLEAR_ANIMATION',
@@ -70,29 +69,15 @@ enum EngineState {
     BOSS_FIGHT = 'BOSS_FIGHT',
 }
 
-type HostileEnemy = Enemy | RangedEnemy | SentinelEnemy | MirrorBoss;
-type ObjectiveKind = 'KILL_COUNT' | 'RANGED_KILL_COUNT' | 'NO_DAMAGE_DURATION';
-
-interface ActiveObjectiveState {
-    id: string;
-    kind: ObjectiveKind;
-    title: string;
-    description: string;
-    progress: number;
-    target: number;
-    completed: boolean;
-    failed: boolean;
-    rewardGranted: boolean;
-    createdAtMs: number;
-}
+type HostileEnemy = Enemy | RangedEnemy | SentinelEnemy | Anomaly;
 
 export class GameEngine {
     private player: Player;
     private enemies: HostileEnemy[];
     private projectiles: Projectile[];
     private readonly arenaSize: { width: number; height: number };
-    private readonly playerBaseStats: EntityStats;
     private readonly upgradeManager: UpgradeManager;
+    private readonly missionManager: MissionManager;
 
     private readonly playerRadius = 24;
     private readonly enemyRadius = 24;
@@ -138,32 +123,30 @@ export class GameEngine {
 
     private engineState: EngineState = EngineState.WAVE_ACTIVE;
     private currentWave = 1;
+    private currentWaveType: WaveType = 'CLEAR';
+    private spawnQueue: EnemyType[] = [];
+    private surviveWaveEndsAtMs = 0;
     private enemiesSpawnedThisWave = 0;
     private enemiesKilledThisWave = 0;
     private waveClearAnimationEndsAtMs = 0;
     private waveStartingAnimationEndsAtMs = 0;
-    private currentObjective: ActiveObjectiveState | null = null;
 
     private readonly processedEnemyDeathIds = new Set<string>();
 
-    // Boss Mirror
+    // Anomaly (Boss)
     private isBossFightActive = false;
     private currentArena: { x: number; y: number; width: number; height: number };
     private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
 
-    constructor() {
-        this.playerBaseStats = {
-            maxHealth: 100,
-            healthRegen: 1,
-            bodyDamage: 5,
-            bulletSpeed: 450,
-            bulletPenetration: 1,
-            bulletDamage: 8,
-            reload: 0,
-            movementSpeed: 150
-        };
+    private anomalySpawnCount = 0;
+    private anomalyCurrentChance = 0.15;
+    private anomalyCooldownWaves = 0;
 
+    constructor() {
         this.upgradeManager = new UpgradeManager();
+        this.missionManager = new MissionManager((rewardUpgrades) => {
+            this.player.pendingUpgrades += rewardUpgrades;
+        });
 
         this.arenaSize = { width: ARENA.width, height: ARENA.height };
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
@@ -184,7 +167,10 @@ export class GameEngine {
         this.lastTick = now;
         this.lastShotTime = now;
         this.lastSpawnTime = now;
-        this.resetObjectiveForCurrentWave(now);
+        this.currentWaveType = 'CLEAR';
+        const wave1Milestone = getWaveMilestone(1);
+        this.initSpawnQueue(wave1Milestone, this.getCurrentWaveTotalToSpawn());
+        this.missionManager.roll(this.spawnQueue, this.currentWaveType, wave1Milestone, now);
 
         this.setupListeners();
     }
@@ -210,7 +196,7 @@ export class GameEngine {
                         if (canDamage) {
                             this.player.takeDamage(tri.damage);
                             this.player.registerCollisionDamageFrom(tri.id, currentTime);
-                            this.onPlayerDamagedForObjective();
+                            this.missionManager.onPlayerDamaged();
                         }
                         tri.health = 0;
                         continue;
@@ -238,7 +224,7 @@ export class GameEngine {
                         if (this.player.canReceiveCollisionDamageFrom(tri.id, currentTime, triangleDamageCooldownMs)) {
                             this.player.takeDamage(tri.damage);
                             this.player.registerCollisionDamageFrom(tri.id, currentTime);
-                            this.onPlayerDamagedForObjective();
+                            this.missionManager.onPlayerDamaged();
                             tri.health -= this.player.currentStats.bodyDamage;
                         }
                     }
@@ -311,12 +297,12 @@ export class GameEngine {
                 this.processedEnemyDeathIds.add(enemy.id);
                 emitGameEvent(GameEvents.ENEMY_DESTROYED, {
                     id: enemy.id,
-                    xpDropped: ENEMY_XP_DROP,
+                    xpDropped: enemy.xpDrop,
                     x: enemy.x,
                     y: enemy.y,
                     radius: this.enemyRadius
                 });
-                this.onEnemyKilledForObjective(enemy);
+                this.missionManager.onEnemyKilled(enemy.enemyType);
 
                 if (this.engineState === EngineState.WAVE_ACTIVE) {
                     this.enemiesKilledThisWave += 1;
@@ -333,8 +319,7 @@ export class GameEngine {
             'player_1',
             centerX,
             centerY,
-            name,
-            this.playerBaseStats
+            name
         );
     }
 
@@ -417,16 +402,24 @@ export class GameEngine {
 
         this.engineState = EngineState.WAVE_ACTIVE;
         this.currentWave = 1;
+        this.currentWaveType = 'CLEAR';
+        this.spawnQueue = [];
+        this.surviveWaveEndsAtMs = 0;
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
         this.waveClearAnimationEndsAtMs = 0;
         this.waveStartingAnimationEndsAtMs = 0;
-        this.resetObjectiveForCurrentWave(now);
+        const wave1Milestone = getWaveMilestone(1);
+        this.initSpawnQueue(wave1Milestone, this.getCurrentWaveTotalToSpawn());
+        this.missionManager.reset();
+        this.missionManager.roll(this.spawnQueue, this.currentWaveType, wave1Milestone, now);
         this.player.isUpgrading = false;
 
-        // FIX: resetar estado do boss
         this.isBossFightActive = false;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
+        this.anomalySpawnCount = 0;
+        this.anomalyCurrentChance = 0.15;
+        this.anomalyCooldownWaves = 0;
 
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
     }
@@ -480,7 +473,7 @@ export class GameEngine {
             this.trySpawnEnemies(currentTime);
         }
 
-        this.updateObjectiveProgress(currentTime);
+        this.missionManager.update(currentTime);
         this.checkCollisions(currentTime);
         this.advanceWaveState(currentTime);
     }
@@ -509,7 +502,7 @@ export class GameEngine {
                 radius: this.enemyRadius,
                 stats: enemy.stats,
                 enemyType: enemy.enemyType,
-                aimAngle: (enemy instanceof RangedEnemy || enemy instanceof MirrorBoss)
+                aimAngle: (enemy instanceof RangedEnemy || enemy instanceof Anomaly)
                     ? enemy.aimAngle
                     : undefined,
                 sentinelTriangles: enemy instanceof SentinelEnemy
@@ -536,9 +529,13 @@ export class GameEngine {
             // ADICIONADO: estado do boss para o renderer
             arenaOffset: { x: this.currentArena.x, y: this.currentArena.y },
             isBossFight: this.isBossFightActive,
-            remainingEnemies: this.getRemainingEnemiesInWave(),
+            currentWave: this.currentWave,
+            waveType: this.currentWaveType,
+            remainingToKill: this.getRemainingToKill(),
+            activeEnemyCount: this.enemies.length,
+            surviveTimeRemainingSeconds: this.getSurviveTimeRemaining(this.lastTick),
             isPaused: this.isPaused,
-            objective: this.buildObjectiveState()
+            objective: this.missionManager.getObjectiveState()
         };
 
         emitGameEvent(GameEvents.STATE_UPDATE, exportState);
@@ -578,7 +575,7 @@ export class GameEngine {
         }
 
         const timeSinceLastShot = (currentTime - this.lastShotTime) / 1000;
-        const actualCooldown = calculatePlayerShotCooldownSeconds(playerStats.reload);
+        const actualCooldown = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, playerStats.reloadPoints);
 
         if (timeSinceLastShot < actualCooldown) {
             return;
@@ -604,7 +601,6 @@ export class GameEngine {
         this.lastShotTime = currentTime;
     }
 
-    // FIX 2: else if do MirrorBoss estava depois do else — ordem corrigida
     private updateEnemies(dt: number, currentTime: number): void {
         for (const enemy of this.enemies) {
             if (enemy instanceof RangedEnemy) {
@@ -613,9 +609,9 @@ export class GameEngine {
                 });
             } else if (enemy instanceof SentinelEnemy) {
                 enemy.update(this.player.x, this.player.y, dt, currentTime);
-            } else if (enemy instanceof MirrorBoss) {
+            } else if (enemy instanceof Anomaly) {
                 enemy.update(this.player.x, this.player.y, dt, currentTime, (request) => {
-                    this.handleMirrorBossShootRequest(enemy, request);
+                    this.handleAnomalyShootRequest(enemy, request);
                 });
             } else {
                 enemy.update(this.player.x, this.player.y, dt);
@@ -630,8 +626,7 @@ export class GameEngine {
         this.fireEntityBarrels(shooter, 'enemy', request.aimAngle, request.stats);
     }
 
-    // ADICIONADO
-    private handleMirrorBossShootRequest(shooter: MirrorBoss, request: MirrorShootRequest): void {
+    private handleAnomalyShootRequest(shooter: Anomaly, request: AnomalyShootRequest): void {
         this.fireEntityBarrels(shooter, 'enemy', request.aimAngle, request.stats);
     }
 
@@ -734,41 +729,52 @@ export class GameEngine {
         }
     }
 
+    private initSpawnQueue(milestone: ReturnType<typeof getWaveMilestone>, total: number): void {
+        this.spawnQueue = [];
+        for (let i = 0; i < total; i++) {
+            this.spawnQueue.push(this.rollEnemyType(milestone.enemyWeights));
+        }
+        for (let i = this.spawnQueue.length - 1; i > 0; i--) {
+            const j = Math.floor(Math.random() * (i + 1));
+            [this.spawnQueue[i], this.spawnQueue[j]] = [this.spawnQueue[j], this.spawnQueue[i]];
+        }
+    }
+
     private trySpawnEnemies(currentTime: number): void {
-        const waveMilestone = getWaveMilestone(this.currentWave);
-        const totalToSpawn = this.getCurrentWaveTotalToSpawn();
+        const milestone = getWaveMilestone(this.currentWave);
+        const maxActive = this.currentWaveType === 'SURVIVE'
+            ? milestone.maxActiveEnemiesSurvive
+            : milestone.maxActiveEnemies;
 
-        if (this.enemiesSpawnedThisWave >= totalToSpawn) {
-            return;
-        }
-
-        if (this.enemies.length >= waveMilestone.maxActiveEnemies) {
-            return;
-        }
+        if (this.enemies.length >= maxActive) return;
 
         const timeSinceLastSpawn = (currentTime - this.lastSpawnTime) / 1000;
-        if (timeSinceLastSpawn < WAVE_SPAWN_INTERVAL_SECONDS) {
-            return;
+        if (timeSinceLastSpawn < WAVE_SPAWN_INTERVAL_SECONDS) return;
+
+        if (this.currentWaveType === 'SURVIVE' && this.spawnQueue.length === 0) {
+            this.initSpawnQueue(milestone, milestone.maxActiveEnemiesSurvive * 2);
         }
 
-        this.spawnEnemyForWave(waveMilestone.enemyWeights);
+        if (this.spawnQueue.length === 0) return;
+
+        const enemyType = this.spawnQueue.pop()!;
+        this.spawnEnemy(enemyType);
         this.enemiesSpawnedThisWave += 1;
         this.lastSpawnTime = currentTime;
     }
 
-    private spawnEnemyForWave(weights: Partial<Record<EnemyType, number>>): void {
-        const enemyType = this.rollEnemyType(weights);
-        const enemyStats = this.buildScaledEnemyStats(enemyType);
+    private spawnEnemy(enemyType: EnemyType): void {
+        const multiplier = this.buildScaledMultiplier(enemyType);
         const spawnPoint = this.rollOffscreenSpawnPoint();
         const enemyId = `enemy_${this.enemyIdCounter++}`;
 
         let enemy: HostileEnemy;
         if (enemyType === 'RANGED') {
-            enemy = new RangedEnemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+            enemy = new RangedEnemy(enemyId, spawnPoint.x, spawnPoint.y, multiplier);
         } else if (enemyType === 'SENTINEL') {
-            enemy = new SentinelEnemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+            enemy = new SentinelEnemy(enemyId, spawnPoint.x, spawnPoint.y, multiplier);
         } else {
-            enemy = new Enemy(enemyId, spawnPoint.x, spawnPoint.y, enemyStats);
+            enemy = new Enemy(enemyId, spawnPoint.x, spawnPoint.y, multiplier);
         }
 
         this.enemies.push(enemy);
@@ -797,22 +803,10 @@ export class GameEngine {
         return { x: fallbackX, y: fallbackY };
     }
 
-    private buildScaledEnemyStats(enemyType: EnemyType): EntityStats {
-        const baseStats = ENEMY_BASE_STATS[enemyType];
+    private buildScaledMultiplier(enemyType: EnemyType): number {
         const enemyStartWave = getEnemyFirstWave(enemyType);
         const waveOffset = Math.max(0, this.currentWave - enemyStartWave);
-        const multiplier = 1 + (waveOffset * ENEMY_STAT_MULTIPLIER_PER_WAVE);
-
-        return {
-            maxHealth: baseStats.maxHealth * multiplier,
-            healthRegen: baseStats.healthRegen,
-            bodyDamage: baseStats.bodyDamage * multiplier,
-            bulletSpeed: baseStats.bulletSpeed * multiplier,
-            bulletPenetration: baseStats.bulletPenetration * multiplier,
-            bulletDamage: baseStats.bulletDamage * multiplier,
-            reload: baseStats.reload,
-            movementSpeed: baseStats.movementSpeed * multiplier
-        };
+        return 1 + (waveOffset * ENEMY_STAT_MULTIPLIER_PER_WAVE);
     }
 
     private rollEnemyType(weights: Partial<Record<EnemyType, number>>): EnemyType {
@@ -1063,16 +1057,15 @@ export class GameEngine {
         target.registerCollisionDamageFrom(attacker.id, currentTime);
 
         if (target instanceof Player) {
-            this.onPlayerDamagedForObjective();
+            this.missionManager.onPlayerDamaged();
         }
     }
 
-    // FIX 4: MirrorBoss adicionado
     private isEnemyEntity(entity: Entity): entity is HostileEnemy {
         return entity instanceof Enemy
             || entity instanceof RangedEnemy
             || entity instanceof SentinelEnemy
-            || entity instanceof MirrorBoss;
+            || entity instanceof Anomaly;
     }
 
     private isSameFaction(entityA: Entity, entityB: Entity): boolean {
@@ -1186,7 +1179,7 @@ export class GameEngine {
                 target.registerCollisionDamageFrom(`projectile:${projectile.id}`, currentTime);
 
                 if (target instanceof Player) {
-                    this.onPlayerDamagedForObjective();
+                    this.missionManager.onPlayerDamaged();
                 }
             }
 
@@ -1201,7 +1194,7 @@ export class GameEngine {
         target.registerCollisionDamageFrom(`projectile:${projectile.id}`, currentTime);
 
         if (target instanceof Player) {
-            this.onPlayerDamagedForObjective();
+            this.missionManager.onPlayerDamaged();
         }
 
         this.applyProjectileImpactImpulse(target, projectile, false);
@@ -1281,10 +1274,9 @@ export class GameEngine {
         projectile.velocityY = (reflectedY / reflectedSpeed) * preservedSpeed;
     }
 
-    // ADICIONADO: checagem do boss + fluxo normal
     private advanceWaveState(currentTime: number): void {
         if (this.engineState === EngineState.BOSS_FIGHT) {
-            const bossAlive = this.enemies.some(e => e instanceof MirrorBoss);
+            const bossAlive = this.enemies.some(e => e instanceof Anomaly);
             if (!bossAlive) {
                 this.endBossFight(currentTime);
             }
@@ -1292,7 +1284,11 @@ export class GameEngine {
         }
 
         if (this.engineState === EngineState.WAVE_ACTIVE) {
-            this.tryEnterWaveClearAnimation(currentTime);
+            if (this.currentWaveType === 'SURVIVE') {
+                this.tryEndSurviveWave(currentTime);
+            } else {
+                this.tryEnterWaveClearAnimation(currentTime);
+            }
             return;
         }
 
@@ -1315,30 +1311,44 @@ export class GameEngine {
         }
     }
 
-    // ADICIONADO: trigger do boss a cada 3 waves
     private tryEnterWaveClearAnimation(currentTime: number): void {
-        const totalToSpawn = this.getCurrentWaveTotalToSpawn();
+        if (this.enemiesKilledThisWave < this.getCurrentWaveTotalToSpawn()) return;
+        if (this.enemies.length > 0) return;
+        this.triggerWaveClear(currentTime);
+    }
 
-        if (this.enemiesKilledThisWave < totalToSpawn) {
-            return;
-        }
+    private tryEndSurviveWave(currentTime: number): void {
+        if (currentTime < this.surviveWaveEndsAtMs) return;
+        this.enemies = [];
+        this.spawnQueue = [];
+        this.triggerWaveClear(currentTime);
+    }
 
-        if (this.enemies.length > 0) {
-            return;
-        }
-
+    private triggerWaveClear(currentTime: number): void {
         const waveCleared = this.currentWave;
         const nextWave = waveCleared + 1;
 
         this.currentWave = nextWave;
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
+        this.spawnQueue = [];
 
         emitGameEvent(GameEvents.WAVE_CLEARED, { waveCleared, nextWave });
 
-        if (waveCleared % 3 === 0) { // Aqui determina quando o boss entra - a cada 3 waves, por exemplo
-            this.enterBossFight();
-            return;
+        if (this.anomalyCooldownWaves > 0) {
+            this.anomalyCooldownWaves -= 1;
+        }
+
+        if (waveCleared >= 5 && this.anomalyCooldownWaves === 0) {
+            if (Math.random() < this.anomalyCurrentChance) {
+                this.anomalyCurrentChance = 0.15;
+                this.anomalyCooldownWaves = 5;
+                this.anomalySpawnCount += 1;
+                this.enterBossFight();
+                return;
+            } else {
+                this.anomalyCurrentChance += 0.03;
+            }
         }
 
         this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
@@ -1352,7 +1362,6 @@ export class GameEngine {
         });
     }
 
-    // ADICIONADO
     private enterBossFight(): void {
         this.isBossFightActive = true;
         this.currentArena = { ...this.BOSS_ARENA };
@@ -1361,11 +1370,12 @@ export class GameEngine {
         this.player.y = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
         this.player.knockbackVelocity = { x: 0, y: 0 };
 
-        const boss = new MirrorBoss(
-            'mirror_boss',
+        const boss = new Anomaly(
+            'anomaly_boss',
             this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2,
             this.BOSS_ARENA.y + 200,
-            this.player.currentStats
+            this.player.currentStats,
+            this.anomalySpawnCount
         );
 
         this.enemies = [boss];
@@ -1431,7 +1441,19 @@ export class GameEngine {
     private resumeWaveSpawning(currentTime: number): void {
         this.engineState = EngineState.WAVE_ACTIVE;
         this.lastSpawnTime = currentTime;
-        this.resetObjectiveForCurrentWave(currentTime);
+
+        const milestone = getWaveMilestone(this.currentWave);
+        this.currentWaveType = getRandomWaveType();
+
+        if (this.currentWaveType === 'SURVIVE') {
+            this.surviveWaveEndsAtMs = currentTime + milestone.surviveDurationSeconds * 1000;
+            this.initSpawnQueue(milestone, milestone.maxActiveEnemiesSurvive * 2);
+        } else {
+            this.surviveWaveEndsAtMs = 0;
+            this.initSpawnQueue(milestone, this.getCurrentWaveTotalToSpawn());
+        }
+
+        this.missionManager.roll(this.spawnQueue, this.currentWaveType, milestone, currentTime);
 
         emitGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, {
             wave: this.currentWave
@@ -1513,137 +1535,6 @@ export class GameEngine {
         });
     }
 
-    private resetObjectiveForCurrentWave(currentTimeMs: number): void {
-        const waveBucket = (this.currentWave - 1) % 3;
-
-        if (waveBucket === 0) {
-            this.currentObjective = {
-                id: `wave_${this.currentWave}_kills`,
-                kind: 'KILL_COUNT',
-                title: 'Eliminador',
-                description: 'Elimine 12 inimigos nesta onda',
-                progress: 0,
-                target: 12,
-                completed: false,
-                failed: false,
-                rewardGranted: false,
-                createdAtMs: currentTimeMs
-            };
-            return;
-        }
-
-        if (waveBucket === 1) {
-            this.currentObjective = {
-                id: `wave_${this.currentWave}_ranged`,
-                kind: 'RANGED_KILL_COUNT',
-                title: 'Cacador de Ranged',
-                description: 'Elimine 4 inimigos ranged nesta onda',
-                progress: 0,
-                target: 4,
-                completed: false,
-                failed: false,
-                rewardGranted: false,
-                createdAtMs: currentTimeMs
-            };
-            return;
-        }
-
-        this.currentObjective = {
-            id: `wave_${this.currentWave}_nodamage`,
-            kind: 'NO_DAMAGE_DURATION',
-            title: 'Blindagem Perfeita',
-            description: 'Fique 20s sem receber dano',
-            progress: 0,
-            target: 20,
-            completed: false,
-            failed: false,
-            rewardGranted: false,
-            createdAtMs: currentTimeMs
-        };
-    }
-
-    private buildObjectiveState(): ObjectiveState | null {
-        if (!this.currentObjective) {
-            return null;
-        }
-
-        return {
-            id: this.currentObjective.id,
-            title: this.currentObjective.title,
-            description: this.currentObjective.description,
-            progress: this.currentObjective.progress,
-            target: this.currentObjective.target,
-            completed: this.currentObjective.completed,
-            failed: this.currentObjective.failed
-        };
-    }
-
-    private updateObjectiveProgress(currentTimeMs: number): void {
-        if (!this.currentObjective || this.currentObjective.completed || this.currentObjective.failed) {
-            return;
-        }
-
-        if (this.currentObjective.kind !== 'NO_DAMAGE_DURATION') {
-            return;
-        }
-
-        const elapsedSeconds = (currentTimeMs - this.currentObjective.createdAtMs) / 1000;
-        this.currentObjective.progress = Math.min(this.currentObjective.target, elapsedSeconds);
-        this.tryGrantObjectiveReward();
-    }
-
-    private onEnemyKilledForObjective(enemy: HostileEnemy): void {
-        if (!this.currentObjective || this.currentObjective.completed || this.currentObjective.failed) {
-            return;
-        }
-
-        if (this.currentObjective.kind === 'KILL_COUNT') {
-            this.currentObjective.progress += 1;
-            this.tryGrantObjectiveReward();
-            return;
-        }
-
-        if (this.currentObjective.kind === 'RANGED_KILL_COUNT' && enemy.enemyType === 'RANGED') {
-            this.currentObjective.progress += 1;
-            this.tryGrantObjectiveReward();
-        }
-    }
-
-    private onPlayerDamagedForObjective(): void {
-        if (!this.currentObjective || this.currentObjective.completed || this.currentObjective.failed) {
-            return;
-        }
-
-        if (this.currentObjective.kind !== 'NO_DAMAGE_DURATION') {
-            return;
-        }
-
-        this.currentObjective.failed = true;
-    }
-
-    private tryGrantObjectiveReward(): void {
-        if (!this.currentObjective) {
-            return;
-        }
-
-        if (this.currentObjective.failed || this.currentObjective.rewardGranted) {
-            return;
-        }
-
-        if (this.currentObjective.progress < this.currentObjective.target) {
-            return;
-        }
-
-        this.currentObjective.progress = this.currentObjective.target;
-        this.currentObjective.completed = true;
-        this.currentObjective.rewardGranted = true;
-        this.player.pendingUpgrades += 1;
-
-        emitGameEvent(GameEvents.OBJECTIVE_COMPLETED, {
-            title: this.currentObjective.title,
-            rewardUpgrades: 1
-        });
-    }
 
     private getCurrentWaveTotalToSpawn(): number {
         const waveRule = getWaveMilestone(this.currentWave);
@@ -1653,7 +1544,13 @@ export class GameEngine {
         return Math.max(1, Math.round(scaledTotal));
     }
 
-    private getRemainingEnemiesInWave(): number {
+    private getRemainingToKill(): number {
+        if (this.currentWaveType === 'SURVIVE') return 0;
         return Math.max(0, this.getCurrentWaveTotalToSpawn() - this.enemiesKilledThisWave);
+    }
+
+    private getSurviveTimeRemaining(currentTimeMs: number): number {
+        if (this.currentWaveType !== 'SURVIVE') return 0;
+        return Math.max(0, (this.surviveWaveEndsAtMs - currentTimeMs) / 1000);
     }
 }
