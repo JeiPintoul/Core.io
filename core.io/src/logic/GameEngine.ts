@@ -155,10 +155,10 @@ export class GameEngine {
         this.playerBaseStats = {
             maxHealth: 100,
             healthRegen: 1,
-            bodyDamage: 10,
-            bulletSpeed: 500,
+            bodyDamage: 5,
+            bulletSpeed: 450,
             bulletPenetration: 1,
-            bulletDamage: 15,
+            bulletDamage: 8,
             reload: 0,
             movementSpeed: 150
         };

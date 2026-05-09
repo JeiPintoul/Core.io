@@ -23,6 +23,11 @@ const btnAudio = document.getElementById('btn-audio') as HTMLButtonElement | nul
 const btnMute = document.getElementById('btn-mute') as HTMLButtonElement | null;
 const musicVolumeInput = document.getElementById('music-volume') as HTMLInputElement | null;
 const pauseAudioPanelEl = document.getElementById('pause-audio-panel');
+const hudAudioWidgetEl = document.getElementById('hud-audio-widget');
+const hudAudioPanelEl = document.getElementById('hud-audio-panel');
+const btnAudioGlobal = document.getElementById('btn-audio-global') as HTMLButtonElement | null;
+const btnMuteGlobal = document.getElementById('btn-mute-global') as HTMLButtonElement | null;
+const musicVolumeGlobalInput = document.getElementById('music-volume-global') as HTMLInputElement | null;
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume') as HTMLButtonElement | null;
 const btnRestart = document.getElementById('btn-restart') as HTMLButtonElement | null;
@@ -104,9 +109,15 @@ function setUiMode(nextMode: UiMode): void {
 function applyUiModeEffects(): void {
     const shouldShowHud = uiMode !== 'INITIAL_MENU' && uiMode !== 'GAME_OVER';
     const shouldShowStats = shouldShowHud;
+    const shouldShowAudioWidget = uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER';
 
     hudLayerEl?.classList.toggle('is-hidden', !shouldShowHud);
     hudStatsEl?.classList.toggle('is-hidden', !shouldShowStats);
+    hudAudioWidgetEl?.classList.toggle('is-visible', shouldShowAudioWidget);
+
+    if (!shouldShowAudioWidget) {
+        hudAudioPanelEl?.classList.remove('is-open');
+    }
 
     if (uiMode !== 'PAUSED') {
         setPauseAudioPanelOpen(false);
@@ -137,6 +148,15 @@ function updateAudioHud(): void {
 
     if (musicVolumeInput) {
         musicVolumeInput.value = Math.round(musicVolume * 100).toString();
+    }
+
+    if (btnMuteGlobal) {
+        btnMuteGlobal.textContent = musicMuted ? 'Som: OFF' : 'Som: ON';
+        btnMuteGlobal.classList.toggle('is-muted', musicMuted);
+    }
+
+    if (musicVolumeGlobalInput) {
+        musicVolumeGlobalInput.value = Math.round(musicVolume * 100).toString();
     }
 }
 
@@ -450,6 +470,30 @@ if (musicVolumeInput) {
         const clampedValue = Math.max(0, Math.min(100, rawValue));
         musicVolume = clampedValue / 100;
 
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
+if (btnAudioGlobal) {
+    btnAudioGlobal.addEventListener('click', () => {
+        const isOpen = hudAudioPanelEl?.classList.contains('is-open') ?? false;
+        hudAudioPanelEl?.classList.toggle('is-open', !isOpen);
+    });
+}
+
+if (btnMuteGlobal) {
+    btnMuteGlobal.addEventListener('click', () => {
+        musicMuted = !musicMuted;
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
+if (musicVolumeGlobalInput) {
+    musicVolumeGlobalInput.addEventListener('input', () => {
+        const rawValue = Number(musicVolumeGlobalInput.value);
+        musicVolume = Math.max(0, Math.min(100, rawValue)) / 100;
         updateAudioHud();
         emitAudioSettings();
     });

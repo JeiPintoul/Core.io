@@ -14,7 +14,7 @@ export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
         bulletPenetration: 0,
         bulletDamage: 0,
         reload: 0,
-        movementSpeed: 100
+        movementSpeed: 140
     },
     RANGED: {
         maxHealth: 22,
@@ -23,8 +23,8 @@ export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
         bulletSpeed: 320,
         bulletPenetration: 1,
         bulletDamage: 8,
-        reload: 1.2,
-        movementSpeed: 85
+        reload: 2,
+        movementSpeed: 105
     },
     SENTINEL: {
         maxHealth: 55,
@@ -33,8 +33,8 @@ export const ENEMY_BASE_STATS: Record<EnemyType, EntityStats> = {
         bulletSpeed: 0,
         bulletPenetration: 0,
         bulletDamage: 0,
-        reload: 0,
-        movementSpeed: 70
+        reload: 20,
+        movementSpeed: 90
     },
     MIRROR_BOSS: {
         maxHealth: 100, // placeholder — substituído pelos stats do jogador no spawn

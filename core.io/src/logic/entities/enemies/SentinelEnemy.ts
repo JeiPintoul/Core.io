@@ -32,7 +32,7 @@ export class SentinelEnemy extends Entity {
     private readonly triangleHomingTurnRate = 4.0;
 
     private readonly shieldTriggerDistance = 280;
-    private readonly homingMinDistance = 280;
+    private readonly homingMinDistance = 290;
     private readonly homingMaxDistance = 580;
     private readonly homingCooldownMs = 3200;
     private readonly respawnCooldownMs = 4000;
