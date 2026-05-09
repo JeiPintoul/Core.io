@@ -171,13 +171,13 @@ body {
 
 #hud-minimap-group {
   position: absolute;
-  right: var(--minimap-padding);
-  bottom: var(--minimap-padding);
+  right: calc(var(--canvas-inset-right, 0px) + var(--minimap-padding) * var(--canvas-scale, 1));
+  bottom: calc(var(--canvas-inset-bottom, 0px) + var(--minimap-padding) * var(--canvas-scale, 1));
   display: flex;
   flex-direction: column;
   align-items: stretch;
   gap: var(--counter-gap);
-  width: var(--minimap-size);
+  width: calc(var(--minimap-size) * var(--canvas-scale, 1));
 }
 
 #hud-enemy-counter {
@@ -191,7 +191,7 @@ body {
 
 #hud-minimap-placeholder {
   width: 100%;
-  height: var(--minimap-size);
+  height: calc(var(--minimap-size) * var(--canvas-scale, 1));
   flex-shrink: 0;
   pointer-events: none;
 }
@@ -348,19 +348,26 @@ body {
   text-shadow: 0 0 10px rgba(255, 139, 139, 0.45);
 }
 
-#hud-stats:hover .hud-stats-panel,
-#hud-stats:focus-within .hud-stats-panel {
+#hud-stats:not(.is-pinned):hover .hud-stats-panel,
+#hud-stats:not(.is-pinned):focus-within .hud-stats-panel {
   opacity: 1;
   transform: translateY(0) scale(1);
 }
 
 #hud-stats.is-pinned {
   pointer-events: auto;
+  cursor: pointer;
 }
 
 #hud-stats.is-pinned .hud-stats-panel {
   opacity: 1;
   transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+#hud-stats.is-pinned.is-user-collapsed .hud-stats-panel {
+  opacity: 0;
+  transform: translateY(8px) scale(0.98);
   pointer-events: none;
 }
 
@@ -482,10 +489,6 @@ body {
     --counter-gap: 6px;
   }
 
-  #hud-minimap-group {
-    width: var(--minimap-size);
-  }
-
   .upgrade-card {
     min-height: clamp(180px, 34vh, 260px);
   }
@@ -511,10 +514,6 @@ body {
     top: 12px;
     font-size: 1.08rem;
     min-width: 180px;
-  }
-
-  #hud-minimap-group {
-    width: min(var(--minimap-size), 48vw);
   }
 
   #hud-objective {
@@ -548,7 +547,7 @@ body {
   background-color: rgba(7, 10, 20, 0.56);
   pointer-events: none;
   backdrop-filter: blur(2px);
-  z-index: 40;
+  z-index: 55;
 }
 
 #pause-menu h2 {
@@ -648,12 +647,12 @@ body {
 .upgrade-cards {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: clamp(10px, 1.5vw, 20px);
+  gap: clamp(10px, 1.8vw, 32px);
 }
 
 .upgrade-card {
   --upgrade-card-color: var(--hud-accent);
-  min-height: clamp(240px, 48vh, 380px);
+  min-height: clamp(240px, 52vh, 520px);
   padding: clamp(11px, 1.5vh, 16px);
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--upgrade-card-color), #ffffff 10%);

@@ -537,8 +537,9 @@ export class GameRenderer {
     }
 
     private getMinimapMetrics(): { size: number; padding: number } {
-        if (this.camera.height <= 900) return { size: 148, padding: 18 };
-        if (this.camera.height <= 1120) return { size: 168, padding: 22 };
+        const h = this.scene.scale.displaySize.height;
+        if (h <= 900) return { size: 148, padding: 18 };
+        if (h <= 1120) return { size: 168, padding: 22 };
         return { size: 192, padding: 28 };
     }
 

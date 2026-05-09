@@ -40,6 +40,7 @@ const hudStatsEl = document.getElementById('hud-stats');
 let gameOverUiTimeoutId: number | null = null;
 let waitingUpgradeSelection = false;
 let uiMode: UiMode = menuInicial ? 'INITIAL_MENU' : 'IN_GAME';
+let previousUiMode: UiMode | null = null;
 let musicMuted = false;
 let musicVolume = Number(musicVolumeInput?.value ?? '32') / 100;
 
@@ -185,14 +186,22 @@ function isPauseMenuVisible(): boolean {
 }
 
 function togglePauseFromUi(): void {
-    if (uiMode === 'INITIAL_MENU' || uiMode === 'UPGRADE' || uiMode === 'GAME_OVER') {
+    if (uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER') {
         return;
     }
 
     const isPaused = engine.togglePause();
     applyPauseUi(isPaused);
     setPauseMenuVisible(isPaused);
-    setUiMode(isPaused ? 'PAUSED' : 'IN_GAME');
+
+    if (isPaused) {
+        previousUiMode = uiMode;
+        setUiMode('PAUSED');
+    } else {
+        const returnMode = previousUiMode ?? 'IN_GAME';
+        previousUiMode = null;
+        setUiMode(returnMode);
+    }
 }
 
 function setUpgradeModalVisible(visible: boolean): void {
@@ -535,6 +544,7 @@ if (btnRestart) {
 onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, ({ upgradesRemaining }) => {
     setUpgradeModalVisible(true);
     hudController.setStatsPinned(true);
+    hudStatsEl?.classList.remove('is-user-collapsed');
     hudController.clearStatPreview();
     setUpgradesRemaining(upgradesRemaining);
     waitingUpgradeSelection = false;
@@ -544,6 +554,7 @@ onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, ({ upgradesRemaining }) => {
 onGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, ({ upgradesRemaining, options }) => {
     setUpgradeModalVisible(true);
     hudController.setStatsPinned(true);
+    hudStatsEl?.classList.remove('is-user-collapsed');
     hudController.clearStatPreview();
     setUpgradesRemaining(upgradesRemaining);
     waitingUpgradeSelection = false;
@@ -557,6 +568,7 @@ onGameEvent(GameEvents.HIDE_UPGRADE_MODAL, () => {
     clearUpgradeCards();
     hudController.clearStatPreview();
     hudController.setStatsPinned(false);
+    hudStatsEl?.classList.remove('is-user-collapsed');
     waitingUpgradeSelection = false;
 
     if (uiMode === 'GAME_OVER' || uiMode === 'INITIAL_MENU') {
@@ -572,11 +584,6 @@ window.addEventListener('keydown', (event) => {
     }
 
     event.preventDefault();
-
-    if (isUpgradeModalVisible()) {
-        return;
-    }
-
     togglePauseFromUi();
 });
 
@@ -594,10 +601,55 @@ function preventNameInputPropagation(): void {
     playerNameInput.addEventListener('keypress', stopEventPropagation);
 }
 
+if (hudStatsEl) {
+    hudStatsEl.addEventListener('click', () => {
+        if (uiMode !== 'UPGRADE') {
+            return;
+        }
+
+        hudStatsEl.classList.toggle('is-user-collapsed');
+    });
+}
+
 preventNameInputPropagation();
 applyUiModeEffects();
 updateAudioHud();
 emitAudioSettings();
+
+function syncCanvasLayout(): void {
+    const canvas = document.querySelector('#game-container canvas') as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const insetRight = Math.max(0, window.innerWidth - rect.right);
+    const insetBottom = Math.max(0, window.innerHeight - rect.bottom);
+    const scale = rect.height / 1080;
+    const root = document.documentElement;
+    root.style.setProperty('--canvas-inset-right', `${Math.round(insetRight)}px`);
+    root.style.setProperty('--canvas-inset-bottom', `${Math.round(insetBottom)}px`);
+    root.style.setProperty('--canvas-scale', scale.toFixed(4));
+}
+
+function attachCanvasSyncObserver(): void {
+    const canvas = document.querySelector('#game-container canvas') as HTMLCanvasElement | null;
+    if (!canvas) {
+        window.setTimeout(attachCanvasSyncObserver, 100);
+        return;
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => syncCanvasLayout()).observe(canvas);
+    }
+    syncCanvasLayout();
+}
+
+// fullscreenchange fires when the transition starts but the canvas may still be settling —
+// run sync after a short delay to catch the final resting dimensions.
+document.addEventListener('fullscreenchange', () => {
+    window.setTimeout(syncCanvasLayout, 60);
+    window.setTimeout(syncCanvasLayout, 180);
+});
+window.addEventListener('resize', syncCanvasLayout);
+attachCanvasSyncObserver();
 
 window.addEventListener('beforeunload', () => {
     engine.destroy();
