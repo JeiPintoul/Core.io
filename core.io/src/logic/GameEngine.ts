@@ -545,10 +545,11 @@ export class GameEngine {
         let movementX = 0;
         let movementY = 0;
 
-        const up    = this.isBossFightActive ? this.currentInput.down  : this.currentInput.up;
-        const down  = this.isBossFightActive ? this.currentInput.up    : this.currentInput.down;
-        const left  = this.isBossFightActive ? this.currentInput.right : this.currentInput.left;
-        const right = this.isBossFightActive ? this.currentInput.left  : this.currentInput.right;
+        const isInverted = this.isBossFightActive && (this.getActiveAnomaly()?.isInverted ?? false);
+        const up    = isInverted ? this.currentInput.down  : this.currentInput.up;
+        const down  = isInverted ? this.currentInput.up    : this.currentInput.down;
+        const left  = isInverted ? this.currentInput.right : this.currentInput.left;
+        const right = isInverted ? this.currentInput.left  : this.currentInput.right;
 
         if (up)    movementY -= 1;
         if (down)  movementY += 1;
@@ -581,10 +582,11 @@ export class GameEngine {
             return;
         }
 
-        const targetX = this.isBossFightActive
+        const isInvertedShoot = this.isBossFightActive && (this.getActiveAnomaly()?.isInverted ?? false);
+        const targetX = isInvertedShoot
             ? 2 * this.player.x - this.currentInput.targetX
             : this.currentInput.targetX;
-        const targetY = this.isBossFightActive
+        const targetY = isInvertedShoot
             ? 2 * this.player.y - this.currentInput.targetY
             : this.currentInput.targetY;
 
@@ -610,9 +612,10 @@ export class GameEngine {
             } else if (enemy instanceof SentinelEnemy) {
                 enemy.update(this.player.x, this.player.y, dt, currentTime);
             } else if (enemy instanceof Anomaly) {
-                enemy.update(this.player.x, this.player.y, dt, currentTime, (request) => {
+                enemy.update(this.player.x, this.player.y, this.player, dt, currentTime, (request) => {
                     this.handleAnomalyShootRequest(enemy, request);
                 });
+                this.drainAnomalySpawns(enemy);
             } else {
                 enemy.update(this.player.x, this.player.y, dt);
             }
@@ -628,6 +631,21 @@ export class GameEngine {
 
     private handleAnomalyShootRequest(shooter: Anomaly, request: AnomalyShootRequest): void {
         this.fireEntityBarrels(shooter, 'enemy', request.aimAngle, request.stats);
+    }
+
+    private getActiveAnomaly(): Anomaly | null {
+        for (const e of this.enemies) {
+            if (e instanceof Anomaly) return e;
+        }
+        return null;
+    }
+
+    private drainAnomalySpawns(anomaly: Anomaly): void {
+        while (anomaly.pendingSpawns.length > 0) {
+            const spawn = anomaly.pendingSpawns.shift()!;
+            const enemyId = `enemy_${this.enemyIdCounter++}`;
+            this.enemies.push(new Enemy(enemyId, spawn.x, spawn.y, 0.25));
+        }
     }
 
     private fireEntityBarrels(

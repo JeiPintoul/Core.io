@@ -160,6 +160,29 @@ export class GameScene extends Phaser.Scene {
             })
         );
 
+        this.subscriptions.push(
+            onGameEvent(GameEvents.ANOMALY_TELEPORT, ({ x, y }) => {
+                this.gameRenderer.playTeleportFlash(x, y);
+            })
+        );
+
+        this.subscriptions.push(
+            onGameEvent(GameEvents.ANOMALY_DASH, ({ id, durationMs }) => {
+                const tickInterval = 50;
+                const repeatCount = Math.floor(durationMs / tickInterval);
+
+                this.time.addEvent({
+                    delay: tickInterval,
+                    repeat: repeatCount,
+                    callback: () => {
+                        const enemy = this.latestState?.enemies.find(e => e.id === id);
+                        if (!enemy) return;
+                        this.gameRenderer.playDashGhostTrail(enemy.x, enemy.y, enemy.radius);
+                    }
+                });
+            })
+        );
+
         this.events.once(Phaser.Scenes.Events.SHUTDOWN, () => this.cleanupListeners());
         this.events.once(Phaser.Scenes.Events.DESTROY, () => this.cleanupListeners());
     }

@@ -2,7 +2,7 @@ import type { EnemyType, WaveMilestone, WaveType } from '../../shared/Types';
 
 export const ENEMY_STAT_MULTIPLIER_PER_WAVE = 0.05;
 export const WAVE_UPGRADE_PHASE_DURATION_MS = 3000;
-export const WAVE_SPAWN_INTERVAL_SECONDS = 0.45;
+export const WAVE_SPAWN_INTERVAL_SECONDS = 0.25;
 
 export const WAVE_MILESTONES: WaveMilestone[] = [
     {
@@ -35,7 +35,7 @@ export const WAVE_MILESTONES: WaveMilestone[] = [
 ];
 
 export function getRandomWaveType(): WaveType {
-    return Math.random() < 0.8 ? 'CLEAR' : 'SURVIVE';
+    return Math.random() < 0.75 ? 'CLEAR' : 'SURVIVE';
 }
 
 export function getWaveMilestone(currentWave: number): WaveMilestone {

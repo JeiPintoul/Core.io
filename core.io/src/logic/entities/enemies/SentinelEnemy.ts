@@ -52,8 +52,8 @@ export class SentinelEnemy extends Entity {
         bulletSpeed: 0,
         bulletPenetration: 0,
         bulletDamage: 0,
-        reloadPoints: 0,
-        movementSpeed: 90
+        reloadPoints: 4,
+        movementSpeed: 100
     };
 
     constructor(id: string, x: number, y: number, multiplier: number = 1) {

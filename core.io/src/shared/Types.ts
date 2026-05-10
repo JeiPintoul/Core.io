@@ -219,6 +219,19 @@ export interface AudioSettingsPayload {
     muted: boolean;
 }
 
+export interface AnomalyTeleportPayload {
+    id: string;
+    x: number;
+    y: number;
+}
+
+export interface AnomalyDashPayload {
+    id: string;
+    x: number;
+    y: number;
+    durationMs: number;
+}
+
 export interface GameEventPayloads {
     player_input: InputState;
     state_update: GameState;
@@ -245,4 +258,6 @@ export interface GameEventPayloads {
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
     arena_resized: { width: number; height: number };
+    anomaly_teleport: AnomalyTeleportPayload;
+    anomaly_dash: AnomalyDashPayload;
 }

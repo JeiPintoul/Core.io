@@ -35,6 +35,8 @@ export const GameEvents = {
     BOSS_FIGHT_START: 'boss_fight_start',
     BOSS_DEFEATED: 'boss_defeated',
     ARENA_RESIZED: 'arena_resized',
+    ANOMALY_TELEPORT: 'anomaly_teleport',
+    ANOMALY_DASH: 'anomaly_dash',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;
