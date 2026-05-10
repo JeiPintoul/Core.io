@@ -1,5 +1,6 @@
+import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
 import { Entity } from '../Entity';
-import type { EnemyType, EntityStats } from '../../../shared/Types';
+import type { EnemyType, EntityData, EntityStats, TriangleCollidable } from '../../../shared/Types';
 
 export interface SentinelTriangle {
     id: string;
@@ -15,7 +16,7 @@ export interface SentinelTriangle {
     velocityY: number;
 }
 
-export class SentinelEnemy extends Entity {
+export class SentinelEnemy extends HostileEntity {
     public readonly enemyType: EnemyType = 'SENTINEL';
     public readonly stats: EntityStats;
     public aimAngle = 0;
@@ -24,7 +25,7 @@ export class SentinelEnemy extends Entity {
 
     private readonly maxTriangles = 3;
     private readonly orbitRadius = 65;
-    private readonly orbitAngularSpeed = 1.8; // rad/s
+    private readonly orbitAngularSpeed = 1.8;
     private readonly triangleRadius = 12;
     private readonly triangleMaxHealth = 20;
     private readonly triangleDamage = 10;
@@ -74,47 +75,105 @@ export class SentinelEnemy extends Entity {
         this.triangles = this.spawnInitialTriangles();
     }
 
-    private spawnInitialTriangles(): SentinelTriangle[] {
-        const result: SentinelTriangle[] = [];
-        for (let i = 0; i < this.maxTriangles; i++) {
-            result.push(this.createTriangle((Math.PI * 2 / this.maxTriangles) * i));
-        }
-        return result;
-    }
-
-    private createTriangle(orbitAngle: number): SentinelTriangle {
+    public override toData(): EntityData {
         return {
-            id: `${this.id}_tri_${this.triangleIdCounter++}`,
-            x: this.x + Math.cos(orbitAngle) * this.orbitRadius,
-            y: this.y + Math.sin(orbitAngle) * this.orbitRadius,
-            rotation: orbitAngle,
-            mode: 'ORBIT',
-            orbitAngle,
-            health: this.triangleMaxHealth,
-            maxHealth: this.triangleMaxHealth,
-            damage: this.triangleDamage,
-            velocityX: 0,
-            velocityY: 0,
+            ...super.toData(),
+            sentinelTriangles: this.triangles.map(t => ({
+                id: t.id,
+                x: t.x,
+                y: t.y,
+                rotation: t.rotation,
+                mode: t.mode,
+                health: t.health,
+                maxHealth: t.maxHealth
+            }))
         };
     }
 
-    public getTriangleRadius(): number {
-        return this.triangleRadius;
-    }
-
-    public update(targetX: number, targetY: number, deltaTime: number, currentTimeMs: number): void {
-        const dx = targetX - this.x;
-        const dy = targetY - this.y;
+    public tick(context: EnemyUpdateContext): void {
+        const { playerX, playerY, dt, currentTime } = context;
+        const dx = playerX - this.x;
+        const dy = playerY - this.y;
         const distance = Math.hypot(dx, dy);
 
         if (distance > 0.0001) {
             this.aimAngle = Math.atan2(dy, dx);
         }
 
-        this.updateMovement(dx, dy, distance, deltaTime);
-        this.tryRespawnTriangles(currentTimeMs);
-        this.updateTriangleModes(distance, currentTimeMs);
-        this.updateTrianglePositions(targetX, targetY, deltaTime, currentTimeMs);
+        this.updateMovement(dx, dy, distance, dt);
+        this.tryRespawnTriangles(currentTime);
+        this.updateTriangleModes(distance, currentTime);
+        this.updateTrianglePositions(playerX, playerY, dt, currentTime);
+    }
+
+    public override resolveSpecialCollisions(
+        player: Entity,
+        projectiles: TriangleCollidable[],
+        currentTime: number,
+        onPlayerDamaged: () => void,
+        clampToArena: (entity: Entity) => void,
+        onProjectileDestroyed: (id: string) => void
+    ): void {
+        const damageCooldownMs = 200;
+
+        for (let i = this.triangles.length - 1; i >= 0; i--) {
+            const tri = this.triangles[i];
+
+            if (tri.mode === 'HOMING') {
+                const dist = Math.hypot(player.x - tri.x, player.y - tri.y);
+                if (dist < player.radius + this.triangleRadius) {
+                    if (player.canReceiveCollisionDamageFrom(tri.id, currentTime, damageCooldownMs)) {
+                        player.takeDamage(tri.damage);
+                        player.registerCollisionDamageFrom(tri.id, currentTime);
+                        onPlayerDamaged();
+                    }
+                    tri.health = 0;
+                    continue;
+                }
+            }
+
+            if (tri.mode === 'SHIELD' || tri.mode === 'ORBIT') {
+                const dx = player.x - tri.x;
+                const dy = player.y - tri.y;
+                const dist = Math.hypot(dx, dy);
+                const minDist = player.radius + this.triangleRadius;
+
+                if (dist < minDist && dist > 0.0001) {
+                    const nx = dx / dist;
+                    const ny = dy / dist;
+                    const overlap = minDist - dist;
+
+                    player.x += nx * overlap;
+                    player.y += ny * overlap;
+                    clampToArena(player);
+
+                    const impulse = Entity.COLLISION_KNOCKBACK_IMPULSE + (overlap * Entity.COLLISION_KNOCKBACK_OVERLAP_BONUS);
+                    player.applyImpulse(nx * impulse, ny * impulse);
+
+                    if (player.canReceiveCollisionDamageFrom(tri.id, currentTime, damageCooldownMs)) {
+                        player.takeDamage(tri.damage);
+                        player.registerCollisionDamageFrom(tri.id, currentTime);
+                        onPlayerDamaged();
+                        tri.health -= player.contactDamage;
+                    }
+                }
+            }
+
+            for (const projectile of projectiles) {
+                if (projectile.faction !== 'player') continue;
+                const dist = Math.hypot(projectile.x - tri.x, projectile.y - tri.y);
+                if (dist >= projectile.radius + this.triangleRadius) continue;
+
+                const damage = Math.min(projectile.damage, projectile.health);
+                tri.health -= damage;
+                projectile.health -= 15;
+
+                if (projectile.health <= 0) {
+                    onProjectileDestroyed(projectile.id);
+                }
+                break;
+            }
+        }
     }
 
     private updateMovement(dx: number, dy: number, distance: number, deltaTime: number): void {
@@ -223,5 +282,29 @@ export class SentinelEnemy extends Entity {
             : 0;
         this.triangles.push(this.createTriangle(newAngle));
         this.lastRespawnAtMs = currentTimeMs;
+    }
+
+    private spawnInitialTriangles(): SentinelTriangle[] {
+        const result: SentinelTriangle[] = [];
+        for (let i = 0; i < this.maxTriangles; i++) {
+            result.push(this.createTriangle((Math.PI * 2 / this.maxTriangles) * i));
+        }
+        return result;
+    }
+
+    private createTriangle(orbitAngle: number): SentinelTriangle {
+        return {
+            id: `${this.id}_tri_${this.triangleIdCounter++}`,
+            x: this.x + Math.cos(orbitAngle) * this.orbitRadius,
+            y: this.y + Math.sin(orbitAngle) * this.orbitRadius,
+            rotation: orbitAngle,
+            mode: 'ORBIT',
+            orbitAngle,
+            health: this.triangleMaxHealth,
+            maxHealth: this.triangleMaxHealth,
+            damage: this.triangleDamage,
+            velocityX: 0,
+            velocityY: 0,
+        };
     }
 }

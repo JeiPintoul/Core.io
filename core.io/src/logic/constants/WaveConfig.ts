@@ -4,6 +4,11 @@ export const ENEMY_STAT_MULTIPLIER_PER_WAVE = 0.05;
 export const WAVE_UPGRADE_PHASE_DURATION_MS = 3000;
 export const WAVE_SPAWN_INTERVAL_SECONDS = 0.25;
 
+export const ANOMALY_START_WAVE = 5;
+export const ANOMALY_BASE_CHANCE = 0.15;
+export const ANOMALY_CHANCE_INCREMENT = 0.03;
+export const ANOMALY_COOLDOWN_WAVES = 3;
+
 export const WAVE_MILESTONES: WaveMilestone[] = [
     {
         startWave: 1,

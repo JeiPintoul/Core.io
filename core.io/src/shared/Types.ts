@@ -24,6 +24,19 @@ export interface BarrelConfig {
     lifespanMultiplier: number;
 }
 
+export interface ProjectileSpawnRequest {
+    spawnX: number;
+    spawnY: number;
+    dirX: number;
+    dirY: number;
+    damage: number;
+    penetration: number;
+    speed: number;
+    lifespan: number;
+    shotAngle: number;
+    recoilStrength: number;
+}
+
 export type StatModifiers = Partial<EntityStats>;
 export type CardRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
 
@@ -55,6 +68,16 @@ export interface CardSelectedPayload {
 
 export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'ANOMALY';
 export type ProjectileFaction = 'player' | 'enemy';
+
+export interface TriangleCollidable {
+    readonly id: string;
+    readonly faction: ProjectileFaction;
+    readonly x: number;
+    readonly y: number;
+    readonly radius: number;
+    readonly damage: number;
+    health: number;
+}
 
 export interface WaveMilestone {
     startWave: number;

@@ -1,6 +1,6 @@
 import { Entity } from '../Entity';
 import { emitGameEvent, GameEvents, onGameEvent } from '../../../shared/EventBus';
-import type { EntityStats, StatModifiers } from '../../../shared/Types';
+import type { EntityStats, InputState, StatModifiers } from '../../../shared/Types';
 import { MAX_RELOAD_POINTS } from '../../../shared/Types';
 
 const ZERO_BONUS_STATS: EntityStats = {
@@ -15,6 +15,9 @@ const ZERO_BONUS_STATS: EntityStats = {
 };
 
 export class Player extends Entity {
+    private static readonly OUT_OF_COMBAT_REGEN_DELAY_MS = 10000;
+    private static readonly OUT_OF_COMBAT_BONUS_REGEN_PER_SECOND = 5;
+
     public name: string;
     public color: number;
     public isUpgrading: boolean;
@@ -79,6 +82,14 @@ export class Player extends Entity {
         this.setupListeners();
     }
 
+    public override get contactDamage(): number {
+        return this.currentStats.bodyDamage;
+    }
+
+    protected override get healthRegen(): number {
+        return this.currentStats.healthRegen;
+    }
+
     public get currentStats(): EntityStats {
         const rawReloadPoints = this.bonusStats.reloadPoints ?? 0;
         const clampedReloadPoints = Math.min(rawReloadPoints, MAX_RELOAD_POINTS);
@@ -95,6 +106,38 @@ export class Player extends Entity {
             reloadPoints: clampedReloadPoints,
             movementSpeed: this.baseStats.movementSpeed + (this.bonusStats.movementSpeed ?? 0)
         };
+    }
+
+    public override updateRegeneration(dt: number, currentTime: number): void {
+        if (this.health <= 0) return;
+        let regen = this.currentStats.healthRegen * dt;
+        if (this.getTimeSinceLastDamage(currentTime) > Player.OUT_OF_COMBAT_REGEN_DELAY_MS) {
+            regen += Player.OUT_OF_COMBAT_BONUS_REGEN_PER_SECOND * dt;
+        }
+        if (regen <= 0) return;
+        this.health = Math.min(this.maxHealth, this.health + regen);
+    }
+
+    public update(input: InputState, dt: number, isControlsInverted: boolean): void {
+        const up    = isControlsInverted ? input.down  : input.up;
+        const down  = isControlsInverted ? input.up    : input.down;
+        const left  = isControlsInverted ? input.right : input.left;
+        const right = isControlsInverted ? input.left  : input.right;
+
+        let movementX = 0;
+        let movementY = 0;
+
+        if (up)    movementY -= 1;
+        if (down)  movementY += 1;
+        if (left)  movementX -= 1;
+        if (right) movementX += 1;
+
+        if (movementX !== 0 || movementY !== 0) {
+            const magnitude = Math.hypot(movementX, movementY);
+            const speedPerFrame = this.speed * dt;
+            this.x += (movementX / magnitude) * speedPerFrame;
+            this.y += (movementY / magnitude) * speedPerFrame;
+        }
     }
 
     public applyStatModifiers(modifiers: StatModifiers): void {

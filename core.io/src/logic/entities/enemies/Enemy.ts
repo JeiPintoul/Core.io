@@ -1,7 +1,7 @@
-import { Entity } from '../Entity';
+import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
 import type { EntityStats, EnemyType } from '../../../shared/Types';
 
-export class Enemy extends Entity {
+export class Enemy extends HostileEntity {
     public readonly enemyType: EnemyType = 'KAMIKAZE';
     public readonly stats: EntityStats;
     public damage: number;
@@ -36,17 +36,13 @@ export class Enemy extends Entity {
         this.xpDrop = Math.round(Enemy.BASE_XP_DROP * multiplier);
     }
 
-    public update(targetX: number, targetY: number, deltaTime: number): void {
-        const dx = targetX - this.x;
-        const dy = targetY - this.y;
+    public tick(context: EnemyUpdateContext): void {
+        const { playerX, playerY, dt } = context;
+        const dx = playerX - this.x;
+        const dy = playerY - this.y;
         const distance = Math.sqrt(dx * dx + dy * dy);
-
         if (distance < 1) return;
-
-        const moveX = (dx / distance) * this.speed * deltaTime;
-        const moveY = (dy / distance) * this.speed * deltaTime;
-
-        this.x += moveX;
-        this.y += moveY;
+        this.x += (dx / distance) * this.speed * dt;
+        this.y += (dy / distance) * this.speed * dt;
     }
 }
