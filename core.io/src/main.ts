@@ -1,4 +1,5 @@
 import './style.css';
+import { createIcons, Home, Volume2, VolumeX } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
@@ -12,7 +13,7 @@ const engine = new GameEngine();
 createPhaserGame();
 const hudController = new HudController();
 
-type UiMode = 'INITIAL_MENU' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
+type UiMode = 'INITIAL_MENU' | 'COLOR_SELECTION' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
 
 const menuInicial = document.getElementById('menu-inicial');
 const hudLayerEl = document.getElementById('hud-layer');
@@ -31,18 +32,23 @@ const musicVolumeGlobalInput = document.getElementById('music-volume-global') as
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume') as HTMLButtonElement | null;
 const btnRestart = document.getElementById('btn-restart') as HTMLButtonElement | null;
+const btnHomePause = document.getElementById('btn-home-pause') as HTMLButtonElement | null;
+const btnMenuHome = document.getElementById('btn-menu-home') as HTMLButtonElement | null;
 const tituloMenu = menuInicial?.querySelector('h1') as HTMLHeadingElement | null;
+const colorSelectionScreen = document.getElementById('color-selection-screen');
 const upgradeModal = document.getElementById('upgrade-modal');
 const upgradeRemainingEl = document.getElementById('upgrade-remaining');
 const upgradeCardsEl = document.getElementById('upgrade-cards');
 const hudStatsEl = document.getElementById('hud-stats');
+const hudKeybindsEl = document.getElementById('hud-keybinds');
 
 let gameOverUiTimeoutId: number | null = null;
 let waitingUpgradeSelection = false;
 let uiMode: UiMode = menuInicial ? 'INITIAL_MENU' : 'IN_GAME';
 let previousUiMode: UiMode | null = null;
-let musicMuted = false;
-let musicVolume = Number(musicVolumeInput?.value ?? '32') / 100;
+const _initialAudio = hudController.getInitialAudioPrefs();
+let musicMuted = _initialAudio.muted;
+let musicVolume = _initialAudio.volume;
 
 const RARITY_LABELS_PTBR: Record<CardRarity, string> = {
     COMMON: 'COMUM',
@@ -108,13 +114,20 @@ function setUiMode(nextMode: UiMode): void {
 }
 
 function applyUiModeEffects(): void {
-    const shouldShowHud = uiMode !== 'INITIAL_MENU' && uiMode !== 'GAME_OVER';
-    const shouldShowStats = shouldShowHud;
-    const shouldShowAudioWidget = uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER';
+    const shouldShowHud = uiMode !== 'INITIAL_MENU' && uiMode !== 'GAME_OVER' && uiMode !== 'COLOR_SELECTION';
+    const shouldShowStats = shouldShowHud || uiMode === 'COLOR_SELECTION';
+    const shouldShowAudioWidget = uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER' || uiMode === 'COLOR_SELECTION';
 
     hudLayerEl?.classList.toggle('is-hidden', !shouldShowHud);
     hudStatsEl?.classList.toggle('is-hidden', !shouldShowStats);
     hudAudioWidgetEl?.classList.toggle('is-visible', shouldShowAudioWidget);
+    hudKeybindsEl?.classList.toggle('is-visible', uiMode === 'INITIAL_MENU');
+
+    if (uiMode === 'COLOR_SELECTION') {
+        hudController.setStatsPinned(true);
+    } else if (uiMode === 'IN_GAME') {
+        hudController.setStatsPinned(false);
+    }
 
     if (!shouldShowAudioWidget) {
         hudAudioPanelEl?.classList.remove('is-open');
@@ -159,6 +172,8 @@ function updateAudioHud(): void {
     if (musicVolumeGlobalInput) {
         musicVolumeGlobalInput.value = Math.round(musicVolume * 100).toString();
     }
+
+    btnAudioGlobal?.classList.toggle('is-muted', musicMuted);
 }
 
 function setPauseAudioPanelOpen(open: boolean): void {
@@ -186,7 +201,7 @@ function isPauseMenuVisible(): boolean {
 }
 
 function togglePauseFromUi(): void {
-    if (uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER') {
+    if (uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER' || uiMode === 'COLOR_SELECTION') {
         return;
     }
 
@@ -381,6 +396,39 @@ function clearPendingGameOverUiTimeout(): void {
     gameOverUiTimeoutId = null;
 }
 
+function goToMainMenu(): void {
+    clearPendingGameOverUiTimeout();
+
+    // Emit GAME_OVER to save run stats, then immediately cancel its UI side-effect
+    const summary = engine.getRunSummary();
+    emitGameEvent(GameEvents.GAME_OVER, summary);
+    clearPendingGameOverUiTimeout();
+
+    engine.stop();
+    setPauseMenuVisible(false);
+    setUpgradeModalVisible(false);
+    clearUpgradeCards();
+    hudController.clearStatPreview();
+    hudController.setStatsPinned(false);
+    waitingUpgradeSelection = false;
+    applyPauseUi(false);
+    colorSelectionScreen?.classList.add('hidden');
+
+    if (menuInicial) menuInicial.style.display = 'flex';
+    if (tituloMenu) {
+        tituloMenu.innerText = 'CORE.IO';
+        tituloMenu.style.textShadow = '0 0 10px #4488ff';
+    }
+    if (btnJogar) {
+        btnJogar.innerText = 'JOGAR';
+        btnJogar.style.backgroundColor = '#4488ff';
+        btnJogar.style.boxShadow = 'none';
+    }
+    if (btnMenuHome) btnMenuHome.style.display = 'none';
+
+    setUiMode('INITIAL_MENU');
+}
+
 if (btnJogar && menuInicial && tituloMenu) {
     const scheduleGameOverUi = () => {
         if (gameOverUiTimeoutId !== null) {
@@ -397,6 +445,8 @@ if (btnJogar && menuInicial && tituloMenu) {
             btnJogar.innerText = 'TENTAR NOVAMENTE';
             btnJogar.style.backgroundColor = '#cc0000';
             btnJogar.style.boxShadow = '0 0 15px #ff4444';
+
+            if (btnMenuHome) btnMenuHome.style.display = 'inline-block';
         }, DEATH_ANIMATION_DURATION_MS);
     };
 
@@ -409,6 +459,7 @@ if (btnJogar && menuInicial && tituloMenu) {
         hudController.clearStatPreview();
         hudController.setStatsPinned(false);
         waitingUpgradeSelection = false;
+        if (btnMenuHome) btnMenuHome.style.display = 'none';
 
         const playerName = normalizePlayerName(playerNameInput?.value ?? '');
         hudController.resetForNewRun();
@@ -422,11 +473,18 @@ if (btnJogar && menuInicial && tituloMenu) {
 
         engine.reset(playerName);
         engine.start();
-        setUiMode('IN_GAME');
-        console.log('Jogo iniciado!');
+
+        colorSelectionScreen?.classList.remove('hidden');
+        setUiMode('COLOR_SELECTION');
     });
 
-    onGameEvent(GameEvents.GAME_OVER, () => {
+    onGameEvent(GameEvents.START_RUN_WITH_COLOR, () => {
+        hudController.clearStatPreview();
+        createIcons({ icons: { Home, Volume2, VolumeX } });
+        setUiMode('IN_GAME');
+    });
+
+    onGameEvent(GameEvents.GAME_OVER, (_payload) => {
         console.log('Game Over!');
 
         engine.stop();
@@ -437,6 +495,7 @@ if (btnJogar && menuInicial && tituloMenu) {
         hudController.clearStatPreview();
         hudController.setStatsPinned(false);
         waitingUpgradeSelection = false;
+        colorSelectionScreen?.classList.add('hidden');
         setUiMode('GAME_OVER');
 
         scheduleGameOverUi();
@@ -518,6 +577,18 @@ if (btnResume) {
     });
 }
 
+if (btnHomePause) {
+    btnHomePause.addEventListener('click', () => {
+        goToMainMenu();
+    });
+}
+
+if (btnMenuHome) {
+    btnMenuHome.addEventListener('click', () => {
+        goToMainMenu();
+    });
+}
+
 if (btnRestart) {
     btnRestart.addEventListener('click', () => {
         clearPendingGameOverUiTimeout();
@@ -532,6 +603,7 @@ if (btnRestart) {
 
         engine.reset();
         engine.start();
+        engine.startGameWithColor('#4488ff');
         emitGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, undefined);
         setUiMode('IN_GAME');
 
@@ -613,6 +685,7 @@ if (hudStatsEl) {
 
 preventNameInputPropagation();
 applyUiModeEffects();
+createIcons({ icons: { Home, Volume2, VolumeX } });
 updateAudioHud();
 emitAudioSettings();
 

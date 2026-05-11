@@ -1,6 +1,15 @@
-import { GameEvents, onGameEvent } from '../../shared/EventBus';
+import { emitGameEvent, GameEvents, onGameEvent } from '../../shared/EventBus';
 import { calculatePlayerShotCooldownSeconds } from '../../shared/CombatMath';
 import type { EntityStats, GameState, ObjectiveState, StatModifiers } from '../../shared/Types';
+import { type ColorDefinition, getColorDefinition } from '../../logic/constants/ColorConfig';
+
+interface StoredStats {
+    maxWave: number;
+    totalKills: number;
+    totalAnomalies: number;
+}
+
+const EMPTY_STATS: StoredStats = { maxWave: 0, totalKills: 0, totalAnomalies: 0 };
 
 const DEFAULT_PLAYER_STATS: EntityStats = {
     maxHealth: 0,
@@ -43,7 +52,16 @@ export class HudController {
     private readonly statReloadEl = this.getEl<HTMLElement>('stat-reload');
     private readonly statMoveSpeedEl = this.getEl<HTMLElement>('stat-move-speed');
 
+    private readonly globalMaxWaveEl = this.getEl<HTMLElement>('stat-max-wave');
+    private readonly globalTotalKillsEl = this.getEl<HTMLElement>('stat-total-kills');
+    private readonly globalTotalAnomaliesEl = this.getEl<HTMLElement>('stat-total-anomalies');
+    private readonly toastEl = this.getEl<HTMLElement>('hud-toast');
+    private readonly colorBadgeEl = this.getEl<HTMLElement>('hud-color-badge');
+    private toastTimeoutId: number | null = null;
+    private activeColorDef: ColorDefinition | null = null;
+
     constructor() {
+        this.bindColorSelectionScreen();
         this.bindEvents();
         this.renderLevel();
         this.renderWaveInfo(1, 'CLEAR', 0, 0);
@@ -52,6 +70,69 @@ export class HudController {
         this.renderEnemyCount(0);
         this.renderObjective(null);
         this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
+        this.renderGlobalStats(this.loadStats());
+    }
+
+    private bindColorSelectionScreen(): void {
+        const screen = this.getEl<HTMLElement>('color-selection-screen');
+        if (!screen) return;
+
+        const cards = screen.querySelectorAll<HTMLElement>('.color-card');
+        const colorMap: Record<string, string> = {
+            red: '#ff4444',
+            blue: '#4488ff',
+            yellow: '#ffcc00',
+        };
+
+        for (const card of cards) {
+            const colorHex = colorMap[card.dataset.color ?? ''] ?? '#4488ff';
+            const colorDef = getColorDefinition(colorHex);
+            const mods: StatModifiers = colorDef?.modifiers ?? {};
+
+            card.addEventListener('mouseenter', () => {
+                this.previewStatModifiers(mods);
+            });
+
+            card.addEventListener('mouseleave', () => {
+                this.clearStatPreview();
+            });
+
+            card.addEventListener('click', () => {
+                this.clearStatPreview();
+
+                for (const other of cards) {
+                    if (other !== card) other.classList.add('faded');
+                }
+                card.classList.add('selected');
+
+                window.setTimeout(() => {
+                    screen.classList.add('fade-out');
+
+                    window.setTimeout(() => {
+                        screen.classList.add('hidden');
+                        screen.classList.remove('fade-out');
+                        for (const c of cards) {
+                            c.classList.remove('faded', 'selected');
+                        }
+                        emitGameEvent(GameEvents.START_RUN_WITH_COLOR, { colorHex });
+                    }, 400);
+                }, 800);
+            });
+        }
+    }
+
+    public getInitialAudioPrefs(): { volume: number; muted: boolean } {
+        try {
+            const raw = localStorage.getItem('coreio_audio');
+            if (!raw) return { volume: 0.32, muted: false };
+            const parsed = JSON.parse(raw) as { volume?: unknown; muted?: unknown };
+            return {
+                volume: typeof parsed.volume === 'number' ? Math.max(0, Math.min(1, parsed.volume)) : 0.32,
+                muted: typeof parsed.muted === 'boolean' ? parsed.muted : false,
+            };
+        } catch {
+            return { volume: 0.32, muted: false };
+        }
     }
 
     public resetForNewRun(): void {
@@ -60,6 +141,8 @@ export class HudController {
         this.xpRequired = 100;
         this.currentPlayerHealth = 0;
         this.currentPlayerStats = { ...DEFAULT_PLAYER_STATS };
+        this.activeColorDef = null;
+        this.updateColorBadge();
 
         this.clearWaveTransitionTimers();
         this.hideWaveTransition();
@@ -142,12 +225,26 @@ export class HudController {
         );
 
         this.unsubscribers.push(
-            onGameEvent(GameEvents.GAME_OVER, () => {
+            onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, (prefs) => {
+                localStorage.setItem('coreio_audio', JSON.stringify(prefs));
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.GAME_OVER, ({ waveReached, enemiesKilled, anomaliesMet }) => {
                 this.clearWaveTransitionTimers();
                 this.hideWaveTransition();
                 this.setStatsPinned(false);
                 this.clearStatPreview();
                 this.renderObjective(null);
+
+                const current = this.loadStats();
+                const updated: StoredStats = {
+                    maxWave: Math.max(current.maxWave, waveReached),
+                    totalKills: current.totalKills + enemiesKilled,
+                    totalAnomalies: current.totalAnomalies + anomaliesMet,
+                };
+                this.saveStats(updated);
             })
         );
 
@@ -156,11 +253,32 @@ export class HudController {
                 this.playWaveMessage(`${title}: +${rewardUpgrades} aprimoramento`, false, 1600);
             })
         );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.AUTO_FIRE_TOGGLED, ({ enabled }) => {
+                this.showToast(enabled ? 'Auto-Fire ON' : 'Auto-Fire OFF');
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.AUTO_SPIN_TOGGLED, ({ enabled }) => {
+                this.showToast(enabled ? 'Auto-Spin ON' : 'Auto-Spin OFF');
+            })
+        );
     }
 
     private handleStateUpdate(state: GameState): void {
         this.currentPlayerHealth = state.player.health;
         this.currentPlayerStats = { ...state.player.stats };
+
+        if (state.player.color !== undefined) {
+            const colorHex = `#${state.player.color.toString(16).padStart(6, '0')}`;
+            const colorDef = getColorDefinition(colorHex) ?? null;
+            if (colorDef !== this.activeColorDef) {
+                this.activeColorDef = colorDef;
+                this.updateColorBadge();
+            }
+        }
 
         this.renderLevel();
         this.renderWaveInfo(
@@ -252,6 +370,46 @@ export class HudController {
         this.setText(this.statBulletPenetrationEl, this.fmt1(stats.bulletPenetration));
         this.setText(this.statReloadEl, this.formatReloadValue(stats.reloadPoints));
         this.setText(this.statMoveSpeedEl, this.fmt1(stats.movementSpeed));
+
+        this.renderColorBuffHighlights();
+    }
+
+    private renderColorBuffHighlights(): void {
+        if (!this.activeColorDef) return;
+
+        const statElementMap: Partial<Record<keyof EntityStats, HTMLElement | null>> = {
+            maxHealth: this.statHealthEl,
+            healthRegen: this.statHealthRegenEl,
+            bodyDamage: this.statBodyDamageEl,
+            bulletDamage: this.statBulletDamageEl,
+            bulletSpeed: this.statBulletSpeedEl,
+            bulletPenetration: this.statBulletPenetrationEl,
+            reloadPoints: this.statReloadEl,
+            movementSpeed: this.statMoveSpeedEl,
+        };
+
+        for (const [stat, value] of Object.entries(this.activeColorDef.modifiers) as Array<[keyof EntityStats, number]>) {
+            if (value === 0) continue;
+            const el = statElementMap[stat];
+            const row = el?.parentElement;
+            if (!row) continue;
+            row.classList.add(value > 0 ? 'is-color-buff' : 'is-color-nerf');
+        }
+    }
+
+    private updateColorBadge(): void {
+        if (!this.colorBadgeEl) return;
+
+        if (!this.activeColorDef) {
+            this.colorBadgeEl.textContent = '';
+            this.colorBadgeEl.removeAttribute('style');
+            this.colorBadgeEl.classList.remove('is-visible');
+            return;
+        }
+
+        this.colorBadgeEl.textContent = this.activeColorDef.name;
+        this.colorBadgeEl.style.setProperty('--badge-color', this.activeColorDef.hex);
+        this.colorBadgeEl.classList.add('is-visible');
     }
 
     private renderStatsPreview(modifiers: StatModifiers): void {
@@ -375,7 +533,10 @@ export class HudController {
         ];
 
         for (const element of statElements) {
-            element?.parentElement?.classList.remove('is-preview-positive', 'is-preview-negative');
+            element?.parentElement?.classList.remove(
+                'is-preview-positive', 'is-preview-negative',
+                'is-color-buff', 'is-color-nerf'
+            );
         }
     }
 
@@ -408,11 +569,51 @@ export class HudController {
         this.waveTransitionEl.hidden = true;
     }
 
+    private showToast(text: string): void {
+        if (!this.toastEl) return;
+
+        if (this.toastTimeoutId !== null) {
+            window.clearTimeout(this.toastTimeoutId);
+            this.toastTimeoutId = null;
+        }
+
+        this.toastEl.textContent = text;
+        this.toastEl.classList.remove('toast-visible');
+        void this.toastEl.offsetWidth;
+        this.toastEl.classList.add('toast-visible');
+
+        this.toastTimeoutId = window.setTimeout(() => {
+            this.toastEl?.classList.remove('toast-visible');
+            this.toastTimeoutId = null;
+        }, 1800);
+    }
+
     private clearWaveTransitionTimers(): void {
         for (const timeoutId of this.waveTransitionTimeoutIds) {
             window.clearTimeout(timeoutId);
         }
         this.waveTransitionTimeoutIds.length = 0;
+    }
+
+    private loadStats(): StoredStats {
+        try {
+            const raw = localStorage.getItem('coreio_stats');
+            if (!raw) return { ...EMPTY_STATS };
+            return { ...EMPTY_STATS, ...(JSON.parse(raw) as Partial<StoredStats>) };
+        } catch {
+            return { ...EMPTY_STATS };
+        }
+    }
+
+    private saveStats(stats: StoredStats): void {
+        localStorage.setItem('coreio_stats', JSON.stringify(stats));
+        this.renderGlobalStats(stats);
+    }
+
+    private renderGlobalStats(stats: StoredStats): void {
+        this.setText(this.globalMaxWaveEl, String(stats.maxWave));
+        this.setText(this.globalTotalKillsEl, String(stats.totalKills));
+        this.setText(this.globalTotalAnomaliesEl, String(stats.totalAnomalies));
     }
 
     private setText(element: HTMLElement | null, value: string): void {

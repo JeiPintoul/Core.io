@@ -40,6 +40,7 @@
         <span class="hud-stats-icon">i</span>
         <div id="hud-stats-panel" class="hud-stats-panel">
           <h2>Status</h2>
+          <span id="hud-color-badge" class="hud-color-badge"></span>
           <ul>
             <li><span>Vida</span><strong id="stat-health">0 / 0</strong></li>
             <li><span>Regeneracao</span><strong id="stat-health-regen">0</strong></li>
@@ -58,6 +59,7 @@
         <button id="btn-resume">RESUME</button>
         <button id="btn-restart">RESTART</button>
         <button id="btn-audio">AUDIO</button>
+        <button id="btn-home-pause" class="btn-home"><i data-lucide="home"></i> MENU</button>
         <div id="pause-audio-panel">
           <button id="btn-mute" aria-label="Ativar ou desativar musica">Som: ON</button>
           <label for="music-volume">Volume</label>
@@ -73,8 +75,18 @@
         </div>
       </div>
 
+      <div id="hud-toast" aria-live="assertive"></div>
+
+      <div id="hud-keybinds" class="hud-card">
+        <div class="keybind-row"><kbd>E</kbd><span>Auto-Fire</span></div>
+        <div class="keybind-row"><kbd>C</kbd><span>Auto-Spin</span></div>
+      </div>
+
       <div id="hud-audio-widget">
-        <button id="btn-audio-global" class="hud-card" aria-label="Configurações de áudio">♪</button>
+        <button id="btn-audio-global" class="hud-card" aria-label="Configurações de áudio">
+          <i data-lucide="volume-2"></i>
+          <i data-lucide="volume-x"></i>
+        </button>
         <div id="hud-audio-panel">
           <button id="btn-mute-global">Som: ON</button>
           <label for="music-volume-global">Volume</label>
@@ -86,6 +98,44 @@
         <h1>CORE.IO</h1>
         <input type="text" id="player-name" placeholder="Digite seu Nome" />
         <button id="btn-jogar">JOGAR</button>
+        <button id="btn-menu-home" class="btn-home" style="display:none"><i data-lucide="home"></i> MENU</button>
+        <div id="global-stats">
+          <h3>Estatisticas Globais</h3>
+          <div class="global-stats-row"><span>Onda Maxima</span><strong id="stat-max-wave">0</strong></div>
+          <div class="global-stats-row"><span>Inimigos Eliminados</span><strong id="stat-total-kills">0</strong></div>
+          <div class="global-stats-row"><span>Anomalias Encontradas</span><strong id="stat-total-anomalies">0</strong></div>
+        </div>
+      </div>
+
+      <div id="color-selection-screen" class="hidden">
+        <p class="color-selection-subtitle">SELECIONE SEU TANQUE</p>
+        <h2>Escolha uma Faccao</h2>
+        <div class="color-cards">
+          <div class="color-card" data-color="red" style="--card-glow:#cc2222">
+            <div class="css-tank">
+              <div class="css-tank-barrel"></div>
+              <div class="css-tank-body" style="background:#ff4444;"></div>
+            </div>
+            <span class="color-card-name">Vanguard</span>
+            <span class="color-card-desc">Ataque e agressao</span>
+          </div>
+          <div class="color-card" data-color="blue" style="--card-glow:#2244cc">
+            <div class="css-tank">
+              <div class="css-tank-barrel"></div>
+              <div class="css-tank-body" style="background:#4488ff;"></div>
+            </div>
+            <span class="color-card-name">Sentinel</span>
+            <span class="color-card-desc">Defesa e controle</span>
+          </div>
+          <div class="color-card" data-color="yellow" style="--card-glow:#ccaa00">
+            <div class="css-tank">
+              <div class="css-tank-barrel"></div>
+              <div class="css-tank-body" style="background:#ffcc00;"></div>
+            </div>
+            <span class="color-card-name">Phantom</span>
+            <span class="color-card-desc">Velocidade e furtividade</span>
+          </div>
+        </div>
       </div>
     </div>
 

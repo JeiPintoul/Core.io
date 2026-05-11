@@ -21,6 +21,8 @@ export class GameScene extends Phaser.Scene {
     private latestState: GameState | null = null;
     private subscriptions: Array<() => void> = [];
     private cameraFollowTarget!: Phaser.GameObjects.Zone;
+    private colorPanX = 0;
+    private colorPanY = 0;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -58,11 +60,15 @@ export class GameScene extends Phaser.Scene {
             onGameEvent(GameEvents.STATE_UPDATE, (state: GameState) => {
                 this.latestState = state;
 
-                if (state.player.health > 0) {
+                if (!state.isColorSelection && state.player.health > 0) {
                     this.inputHandler.enable();
                 }
 
-                this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
+                if (!state.isColorSelection) {
+                    this.colorPanX = 0;
+                    this.colorPanY = 0;
+                    this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
+                }
             })
         );
 
@@ -77,8 +83,8 @@ export class GameScene extends Phaser.Scene {
         );
 
         this.subscriptions.push(
-            onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction }) => {
-                this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction);
+            onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction, color }) => {
+                this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction, color);
             })
         );
 
@@ -192,18 +198,24 @@ export class GameScene extends Phaser.Scene {
 
         const state = this.latestState;
 
-        // Mantem target da camera sempre no player atual.
-        this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
+        if (state.isColorSelection) {
+            this.colorPanX += 0.5;
+            this.colorPanY += 0.3;
+            this.cameraFollowTarget.setPosition(
+                state.player.x + this.colorPanX,
+                state.player.y + this.colorPanY
+            );
+            this.gameRenderer.renderFrame(state);
+            return;
+        }
 
-        // Processar input e enviar para engine
+        this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
         this.inputHandler.handleInput();
 
-        // Mira visual usa exclusivamente vetor mouse->player no frame atual.
         if (!state.isPaused) {
             this.updateCursorWorldPoint();
         }
 
-        // Renderizar frame
         this.gameRenderer.renderFrame(state);
     }
 

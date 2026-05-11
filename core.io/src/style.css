@@ -363,6 +363,50 @@ body {
   text-shadow: 0 0 10px rgba(255, 139, 139, 0.45);
 }
 
+.hud-stats-panel li.is-color-buff {
+  background: rgba(102, 230, 166, 0.07);
+  border-radius: 4px;
+  padding-inline: 4px;
+}
+
+.hud-stats-panel li.is-color-buff strong {
+  color: var(--hud-positive);
+}
+
+.hud-stats-panel li.is-color-nerf {
+  background: rgba(255, 139, 139, 0.07);
+  border-radius: 4px;
+  padding-inline: 4px;
+}
+
+.hud-stats-panel li.is-color-nerf strong {
+  color: var(--hud-negative);
+}
+
+.hud-color-badge {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  font-size: clamp(0.72rem, 0.65vw, 0.82rem);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: var(--badge-color, var(--hud-text));
+  margin-bottom: clamp(6px, 0.7vh, 10px);
+  padding: 2px 8px 2px 6px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--badge-color, transparent) 18%, transparent);
+  border: 1px solid color-mix(in srgb, var(--badge-color, transparent) 40%, transparent);
+}
+
+.hud-color-badge::before {
+  content: '●';
+  font-size: 0.6em;
+}
+
+.hud-color-badge.is-visible {
+  display: flex;
+}
+
 #hud-stats:not(.is-pinned):hover .hud-stats-panel,
 #hud-stats:not(.is-pinned):focus-within .hud-stats-panel {
   opacity: 1;
@@ -1008,4 +1052,333 @@ body {
   display: block;
   accent-color: #59a7ff;
   cursor: pointer;
+}
+
+/* ── Lucide icon toggle on audio button ── */
+
+#btn-audio-global svg { width: 18px; height: 18px; stroke: currentColor; }
+#btn-audio-global svg:last-child { display: none; }
+#btn-audio-global.is-muted svg:first-child { display: none; }
+#btn-audio-global.is-muted svg:last-child { display: block; }
+
+/* ── Global stats board ── */
+
+#global-stats {
+  margin-top: clamp(12px, 2vh, 24px);
+  width: min(360px, 80vw);
+  background: rgba(8, 13, 30, 0.72);
+  border: 1px solid rgba(140, 186, 255, 0.3);
+  border-radius: 10px;
+  padding: 12px 16px;
+}
+
+#global-stats h3 {
+  font-size: 0.72rem;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--hud-muted);
+  margin-bottom: 10px;
+}
+
+.global-stats-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 4px 0;
+  font-size: 0.88rem;
+  color: var(--hud-text);
+  border-bottom: 1px solid rgba(140, 186, 255, 0.1);
+}
+
+.global-stats-row:last-child { border-bottom: none; }
+.global-stats-row strong { color: var(--hud-accent-strong); }
+
+/* ── Color selection screen ── */
+
+#color-selection-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: clamp(16px, 2.5vh, 32px);
+  background-color: rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(1px);
+  pointer-events: auto;
+  z-index: 50;
+  opacity: 1;
+  transition: opacity 0.8s ease;
+}
+
+#color-selection-screen.hidden { display: none; }
+#color-selection-screen.fade-out { opacity: 0; pointer-events: none; }
+
+.color-selection-subtitle {
+  font-size: clamp(0.62rem, 1vw, 0.78rem);
+  letter-spacing: clamp(3px, 0.6vw, 8px);
+  text-transform: uppercase;
+  color: var(--hud-muted);
+  margin-bottom: -8px;
+}
+
+#color-selection-screen h2 {
+  font-size: clamp(1.6rem, 3.5vw, 2.8rem);
+  letter-spacing: clamp(2px, 0.5vw, 6px);
+  color: var(--hud-text);
+  text-shadow: 0 0 20px rgba(89, 167, 255, 0.5);
+}
+
+.color-cards {
+  display: flex;
+  gap: clamp(20px, 4vw, 56px);
+  margin-top: clamp(8px, 1.5vh, 20px);
+}
+
+.color-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  cursor: pointer;
+  padding: clamp(18px, 2.2vw, 30px) clamp(22px, 2.8vw, 38px);
+  border: 1px solid rgba(140, 186, 255, 0.22);
+  border-radius: 16px;
+  background: rgba(8, 14, 32, 0.85);
+  transition: all 0.5s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.color-card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.04) 0%, transparent 60%);
+  pointer-events: none;
+}
+
+.color-card:hover {
+  transform: translateY(-10px) scale(1.05);
+  border-color: var(--card-glow, rgba(140, 186, 255, 0.6));
+  box-shadow: 0 0 24px color-mix(in srgb, var(--card-glow, #59a7ff) 40%, transparent),
+              0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.color-card.faded {
+  opacity: 0;
+  transform: scale(0.8);
+  pointer-events: none;
+}
+
+.color-card.selected {
+  transform: scale(1.15);
+  z-index: 10;
+  border-color: var(--card-glow, #59a7ff);
+  box-shadow: 0 0 40px var(--card-glow, #59a7ff),
+              0 0 80px color-mix(in srgb, var(--card-glow, #59a7ff) 30%, transparent);
+  pointer-events: none;
+}
+
+.color-card-frame {
+  position: relative;
+  width: clamp(72px, 9vw, 108px);
+  height: clamp(72px, 9vw, 108px);
+  display: grid;
+  place-items: center;
+}
+
+.color-card-frame::before {
+  content: '';
+  position: absolute;
+  inset: -4px;
+  border-radius: 50%;
+  border: 1px solid var(--card-glow, rgba(140, 186, 255, 0.4));
+  opacity: 0.5;
+}
+
+.color-card-preview {
+  width: clamp(60px, 7.5vw, 90px);
+  height: clamp(60px, 7.5vw, 90px);
+  clip-path: polygon(50% 0%, 93% 25%, 93% 75%, 50% 100%, 7% 75%, 7% 25%);
+  box-shadow: 0 0 16px var(--card-glow, #59a7ff);
+  transition: all 0.5s ease;
+}
+
+.color-card:hover .color-card-preview {
+  box-shadow: 0 0 28px var(--card-glow, #59a7ff);
+}
+
+.color-card-name {
+  font-size: clamp(0.88rem, 1.2vw, 1.05rem);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: clamp(1px, 0.25vw, 3px);
+  color: var(--hud-text);
+}
+
+.color-card-desc {
+  font-size: clamp(0.68rem, 0.9vw, 0.8rem);
+  color: var(--hud-muted);
+  letter-spacing: 0.4px;
+}
+
+/* ── CSS Tank (color selection cards) ──
+   Barrel metrics mirror GameConstants.ts VISUAL.PLAYER:
+     barrelOffsetFactor  0.40  → left: body-radius + 0.40*body-radius = 1.40 * 28 = 39px
+     barrelLengthFactor  1.38  → width: 1.38 * 28 = 39px (rounded to 38)
+     barrelWidthFactor   0.78  → height: 0.78 * 28 = 22px (rounded to 20)
+   Colors match COLORS.PLAYER_BARREL (#8d929c) and COLORS.BARREL_OUTLINE (#525861).
+   Body covers the inner barrel overlap (z-index 2 vs 1). */
+
+.css-tank {
+  position: relative;
+  width: 90px;
+  height: 56px;
+}
+
+.css-tank-barrel {
+  position: absolute;
+  top: 18px;      /* (56 - 20) / 2 = 18: vertically centres the 20px-tall barrel */
+  left: 39px;     /* body-radius(28) + offset(28*0.4=11) = 39 */
+  width: 38px;    /* 28 * 1.38 ≈ 38 */
+  height: 20px;   /* 28 * 0.78 ≈ 22 → 20 for pixel-clean look */
+  background: #8d929c;
+  border: 3px solid #525861;
+  border-radius: 2px;
+  z-index: 1;
+}
+
+.css-tank-body {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  border: 3px solid #333;
+  z-index: 2;  /* covers the inner barrel so only tip sticks out */
+}
+
+/* ── Home button ── */
+
+.btn-home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #c8d8f0;
+  background: rgba(10, 18, 48, 0.8);
+  border: 1px solid rgba(157, 211, 255, 0.35);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.btn-home:hover {
+  color: #ff8888;
+  border-color: rgba(255, 120, 120, 0.55);
+  transform: translateY(-1px);
+}
+
+.btn-home svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+#btn-home-pause {
+  width: min(320px, 72vw);
+  padding: 14px 18px;
+  font-size: 1.36rem;
+  pointer-events: auto;
+}
+
+#btn-menu-home {
+  margin-top: 8px;
+  padding: clamp(8px, 1vh, 12px) clamp(20px, 3vw, 40px);
+  font-size: clamp(0.9rem, 1.6vh, 1.1rem);
+}
+
+/* ── Auto-fire / Auto-spin keybinds widget ── */
+
+#hud-keybinds {
+  position: absolute;
+  right: clamp(12px, 1.2vw, 20px);
+  top: 50%;
+  transform: translateY(-50%);
+  display: none;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 14px;
+  pointer-events: none;
+  z-index: 22;
+}
+
+#hud-keybinds.is-visible {
+  display: flex;
+}
+
+.keybind-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.78rem;
+  color: var(--hud-muted);
+  white-space: nowrap;
+}
+
+.keybind-row kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border-radius: 5px;
+  border: 1px solid rgba(140, 186, 255, 0.45);
+  background: rgba(20, 32, 72, 0.85);
+  color: var(--hud-accent-strong);
+  font-family: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+}
+
+/* ── Toast notification ── */
+
+#hud-toast {
+  position: absolute;
+  left: 50%;
+  bottom: clamp(80px, 10vh, 130px);
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 8px;
+  background: rgba(12, 20, 48, 0.92);
+  border: 1px solid rgba(140, 186, 255, 0.5);
+  color: var(--hud-accent-strong);
+  font-size: 0.9rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  text-transform: uppercase;
+  pointer-events: none;
+  z-index: 60;
+  opacity: 0;
+  transition: opacity 0.18s ease;
+  white-space: nowrap;
+}
+
+#hud-toast.toast-visible {
+  opacity: 1;
+  animation: toast-life 1.8s ease forwards;
+}
+
+@keyframes toast-life {
+  0%   { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  12%  { opacity: 1; transform: translateX(-50%) translateY(0); }
+  75%  { opacity: 1; }
+  100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
 }

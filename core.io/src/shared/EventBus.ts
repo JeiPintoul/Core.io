@@ -37,6 +37,9 @@ export const GameEvents = {
     ARENA_RESIZED: 'arena_resized',
     ANOMALY_TELEPORT: 'anomaly_teleport',
     ANOMALY_DASH: 'anomaly_dash',
+    START_RUN_WITH_COLOR: 'start_run_with_color',
+    AUTO_FIRE_TOGGLED: 'auto_fire_toggled',
+    AUTO_SPIN_TOGGLED: 'auto_spin_toggled',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

@@ -1,6 +1,7 @@
 import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
 import { Entity } from '../Entity';
 import type { EnemyType, EntityData, EntityStats, TriangleCollidable } from '../../../shared/Types';
+import { calculateCooldown } from '../../../shared/CombatMath';
 
 export interface SentinelTriangle {
     id: string;
@@ -35,8 +36,8 @@ export class SentinelEnemy extends HostileEntity {
     private readonly shieldTriggerDistance = 280;
     private readonly homingMinDistance = 290;
     private readonly homingMaxDistance = 580;
-    private readonly homingCooldownMs = 3200;
-    private readonly respawnCooldownMs = 4000;
+    private readonly baseHomingCooldownSeconds = 3.2;
+    private readonly baseRespawnCooldownSeconds = 4.0;
     private readonly preferredCombatDistance = 360;
 
     private lastHomingAtMs = 0;
@@ -50,7 +51,7 @@ export class SentinelEnemy extends HostileEntity {
         maxHealth: 55,
         healthRegen: 0,
         bodyDamage: 6,
-        bulletSpeed: 0,
+        bulletSpeed: 1,
         bulletPenetration: 0,
         bulletDamage: 0,
         reloadPoints: 4,
@@ -65,7 +66,7 @@ export class SentinelEnemy extends HostileEntity {
             bulletSpeed: 0,
             bulletPenetration: 0,
             bulletDamage: 0,
-            reloadPoints: 0,
+            reloadPoints: SentinelEnemy.BASE_STATS.reloadPoints * multiplier,
             movementSpeed: SentinelEnemy.BASE_STATS.movementSpeed * multiplier
         };
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed);
@@ -196,7 +197,7 @@ export class SentinelEnemy extends HostileEntity {
         const playerInAttackRange =
             distanceToPlayer >= this.homingMinDistance &&
             distanceToPlayer <= this.homingMaxDistance;
-        const cooldownReady = (currentTimeMs - this.lastHomingAtMs) >= this.homingCooldownMs;
+        const cooldownReady = (currentTimeMs - this.lastHomingAtMs) >= calculateCooldown(this.baseHomingCooldownSeconds, this.stats.reloadPoints) * 1000;
 
         if (playerIsClose) {
             for (const tri of this.triangles) {
@@ -268,13 +269,15 @@ export class SentinelEnemy extends HostileEntity {
     }
 
     private tryRespawnTriangles(currentTimeMs: number): void {
+        const respawnCooldownMs = calculateCooldown(this.baseRespawnCooldownSeconds, this.stats.reloadPoints) * 1000;
+
         this.destroyedTriangleTimestamps = this.destroyedTriangleTimestamps.filter(
-            ts => (currentTimeMs - ts) < this.respawnCooldownMs
+            ts => (currentTimeMs - ts) < respawnCooldownMs
         );
 
         if (this.triangles.length >= this.maxTriangles) return;
         if (this.destroyedTriangleTimestamps.length > 0) return;
-        if ((currentTimeMs - this.lastRespawnAtMs) < this.respawnCooldownMs) return;
+        if ((currentTimeMs - this.lastRespawnAtMs) < respawnCooldownMs) return;
 
         const existingAngles = this.triangles.map(t => t.orbitAngle);
         const newAngle = existingAngles.length > 0

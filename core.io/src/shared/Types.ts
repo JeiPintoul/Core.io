@@ -154,6 +154,8 @@ export interface GameState {
     objective: ObjectiveState | null;
     isBossFight?: boolean;
     arenaOffset?: { x: number; y: number };
+    isColorSelection: boolean;
+    autoSpin: boolean;
 }
 
 export interface InputState {
@@ -161,9 +163,11 @@ export interface InputState {
     down: boolean;
     left: boolean;
     right: boolean;
-    targetX: number; // Substitui mouseX/Y. O Dev de UI deve mandar a coordenada global da arena
+    targetX: number;
     targetY: number;
     isShooting: boolean;
+    autoFire: boolean;
+    autoSpin: boolean;
 }
 
 export interface EntityDamagePayload {
@@ -173,6 +177,7 @@ export interface EntityDamagePayload {
 
 export interface EntityDestroyedPayload {
     id: string;
+    color?: number;
 }
 
 export interface EnemyDestroyedPayload {
@@ -197,6 +202,7 @@ export interface ProjectileDestroyedPayload {
     x: number;
     y: number;
     radius: number;
+    color?: number;
 }
 
 export interface WaveClearedPayload {
@@ -255,6 +261,12 @@ export interface AnomalyDashPayload {
     durationMs: number;
 }
 
+export interface GameOverPayload {
+    waveReached: number;
+    enemiesKilled: number;
+    anomaliesMet: number;
+}
+
 export interface GameEventPayloads {
     player_input: InputState;
     state_update: GameState;
@@ -263,7 +275,7 @@ export interface GameEventPayloads {
     update_upgrade_modal: UpgradeModalOptionsPayload;
     hide_upgrade_modal: undefined;
     card_selected: CardSelectedPayload;
-    game_over: undefined;
+    game_over: GameOverPayload;
     entity_damage: EntityDamagePayload;
     entity_destroyed: EntityDestroyedPayload;
     enemy_destroyed: EnemyDestroyedPayload;
@@ -283,4 +295,7 @@ export interface GameEventPayloads {
     arena_resized: { width: number; height: number };
     anomaly_teleport: AnomalyTeleportPayload;
     anomaly_dash: AnomalyDashPayload;
+    start_run_with_color: { colorHex: string };
+    auto_fire_toggled: { enabled: boolean };
+    auto_spin_toggled: { enabled: boolean };
 }

@@ -2,6 +2,7 @@ import { Entity } from '../Entity';
 import { emitGameEvent, GameEvents, onGameEvent } from '../../../shared/EventBus';
 import type { EntityStats, InputState, StatModifiers } from '../../../shared/Types';
 import { MAX_RELOAD_POINTS } from '../../../shared/Types';
+import { getColorDefinition } from '../../constants/ColorConfig';
 
 const ZERO_BONUS_STATS: EntityStats = {
     maxHealth: 0,
@@ -21,12 +22,15 @@ export class Player extends Entity {
     public name: string;
     public color: number;
     public isUpgrading: boolean;
+    public spinAngle = 0;
+    private static readonly SPIN_RATE = 2.5;
     public level: number;
     public currentXp: number;
     public xpToNextLevel: number;
     public pendingUpgrades: number;
     public readonly appliedUpgradeColors: number[];
     public bonusStats: StatModifiers;
+    public colorBonusStats: StatModifiers;
     private readonly baseStats: EntityStats = {
         maxHealth: 100,
         healthRegen: 1,
@@ -66,6 +70,7 @@ export class Player extends Entity {
         this.pendingUpgrades = 0;
         this.appliedUpgradeColors = [];
         this.bonusStats = { ...ZERO_BONUS_STATS };
+        this.colorBonusStats = {};
         this.setBarrels([
             {
                 id: 'player_front_barrel',
@@ -91,20 +96,20 @@ export class Player extends Entity {
     }
 
     public get currentStats(): EntityStats {
-        const rawReloadPoints = this.bonusStats.reloadPoints ?? 0;
+        const rawReloadPoints = (this.bonusStats.reloadPoints ?? 0) + (this.colorBonusStats.reloadPoints ?? 0);
         const clampedReloadPoints = Math.min(rawReloadPoints, MAX_RELOAD_POINTS);
         const excessReloadPoints = Math.max(0, rawReloadPoints - MAX_RELOAD_POINTS);
         const overflowBodyDamage = excessReloadPoints * 5;
 
         return {
-            maxHealth: this.baseStats.maxHealth + (this.bonusStats.maxHealth ?? 0),
-            healthRegen: this.baseStats.healthRegen + (this.bonusStats.healthRegen ?? 0),
-            bodyDamage: this.baseStats.bodyDamage + (this.bonusStats.bodyDamage ?? 0) + overflowBodyDamage,
-            bulletSpeed: this.baseStats.bulletSpeed + (this.bonusStats.bulletSpeed ?? 0),
-            bulletPenetration: this.baseStats.bulletPenetration + (this.bonusStats.bulletPenetration ?? 0),
-            bulletDamage: this.baseStats.bulletDamage + (this.bonusStats.bulletDamage ?? 0),
+            maxHealth: this.baseStats.maxHealth + (this.bonusStats.maxHealth ?? 0) + (this.colorBonusStats.maxHealth ?? 0),
+            healthRegen: this.baseStats.healthRegen + (this.bonusStats.healthRegen ?? 0) + (this.colorBonusStats.healthRegen ?? 0),
+            bodyDamage: this.baseStats.bodyDamage + (this.bonusStats.bodyDamage ?? 0) + (this.colorBonusStats.bodyDamage ?? 0) + overflowBodyDamage,
+            bulletSpeed: this.baseStats.bulletSpeed + (this.bonusStats.bulletSpeed ?? 0) + (this.colorBonusStats.bulletSpeed ?? 0),
+            bulletPenetration: this.baseStats.bulletPenetration + (this.bonusStats.bulletPenetration ?? 0) + (this.colorBonusStats.bulletPenetration ?? 0),
+            bulletDamage: this.baseStats.bulletDamage + (this.bonusStats.bulletDamage ?? 0) + (this.colorBonusStats.bulletDamage ?? 0),
             reloadPoints: clampedReloadPoints,
-            movementSpeed: this.baseStats.movementSpeed + (this.bonusStats.movementSpeed ?? 0)
+            movementSpeed: this.baseStats.movementSpeed + (this.bonusStats.movementSpeed ?? 0) + (this.colorBonusStats.movementSpeed ?? 0)
         };
     }
 
@@ -119,6 +124,10 @@ export class Player extends Entity {
     }
 
     public update(input: InputState, dt: number, isControlsInverted: boolean): void {
+        if (input.autoSpin) {
+            this.spinAngle += Player.SPIN_RATE * dt;
+        }
+
         const up    = isControlsInverted ? input.down  : input.up;
         const down  = isControlsInverted ? input.up    : input.down;
         const left  = isControlsInverted ? input.right : input.left;
@@ -160,6 +169,11 @@ export class Player extends Entity {
 
             this.bonusStats[key] = (this.bonusStats[key] ?? 0) + modifier;
         }
+    }
+
+    public applyColorBuff(colorHex: string): void {
+        const def = getColorDefinition(colorHex);
+        this.colorBonusStats = def ? { ...def.modifiers } : {};
     }
 
     public applyUpgradeColor(colorHex: string): void {

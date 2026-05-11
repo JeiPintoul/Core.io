@@ -20,7 +20,7 @@ export class RangedEnemy extends HostileEntity {
         bulletSpeed: 320,
         bulletPenetration: 1,
         bulletDamage: 8,
-        reloadPoints: 0,
+        reloadPoints: 1,
         movementSpeed: 105
     };
 
@@ -29,12 +29,12 @@ export class RangedEnemy extends HostileEntity {
     constructor(id: string, x: number, y: number, multiplier: number = 1) {
         const stats: EntityStats = {
             maxHealth: RangedEnemy.BASE_STATS.maxHealth * multiplier,
-            healthRegen: 0,
+            healthRegen: RangedEnemy.BASE_STATS.healthRegen * multiplier,
             bodyDamage: RangedEnemy.BASE_STATS.bodyDamage * multiplier,
             bulletSpeed: RangedEnemy.BASE_STATS.bulletSpeed * multiplier,
             bulletPenetration: RangedEnemy.BASE_STATS.bulletPenetration * multiplier,
             bulletDamage: RangedEnemy.BASE_STATS.bulletDamage * multiplier,
-            reloadPoints: 0,
+            reloadPoints: RangedEnemy.BASE_STATS.reloadPoints * multiplier,
             movementSpeed: RangedEnemy.BASE_STATS.movementSpeed * multiplier
         };
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed);
