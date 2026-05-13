@@ -1,3 +1,7 @@
+export const MAX_RELOAD_POINTS = 12;
+
+export type WaveType = 'CLEAR' | 'SURVIVE';
+
 export interface EntityStats {
     maxHealth: number;
     healthRegen: number;
@@ -5,7 +9,7 @@ export interface EntityStats {
     bulletSpeed: number;
     bulletPenetration: number;
     bulletDamage: number;
-    reload: number;
+    reloadPoints: number;
     movementSpeed: number;
 }
 
@@ -18,6 +22,19 @@ export interface BarrelConfig {
     damageMultiplier: number;
     speedMultiplier: number;
     lifespanMultiplier: number;
+}
+
+export interface ProjectileSpawnRequest {
+    spawnX: number;
+    spawnY: number;
+    dirX: number;
+    dirY: number;
+    damage: number;
+    penetration: number;
+    speed: number;
+    lifespan: number;
+    shotAngle: number;
+    recoilStrength: number;
 }
 
 export type StatModifiers = Partial<EntityStats>;
@@ -49,15 +66,27 @@ export interface CardSelectedPayload {
     colorHex: string;
 }
 
-export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'MIRROR_BOSS';
+export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'ANOMALY';
 export type ProjectileFaction = 'player' | 'enemy';
+
+export interface TriangleCollidable {
+    readonly id: string;
+    readonly faction: ProjectileFaction;
+    readonly x: number;
+    readonly y: number;
+    readonly radius: number;
+    readonly damage: number;
+    health: number;
+}
 
 export interface WaveMilestone {
     startWave: number;
     enemyWeights: Partial<Record<EnemyType, number>>;
     maxActiveEnemies: number;
+    maxActiveEnemiesSurvive: number;
     totalEnemiesToSpawn: number;
     sizeMultiplier: number;
+    surviveDurationSeconds: number;
 }
 
 export interface SentinelTriangleData {
@@ -101,17 +130,32 @@ export interface BossFightStartPayload {
     bossArenaHeight: number;
 }
 
+export interface ObjectiveState {
+    id: string;
+    title: string;
+    description: string;
+    progress: number;
+    target: number;
+    completed: boolean;
+    failed: boolean;
+}
+
 export interface GameState {
     player: EntityData;
     enemies: EntityData[];
     projectiles: ProjectileData[];
     arena: { width: number; height: number };
-    remainingEnemies: number;
+    currentWave: number;
+    waveType: WaveType;
+    remainingToKill: number;
+    activeEnemyCount: number;
+    surviveTimeRemainingSeconds: number;
     isPaused: boolean;
-    //Boss 
-    isBossFight?: boolean;                    
-    arenaOffset?: { x: number; y: number };   
-
+    objective: ObjectiveState | null;
+    isBossFight?: boolean;
+    arenaOffset?: { x: number; y: number };
+    isColorSelection: boolean;
+    autoSpin: boolean;
 }
 
 export interface InputState {
@@ -119,9 +163,11 @@ export interface InputState {
     down: boolean;
     left: boolean;
     right: boolean;
-    targetX: number; // Substitui mouseX/Y. O Dev de UI deve mandar a coordenada global da arena
+    targetX: number;
     targetY: number;
     isShooting: boolean;
+    autoFire: boolean;
+    autoSpin: boolean;
 }
 
 export interface EntityDamagePayload {
@@ -131,6 +177,7 @@ export interface EntityDamagePayload {
 
 export interface EntityDestroyedPayload {
     id: string;
+    color?: number;
 }
 
 export interface EnemyDestroyedPayload {
@@ -155,6 +202,7 @@ export interface ProjectileDestroyedPayload {
     x: number;
     y: number;
     radius: number;
+    color?: number;
 }
 
 export interface WaveClearedPayload {
@@ -190,6 +238,35 @@ export interface ProjectileFiredPayload {
     recoilStrength: number;
 }
 
+export interface ObjectiveCompletedPayload {
+    title: string;
+    rewardUpgrades: number;
+}
+
+export interface AudioSettingsPayload {
+    volume: number;
+    muted: boolean;
+}
+
+export interface AnomalyTeleportPayload {
+    id: string;
+    x: number;
+    y: number;
+}
+
+export interface AnomalyDashPayload {
+    id: string;
+    x: number;
+    y: number;
+    durationMs: number;
+}
+
+export interface GameOverPayload {
+    waveReached: number;
+    enemiesKilled: number;
+    anomaliesMet: number;
+}
+
 export interface GameEventPayloads {
     player_input: InputState;
     state_update: GameState;
@@ -198,7 +275,7 @@ export interface GameEventPayloads {
     update_upgrade_modal: UpgradeModalOptionsPayload;
     hide_upgrade_modal: undefined;
     card_selected: CardSelectedPayload;
-    game_over: undefined;
+    game_over: GameOverPayload;
     entity_damage: EntityDamagePayload;
     entity_destroyed: EntityDestroyedPayload;
     enemy_destroyed: EnemyDestroyedPayload;
@@ -210,8 +287,15 @@ export interface GameEventPayloads {
     wave_starting_animation_start: WaveAnimationPayload;
     wave_spawning_resumed: WaveSpawningResumedPayload;
     projectile_fired: ProjectileFiredPayload;
-    //Eventos de boss 
+    objective_completed: ObjectiveCompletedPayload;
+    audio_settings_changed: AudioSettingsPayload;
+    audio_restart_requested: undefined;
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
-
+    arena_resized: { width: number; height: number };
+    anomaly_teleport: AnomalyTeleportPayload;
+    anomaly_dash: AnomalyDashPayload;
+    start_run_with_color: { colorHex: string };
+    auto_fire_toggled: { enabled: boolean };
+    auto_spin_toggled: { enabled: boolean };
 }

@@ -1,4 +1,5 @@
 import './style.css';
+import { createIcons, Home, Volume2, VolumeX } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
@@ -12,24 +13,42 @@ const engine = new GameEngine();
 createPhaserGame();
 const hudController = new HudController();
 
-type UiMode = 'INITIAL_MENU' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
+type UiMode = 'INITIAL_MENU' | 'COLOR_SELECTION' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
 
 const menuInicial = document.getElementById('menu-inicial');
+const hudLayerEl = document.getElementById('hud-layer');
 const btnJogar = document.getElementById('btn-jogar') as HTMLButtonElement | null;
 const playerNameInput = document.getElementById('player-name') as HTMLInputElement | null;
 const btnPause = document.getElementById('btn-pause') as HTMLButtonElement | null;
+const btnAudio = document.getElementById('btn-audio') as HTMLButtonElement | null;
+const btnMute = document.getElementById('btn-mute') as HTMLButtonElement | null;
+const musicVolumeInput = document.getElementById('music-volume') as HTMLInputElement | null;
+const pauseAudioPanelEl = document.getElementById('pause-audio-panel');
+const hudAudioWidgetEl = document.getElementById('hud-audio-widget');
+const hudAudioPanelEl = document.getElementById('hud-audio-panel');
+const btnAudioGlobal = document.getElementById('btn-audio-global') as HTMLButtonElement | null;
+const btnMuteGlobal = document.getElementById('btn-mute-global') as HTMLButtonElement | null;
+const musicVolumeGlobalInput = document.getElementById('music-volume-global') as HTMLInputElement | null;
 const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume') as HTMLButtonElement | null;
 const btnRestart = document.getElementById('btn-restart') as HTMLButtonElement | null;
+const btnHomePause = document.getElementById('btn-home-pause') as HTMLButtonElement | null;
+const btnMenuHome = document.getElementById('btn-menu-home') as HTMLButtonElement | null;
 const tituloMenu = menuInicial?.querySelector('h1') as HTMLHeadingElement | null;
+const colorSelectionScreen = document.getElementById('color-selection-screen');
 const upgradeModal = document.getElementById('upgrade-modal');
 const upgradeRemainingEl = document.getElementById('upgrade-remaining');
 const upgradeCardsEl = document.getElementById('upgrade-cards');
 const hudStatsEl = document.getElementById('hud-stats');
+const hudKeybindsEl = document.getElementById('hud-keybinds');
 
 let gameOverUiTimeoutId: number | null = null;
 let waitingUpgradeSelection = false;
 let uiMode: UiMode = menuInicial ? 'INITIAL_MENU' : 'IN_GAME';
+let previousUiMode: UiMode | null = null;
+const _initialAudio = hudController.getInitialAudioPrefs();
+let musicMuted = _initialAudio.muted;
+let musicVolume = _initialAudio.volume;
 
 const RARITY_LABELS_PTBR: Record<CardRarity, string> = {
     COMMON: 'COMUM',
@@ -46,7 +65,7 @@ const MODIFIER_META: Record<keyof EntityStats, { label: string; icon: string; to
     bulletSpeed: { label: 'Vel. Tiro', icon: 'SP', tone: 'offense' },
     bulletPenetration: { label: 'Penetracao', icon: 'PN', tone: 'offense' },
     bulletDamage: { label: 'Dano Tiro', icon: 'DM', tone: 'offense' },
-    reload: { label: 'Recarga', icon: 'RL', tone: 'utility' },
+    reloadPoints: { label: 'Recarga', icon: 'RL', tone: 'utility' },
     movementSpeed: { label: 'Velocidade', icon: 'MV', tone: 'mobility' }
 };
 
@@ -81,7 +100,7 @@ function getUpgradeCardFlavor(cardId: string): string {
 function formatModifierValue(stat: keyof EntityStats, value: number): string {
     const sign = value >= 0 ? '+' : '';
 
-    if (stat === 'reload') {
+    if (stat === 'reloadPoints') {
         return `${sign}${value.toFixed(1)} pts`;
     }
 
@@ -95,12 +114,28 @@ function setUiMode(nextMode: UiMode): void {
 }
 
 function applyUiModeEffects(): void {
-    if (!hudStatsEl) {
-        return;
+    const shouldShowHud = uiMode !== 'INITIAL_MENU' && uiMode !== 'GAME_OVER' && uiMode !== 'COLOR_SELECTION';
+    const shouldShowStats = shouldShowHud || uiMode === 'COLOR_SELECTION';
+    const shouldShowAudioWidget = uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER' || uiMode === 'COLOR_SELECTION';
+
+    hudLayerEl?.classList.toggle('is-hidden', !shouldShowHud);
+    hudStatsEl?.classList.toggle('is-hidden', !shouldShowStats);
+    hudAudioWidgetEl?.classList.toggle('is-visible', shouldShowAudioWidget);
+    hudKeybindsEl?.classList.toggle('is-visible', uiMode === 'INITIAL_MENU');
+
+    if (uiMode === 'COLOR_SELECTION') {
+        hudController.setStatsPinned(true);
+    } else if (uiMode === 'IN_GAME') {
+        hudController.setStatsPinned(false);
     }
 
-    const shouldShowStats = uiMode !== 'INITIAL_MENU';
-    hudStatsEl.classList.toggle('is-hidden', !shouldShowStats);
+    if (!shouldShowAudioWidget) {
+        hudAudioPanelEl?.classList.remove('is-open');
+    }
+
+    if (uiMode !== 'PAUSED') {
+        setPauseAudioPanelOpen(false);
+    }
 }
 
 function applyPauseUi(isPaused: boolean): void {
@@ -112,12 +147,49 @@ function applyPauseUi(isPaused: boolean): void {
     btnPause.classList.toggle('is-paused', isPaused);
 }
 
+function emitAudioSettings(): void {
+    emitGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, {
+        volume: musicVolume,
+        muted: musicMuted
+    });
+}
+
+function updateAudioHud(): void {
+    if (btnMute) {
+        btnMute.textContent = musicMuted ? 'Som: OFF' : 'Som: ON';
+        btnMute.classList.toggle('is-muted', musicMuted);
+    }
+
+    if (musicVolumeInput) {
+        musicVolumeInput.value = Math.round(musicVolume * 100).toString();
+    }
+
+    if (btnMuteGlobal) {
+        btnMuteGlobal.textContent = musicMuted ? 'Som: OFF' : 'Som: ON';
+        btnMuteGlobal.classList.toggle('is-muted', musicMuted);
+    }
+
+    if (musicVolumeGlobalInput) {
+        musicVolumeGlobalInput.value = Math.round(musicVolume * 100).toString();
+    }
+
+    btnAudioGlobal?.classList.toggle('is-muted', musicMuted);
+}
+
+function setPauseAudioPanelOpen(open: boolean): void {
+    pauseAudioPanelEl?.classList.toggle('is-open', open);
+}
+
 function setPauseMenuVisible(visible: boolean): void {
     if (!pauseMenu) {
         return;
     }
 
     pauseMenu.style.display = visible ? 'flex' : 'none';
+
+    if (!visible) {
+        setPauseAudioPanelOpen(false);
+    }
 }
 
 function isPauseMenuVisible(): boolean {
@@ -129,14 +201,22 @@ function isPauseMenuVisible(): boolean {
 }
 
 function togglePauseFromUi(): void {
-    if (uiMode === 'INITIAL_MENU' || uiMode === 'UPGRADE' || uiMode === 'GAME_OVER') {
+    if (uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER' || uiMode === 'COLOR_SELECTION') {
         return;
     }
 
     const isPaused = engine.togglePause();
     applyPauseUi(isPaused);
     setPauseMenuVisible(isPaused);
-    setUiMode(isPaused ? 'PAUSED' : 'IN_GAME');
+
+    if (isPaused) {
+        previousUiMode = uiMode;
+        setUiMode('PAUSED');
+    } else {
+        const returnMode = previousUiMode ?? 'IN_GAME';
+        previousUiMode = null;
+        setUiMode(returnMode);
+    }
 }
 
 function setUpgradeModalVisible(visible: boolean): void {
@@ -301,7 +381,7 @@ function normalizePlayerName(rawName: string): string {
     const trimmedName = rawName.trim();
 
     if (trimmedName.length === 0) {
-        return 'Player';
+        return 'Jogador';
     }
 
     return trimmedName.slice(0, 16);
@@ -314,6 +394,39 @@ function clearPendingGameOverUiTimeout(): void {
 
     window.clearTimeout(gameOverUiTimeoutId);
     gameOverUiTimeoutId = null;
+}
+
+function goToMainMenu(): void {
+    clearPendingGameOverUiTimeout();
+
+    // Emit GAME_OVER to save run stats, then immediately cancel its UI side-effect
+    const summary = engine.getRunSummary();
+    emitGameEvent(GameEvents.GAME_OVER, summary);
+    clearPendingGameOverUiTimeout();
+
+    engine.stop();
+    setPauseMenuVisible(false);
+    setUpgradeModalVisible(false);
+    clearUpgradeCards();
+    hudController.clearStatPreview();
+    hudController.setStatsPinned(false);
+    waitingUpgradeSelection = false;
+    applyPauseUi(false);
+    colorSelectionScreen?.classList.add('hidden');
+
+    if (menuInicial) menuInicial.style.display = 'flex';
+    if (tituloMenu) {
+        tituloMenu.innerText = 'CORE.IO';
+        tituloMenu.style.textShadow = '0 0 10px #4488ff';
+    }
+    if (btnJogar) {
+        btnJogar.innerText = 'JOGAR';
+        btnJogar.style.backgroundColor = '#4488ff';
+        btnJogar.style.boxShadow = 'none';
+    }
+    if (btnMenuHome) btnMenuHome.style.display = 'none';
+
+    setUiMode('INITIAL_MENU');
 }
 
 if (btnJogar && menuInicial && tituloMenu) {
@@ -332,6 +445,8 @@ if (btnJogar && menuInicial && tituloMenu) {
             btnJogar.innerText = 'TENTAR NOVAMENTE';
             btnJogar.style.backgroundColor = '#cc0000';
             btnJogar.style.boxShadow = '0 0 15px #ff4444';
+
+            if (btnMenuHome) btnMenuHome.style.display = 'inline-block';
         }, DEATH_ANIMATION_DURATION_MS);
     };
 
@@ -344,6 +459,7 @@ if (btnJogar && menuInicial && tituloMenu) {
         hudController.clearStatPreview();
         hudController.setStatsPinned(false);
         waitingUpgradeSelection = false;
+        if (btnMenuHome) btnMenuHome.style.display = 'none';
 
         const playerName = normalizePlayerName(playerNameInput?.value ?? '');
         hudController.resetForNewRun();
@@ -357,11 +473,18 @@ if (btnJogar && menuInicial && tituloMenu) {
 
         engine.reset(playerName);
         engine.start();
-        setUiMode('IN_GAME');
-        console.log('Jogo iniciado!');
+
+        colorSelectionScreen?.classList.remove('hidden');
+        setUiMode('COLOR_SELECTION');
     });
 
-    onGameEvent(GameEvents.GAME_OVER, () => {
+    onGameEvent(GameEvents.START_RUN_WITH_COLOR, () => {
+        hudController.clearStatPreview();
+        createIcons({ icons: { Home, Volume2, VolumeX } });
+        setUiMode('IN_GAME');
+    });
+
+    onGameEvent(GameEvents.GAME_OVER, (_payload) => {
         console.log('Game Over!');
 
         engine.stop();
@@ -372,6 +495,7 @@ if (btnJogar && menuInicial && tituloMenu) {
         hudController.clearStatPreview();
         hudController.setStatsPinned(false);
         waitingUpgradeSelection = false;
+        colorSelectionScreen?.classList.add('hidden');
         setUiMode('GAME_OVER');
 
         scheduleGameOverUi();
@@ -389,6 +513,60 @@ if (btnPause) {
     });
 }
 
+if (btnAudio) {
+    btnAudio.addEventListener('click', () => {
+        if (!isPauseMenuVisible()) {
+            return;
+        }
+
+        const isOpen = pauseAudioPanelEl?.classList.contains('is-open') ?? false;
+        setPauseAudioPanelOpen(!isOpen);
+    });
+}
+
+if (btnMute) {
+    btnMute.addEventListener('click', () => {
+        musicMuted = !musicMuted;
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
+if (musicVolumeInput) {
+    musicVolumeInput.addEventListener('input', () => {
+        const rawValue = Number(musicVolumeInput.value);
+        const clampedValue = Math.max(0, Math.min(100, rawValue));
+        musicVolume = clampedValue / 100;
+
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
+if (btnAudioGlobal) {
+    btnAudioGlobal.addEventListener('click', () => {
+        const isOpen = hudAudioPanelEl?.classList.contains('is-open') ?? false;
+        hudAudioPanelEl?.classList.toggle('is-open', !isOpen);
+    });
+}
+
+if (btnMuteGlobal) {
+    btnMuteGlobal.addEventListener('click', () => {
+        musicMuted = !musicMuted;
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
+if (musicVolumeGlobalInput) {
+    musicVolumeGlobalInput.addEventListener('input', () => {
+        const rawValue = Number(musicVolumeGlobalInput.value);
+        musicVolume = Math.max(0, Math.min(100, rawValue)) / 100;
+        updateAudioHud();
+        emitAudioSettings();
+    });
+}
+
 if (btnResume) {
     btnResume.addEventListener('click', () => {
         if (!isPauseMenuVisible()) {
@@ -396,6 +574,18 @@ if (btnResume) {
         }
 
         togglePauseFromUi();
+    });
+}
+
+if (btnHomePause) {
+    btnHomePause.addEventListener('click', () => {
+        goToMainMenu();
+    });
+}
+
+if (btnMenuHome) {
+    btnMenuHome.addEventListener('click', () => {
+        goToMainMenu();
     });
 }
 
@@ -413,6 +603,8 @@ if (btnRestart) {
 
         engine.reset();
         engine.start();
+        engine.startGameWithColor('#4488ff');
+        emitGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, undefined);
         setUiMode('IN_GAME');
 
         if (menuInicial) {
@@ -424,6 +616,7 @@ if (btnRestart) {
 onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, ({ upgradesRemaining }) => {
     setUpgradeModalVisible(true);
     hudController.setStatsPinned(true);
+    hudStatsEl?.classList.remove('is-user-collapsed');
     hudController.clearStatPreview();
     setUpgradesRemaining(upgradesRemaining);
     waitingUpgradeSelection = false;
@@ -433,6 +626,7 @@ onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, ({ upgradesRemaining }) => {
 onGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, ({ upgradesRemaining, options }) => {
     setUpgradeModalVisible(true);
     hudController.setStatsPinned(true);
+    hudStatsEl?.classList.remove('is-user-collapsed');
     hudController.clearStatPreview();
     setUpgradesRemaining(upgradesRemaining);
     waitingUpgradeSelection = false;
@@ -446,6 +640,7 @@ onGameEvent(GameEvents.HIDE_UPGRADE_MODAL, () => {
     clearUpgradeCards();
     hudController.clearStatPreview();
     hudController.setStatsPinned(false);
+    hudStatsEl?.classList.remove('is-user-collapsed');
     waitingUpgradeSelection = false;
 
     if (uiMode === 'GAME_OVER' || uiMode === 'INITIAL_MENU') {
@@ -461,11 +656,6 @@ window.addEventListener('keydown', (event) => {
     }
 
     event.preventDefault();
-
-    if (isUpgradeModalVisible()) {
-        return;
-    }
-
     togglePauseFromUi();
 });
 
@@ -483,9 +673,58 @@ function preventNameInputPropagation(): void {
     playerNameInput.addEventListener('keypress', stopEventPropagation);
 }
 
+if (hudStatsEl) {
+    hudStatsEl.addEventListener('click', () => {
+        if (uiMode !== 'UPGRADE') {
+            return;
+        }
+
+        hudStatsEl.classList.toggle('is-user-collapsed');
+    });
+}
+
 preventNameInputPropagation();
 applyUiModeEffects();
+createIcons({ icons: { Home, Volume2, VolumeX } });
+updateAudioHud();
+emitAudioSettings();
+
+function syncCanvasLayout(): void {
+    const canvas = document.querySelector('#game-container canvas') as HTMLCanvasElement | null;
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    const insetRight = Math.max(0, window.innerWidth - rect.right);
+    const insetBottom = Math.max(0, window.innerHeight - rect.bottom);
+    const scale = rect.height / 1080;
+    const root = document.documentElement;
+    root.style.setProperty('--canvas-inset-right', `${Math.round(insetRight)}px`);
+    root.style.setProperty('--canvas-inset-bottom', `${Math.round(insetBottom)}px`);
+    root.style.setProperty('--canvas-scale', scale.toFixed(4));
+}
+
+function attachCanvasSyncObserver(): void {
+    const canvas = document.querySelector('#game-container canvas') as HTMLCanvasElement | null;
+    if (!canvas) {
+        window.setTimeout(attachCanvasSyncObserver, 100);
+        return;
+    }
+    if (typeof ResizeObserver !== 'undefined') {
+        new ResizeObserver(() => syncCanvasLayout()).observe(canvas);
+    }
+    syncCanvasLayout();
+}
+
+// fullscreenchange fires when the transition starts but the canvas may still be settling —
+// run sync after a short delay to catch the final resting dimensions.
+document.addEventListener('fullscreenchange', () => {
+    window.setTimeout(syncCanvasLayout, 60);
+    window.setTimeout(syncCanvasLayout, 180);
+});
+window.addEventListener('resize', syncCanvasLayout);
+attachCanvasSyncObserver();
 
 window.addEventListener('beforeunload', () => {
+    engine.destroy();
     hudController.destroy();
 });

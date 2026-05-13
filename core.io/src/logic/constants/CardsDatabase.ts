@@ -22,7 +22,7 @@ export const UPGRADE_CARDS: UpgradeCard[] = [
         name: 'Recarga Acelerada',
         description: '+1 Ponto de Recarga e +60 de Velocidade de Projetil.',
         rarity: 'UNCOMMON',
-        modifiers: { reload: 1, bulletSpeed: 60 }
+        modifiers: { reloadPoints: 1, bulletSpeed: 60 }
     },
     {
         id: 'tungsten_rounds',
@@ -43,7 +43,7 @@ export const UPGRADE_CARDS: UpgradeCard[] = [
         name: 'Nucleo Overclockado',
         description: '+12 de Dano de Projetil, +2 Pontos de Recarga e +20 de Velocidade.',
         rarity: 'EPIC',
-        modifiers: { bulletDamage: 12, reload: 2, movementSpeed: 20 }
+        modifiers: { bulletDamage: 12, reloadPoints: 2, movementSpeed: 20 }
     },
     {
         id: 'singularity_shells',

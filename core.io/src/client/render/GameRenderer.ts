@@ -2,6 +2,8 @@ import Phaser from 'phaser';
 import type { GameState, ProjectileFaction } from '../../shared/Types';
 import { COLORS, ARENA, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
+import { ParticleManager } from './ParticleManager';
+import { darkenColor } from './RenderUtils';
 
 interface EntityRenderSnapshot {
     x: number;
@@ -15,6 +17,7 @@ interface EntityRenderSnapshot {
 
 export class GameRenderer {
     private healthBarRenderer: HealthBarRenderer;
+    private particleManager: ParticleManager;
     private readonly entitySnapshots = new Map<string, EntityRenderSnapshot>();
     private currentPlayerId: string | null = null;
     private isPlayerDeathAnimating = false;
@@ -38,6 +41,7 @@ export class GameRenderer {
         private gfxHud: Phaser.GameObjects.Graphics
     ) {
         this.healthBarRenderer = new HealthBarRenderer(scene, gfxGame);
+        this.particleManager = new ParticleManager(scene);
     }
 
     /**
@@ -50,7 +54,8 @@ export class GameRenderer {
 
         const activeEntityIds = new Set<string>();
 
-        this.drawProjectiles(state);
+        const resolvedPlayerColor = state.player.color ?? COLORS.PLAYER;
+        this.drawProjectiles(state, resolvedPlayerColor);
         this.drawEnemies(state, activeEntityIds);
         this.drawPlayer(state, activeEntityIds);
         this.updatePlayerName(state.player);
@@ -75,64 +80,20 @@ export class GameRenderer {
 
         this.entitySnapshots.delete(entityId);
 
-        const ghost = this.scene.add.circle(snapshot.x, snapshot.y, snapshot.radius, snapshot.fillColor, 1);
-        ghost.setStrokeStyle(snapshot.strokeWidth, snapshot.outlineColor, 1);
-
-        this.scene.tweens.add({
-            targets: ghost,
-            y: ghost.y - VISUAL.PLAYER.deathRiseDistance,
-            scaleX: 0,
-            scaleY: 0,
-            alpha: 0,
-            duration: DEATH_ANIMATION_DURATION_MS,
-            ease: 'Quad.easeOut',
-            onComplete: () => {
-                ghost.destroy();
-            }
-        });
+        this.particleManager.playEntityDeathGhost(
+            snapshot.x, snapshot.y, snapshot.radius,
+            snapshot.fillColor, snapshot.outlineColor, snapshot.strokeWidth
+        );
     }
 
-    public playProjectileDeathAnimation(x: number, y: number, radius: number, faction: ProjectileFaction): void {
+    public playProjectileDeathAnimation(x: number, y: number, radius: number, faction: ProjectileFaction, color?: number): void {
         const isPlayerProjectile = faction === 'player';
-        const pulseColor = isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY;
-        const pulseOutlineColor = this.getDarkenedColor(pulseColor, 42);
-        const pulse = this.scene.add.circle(x, y, radius, pulseColor, 1);
-        pulse.setStrokeStyle(VISUAL.STROKE.bullet, pulseOutlineColor, 1);
-
-        this.scene.tweens.add({
-            targets: pulse,
-            scaleX: 0,
-            scaleY: 0,
-            alpha: 0,
-            duration: 150,
-            ease: 'Quad.easeOut',
-            onComplete: () => {
-                pulse.destroy();
-            }
-        });
+        const pulseColor = color ?? (isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY);
+        this.particleManager.playProjectileDeath(x, y, radius, pulseColor);
     }
 
     public playFloatingText(x: number, y: number, text: string, color: string): void {
-        const floatingText = this.scene.add.text(x, y, text, {
-            fontFamily: 'Trebuchet MS, sans-serif',
-            fontSize: '18px',
-            color,
-            stroke: '#0b122d',
-            strokeThickness: 3
-        });
-        floatingText.setOrigin(0.5, 0.5);
-        floatingText.setDepth(20);
-
-        this.scene.tweens.add({
-            targets: floatingText,
-            y: y - 40,
-            alpha: 0,
-            duration: 800,
-            ease: 'Quad.easeOut',
-            onComplete: () => {
-                floatingText.destroy();
-            }
-        });
+        this.particleManager.playFloatingText(x, y, text, color);
     }
 
     private playPlayerDeathAnimation(): void {
@@ -167,7 +128,7 @@ export class GameRenderer {
         fillColor: number,
         strokeWidth: number
     ): void {
-        const outlineColor = this.getDarkenedColor(fillColor, 40);
+        const outlineColor = darkenColor(fillColor, 40);
 
         this.entitySnapshots.set(entityId, {
             x,
@@ -195,7 +156,7 @@ export class GameRenderer {
     /**
      * Desenha fundo e grid (chamado apenas uma vez no create)
      */
-    drawStaticWorld() {
+    drawStaticWorld(width: number, height: number) {
         this.gfxWorld.clear();
 
         const abyssPadding = 400;
@@ -203,27 +164,23 @@ export class GameRenderer {
         const abyssColor = 0x0f0f1a;
         const arenaEdgeShade = 0x11172d;
 
-        // Abyss outside the playable arena.
         this.gfxWorld.fillStyle(abyssColor);
         this.gfxWorld.fillRect(
             -abyssPadding,
             -abyssPadding,
-            ARENA.width + (abyssPadding * 2),
-            ARENA.height + (abyssPadding * 2)
+            width + (abyssPadding * 2),
+            height + (abyssPadding * 2)
         );
 
-        // Main playable arena surface.
         this.gfxWorld.fillStyle(COLORS.ARENA_BG);
-        this.gfxWorld.fillRect(0, 0, ARENA.width, ARENA.height);
+        this.gfxWorld.fillRect(0, 0, width, height);
 
-        // Subtle dark shade just inside the arena border to emphasize map edge.
         this.gfxWorld.fillStyle(arenaEdgeShade, 0.5);
-        this.gfxWorld.fillRect(0, 0, ARENA.width, edgeShadeSize);
-        this.gfxWorld.fillRect(0, ARENA.height - edgeShadeSize, ARENA.width, edgeShadeSize);
-        this.gfxWorld.fillRect(0, edgeShadeSize, edgeShadeSize, ARENA.height - (edgeShadeSize * 2));
-        this.gfxWorld.fillRect(ARENA.width - edgeShadeSize, edgeShadeSize, edgeShadeSize, ARENA.height - (edgeShadeSize * 2));
+        this.gfxWorld.fillRect(0, 0, width, edgeShadeSize);
+        this.gfxWorld.fillRect(0, height - edgeShadeSize, width, edgeShadeSize);
+        this.gfxWorld.fillRect(0, edgeShadeSize, edgeShadeSize, height - (edgeShadeSize * 2));
+        this.gfxWorld.fillRect(width - edgeShadeSize, edgeShadeSize, edgeShadeSize, height - (edgeShadeSize * 2));
 
-        // Grid
         const STEP = VISUAL.GRID_STEP;
         this.gfxWorld.lineStyle(
             VISUAL.STROKE.gridLine,
@@ -231,34 +188,33 @@ export class GameRenderer {
             VISUAL.OPACITY.gridLine
         );
 
-        for (let x = 0; x <= ARENA.width; x += STEP) {
+        for (let x = 0; x <= width; x += STEP) {
             this.gfxWorld.beginPath();
             this.gfxWorld.moveTo(x, 0);
-            this.gfxWorld.lineTo(x, ARENA.height);
+            this.gfxWorld.lineTo(x, height);
             this.gfxWorld.strokePath();
         }
 
-        for (let y = 0; y <= ARENA.height; y += STEP) {
+        for (let y = 0; y <= height; y += STEP) {
             this.gfxWorld.beginPath();
             this.gfxWorld.moveTo(0, y);
-            this.gfxWorld.lineTo(ARENA.width, y);
+            this.gfxWorld.lineTo(width, y);
             this.gfxWorld.strokePath();
         }
 
-        // Arena border
         this.gfxWorld.lineStyle(
             VISUAL.STROKE.arenaBorder,
             COLORS.ARENA_BORDER,
             1
         );
-        this.gfxWorld.strokeRect(0, 0, ARENA.width, ARENA.height);
+        this.gfxWorld.strokeRect(0, 0, width, height);
     }
 
     /**
      * Desenha o player com cano rotacionado para o cursor
      */
     private drawPlayer(state: GameState, activeEntityIds: Set<string>) {
-        const { x, y, radius, stats, health, isDead } = state.player;
+        const { x, y, radius, stats, health, isDead, color: playerColor } = state.player;
 
         if (isDead) {
             if (!this.isPlayerDeathAnimating) {
@@ -277,21 +233,27 @@ export class GameRenderer {
         this.gfxPlayer.setScale(1);
         this.gfxPlayer.setAlpha(1);
 
-        // Barrel angle towards cursor pointer
-        const worldPoint = this.getCursorWorldPoint();
-        const angle = Math.atan2(worldPoint.y - y, worldPoint.x - x);
+        // When auto-spin is active use the server-driven spinAngle; otherwise aim at cursor
+        let angle: number;
+        if (state.autoSpin && state.player.aimAngle !== undefined) {
+            angle = state.player.aimAngle;
+        } else {
+            const worldPoint = this.getCursorWorldPoint();
+            angle = Math.atan2(worldPoint.y - y, worldPoint.x - x);
+        }
 
         // Draw barrel
         this.drawPlayerBarrel(radius, angle, this.playerBarrelRetraction.value);
 
         // Draw body
-        this.drawPlayerBody(radius);
+        const resolvedPlayerColor = playerColor ?? COLORS.PLAYER;
+        this.drawPlayerBody(radius, resolvedPlayerColor);
         this.rememberEntitySnapshot(
             state.player.id,
             x,
             y,
             radius,
-            COLORS.PLAYER,
+            resolvedPlayerColor,
             VISUAL.STROKE.player
         );
 
@@ -328,29 +290,23 @@ export class GameRenderer {
             if (enemyType === 'RANGED' && typeof aimAngle === 'number') {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
-            // Adicionar ANTES do drawCircle genérico dos inimigos:
-            if (enemyType === 'MIRROR_BOSS' && typeof aimAngle === 'number') {
-                // Boss tem barrel prateado apontando pro jogador
+
+            if (enemyType === 'ANOMALY' && typeof aimAngle === 'number') {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
-                this.drawCircle(x, y, radius, 0xdde8ff, VISUAL.STROKE.enemy); // corpo prateado/espelho
-                // Aura pulsante
                 this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
                 this.gfxGame.strokeCircle(x, y, radius + 8);
                 this.gfxGame.lineStyle(1, 0xaabbff, 0.15);
                 this.gfxGame.strokeCircle(x, y, radius + 16);
-                this.rememberEntitySnapshot(enemy.id, x, y, radius, 0xdde8ff, VISUAL.STROKE.enemy);
-                this.healthBarRenderer.drawWorldHealthBar(enemy.id, x, y - radius - 10, radius * 2, health, stats.maxHealth);
-                continue; // pula o drawCircle genérico abaixo
             }
 
-// ...drawCircle genérico existente continua aqui...
-            this.drawCircle(x, y, radius, COLORS.ENEMY, VISUAL.STROKE.enemy);
+            const bodyColor = enemyType === 'ANOMALY' ? 0xdde8ff : COLORS.ENEMY;
+            this.drawCircle(x, y, radius, bodyColor, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
                 enemy.id,
                 x,
                 y,
                 radius,
-                COLORS.ENEMY,
+                bodyColor,
                 VISUAL.STROKE.enemy
             );
 
@@ -387,14 +343,14 @@ export class GameRenderer {
     /**
      * Desenha todos os projéteis
      */
-    private drawProjectiles(state: GameState) {
+    private drawProjectiles(state: GameState, playerColor: number) {
         for (const proj of state.projectiles) {
             if (!this.isInCameraView(proj.x, proj.y, proj.radius, 20)) {
                 continue;
             }
 
             const isPlayerProjectile = proj.faction === 'player';
-            const fillColor = isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY;
+            const fillColor = isPlayerProjectile ? playerColor : COLORS.ENEMY;
             this.drawCircle(proj.x, proj.y, proj.radius, fillColor, VISUAL.STROKE.bullet);
         }
     }
@@ -424,7 +380,7 @@ export class GameRenderer {
         fillColor: number,
         strokeWidth: number = 2
     ): void {
-        const outlineColor = this.getDarkenedColor(fillColor, 40);
+        const outlineColor = darkenColor(fillColor, 40);
         this.gfxGame.lineStyle(strokeWidth, outlineColor, 1);
         this.gfxGame.fillStyle(fillColor);
         this.gfxGame.beginPath();
@@ -444,7 +400,7 @@ export class GameRenderer {
         fillColor: number,
         strokeWidth: number = 2
     ): void {
-        const outlineColor = this.getDarkenedColor(fillColor, 40);
+        const outlineColor = darkenColor(fillColor, 40);
         this.gfxGame.lineStyle(strokeWidth, outlineColor, 1);
         this.gfxGame.fillStyle(fillColor);
         this.gfxGame.save();
@@ -478,9 +434,9 @@ export class GameRenderer {
         this.gfxPlayer.restore();
     }
 
-    private drawPlayerBody(radius: number): void {
-        this.gfxPlayer.lineStyle(VISUAL.STROKE.player, this.getDarkenedColor(COLORS.PLAYER, 40), 1);
-        this.gfxPlayer.fillStyle(COLORS.PLAYER);
+    private drawPlayerBody(radius: number, color: number): void {
+        this.gfxPlayer.lineStyle(VISUAL.STROKE.player, darkenColor(color, 40), 1);
+        this.gfxPlayer.fillStyle(color);
         this.gfxPlayer.beginPath();
         this.gfxPlayer.arc(0, 0, radius, 0, Math.PI * 2);
         this.gfxPlayer.fillPath();
@@ -497,16 +453,6 @@ export class GameRenderer {
             width: radius * VISUAL.PLAYER.barrelWidthFactor,
             offset: Math.max(radius * 0.08, baseOffset - (clampedRetraction * 0.45))
         };
-    }
-
-    private getDarkenedColor(color: number, darkenPercent: number): number {
-        const clampedPercent = Phaser.Math.Clamp(darkenPercent, 0, 95);
-        const factor = (100 - clampedPercent) / 100;
-        const red = Math.round(((color >> 16) & 0xff) * factor);
-        const green = Math.round(((color >> 8) & 0xff) * factor);
-        const blue = Math.round((color & 0xff) * factor);
-
-        return (red << 16) | (green << 8) | blue;
     }
 
     private ensurePlayerNameText(): Phaser.GameObjects.Text {
@@ -548,10 +494,9 @@ export class GameRenderer {
     }
 
     private getMinimapMetrics(): { size: number; padding: number } {
-        if (this.camera.height <= 1120) {
-            return { size: 168, padding: 22 };
-        }
-
+        const h = this.scene.scale.displaySize.height;
+        if (h <= 900) return { size: 148, padding: 18 };
+        if (h <= 1120) return { size: 168, padding: 22 };
         return { size: 192, padding: 28 };
     }
 
@@ -661,6 +606,14 @@ export class GameRenderer {
                 this.enemyRecoilTweens.delete(enemyId);
             }
         }
+    }
+
+    public playTeleportFlash(x: number, y: number): void {
+        this.particleManager.playTeleportFlash(x, y);
+    }
+
+    public playDashGhostTrail(x: number, y: number, radius: number): void {
+        this.particleManager.playDashGhostTrail(x, y, radius);
     }
 
     public destroy(): void {
