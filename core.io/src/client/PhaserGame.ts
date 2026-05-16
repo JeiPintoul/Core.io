@@ -7,15 +7,17 @@ import { GameScene } from './scenes/GameScene';
  * está separada em módulos especializados
  */
 export function createPhaserGame(): Phaser.Game {
-    const config: Phaser.Types.Core.GameConfig = {
+    const config: Phaser.Types.Core.GameConfig & { resolution: number; roundPixels: boolean } = {
         type: Phaser.AUTO,              // WebGL com fallback para Canvas
         parent: 'game-container',       // div do index.html
-        width: window.innerWidth,
-        height: window.innerHeight,
+        width: 1920,
+        height: 1080,
+        resolution: window.devicePixelRatio || 1,
+        roundPixels: false,
         backgroundColor: '#1a1a2e',
         scene: [GameScene],
         scale: {
-            mode: Phaser.Scale.RESIZE,  // responsivo ao redimensionar
+            mode: Phaser.Scale.FIT,
             autoCenter: Phaser.Scale.CENTER_BOTH,
         },
         render: {

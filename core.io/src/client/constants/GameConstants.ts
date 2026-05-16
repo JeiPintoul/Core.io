@@ -4,14 +4,12 @@
 
 export const COLORS = {
     PLAYER:          0x4488ff,
-    PLAYER_BARREL:   0x2266cc,
-    PLAYER_OUTLINE:  0xffffff,
+    PLAYER_BARREL:   0x8d929c,
+    BARREL_OUTLINE:  0x525861,
 
     ENEMY:           0xff4444,
-    ENEMY_OUTLINE:   0xaa0000,
 
     BULLET:          0xffee44,
-    BULLET_OUTLINE:  0xcc9900,
 
     HEALTH_BG:       0x330000,
     HEALTH_BAR:      0x44ff44,
@@ -23,18 +21,21 @@ export const COLORS = {
 };
 
 export const ARENA = {
-    width: 2000,
-    height: 2000,
+    width: 5000,
+    height: 5000,
 };
+
+export const DEATH_ANIMATION_DURATION_MS = 800;
 
 // Visual constants
 export const VISUAL = {
     GRID_STEP: 100,
     
     PLAYER: {
-        barrelLengthFactor: 1.6,
-        barrelWidthFactor: 0.55,
+        barrelLengthFactor: 1.38,
+        barrelWidthFactor: 0.78,
         barrelOffsetFactor: 0.4,
+        deathRiseDistance: 50,
     },
     
     HEALTH_BAR: {
@@ -47,9 +48,9 @@ export const VISUAL = {
     },
     
     STROKE: {
-        player: 2,
-        enemy: 2,
-        bullet: 1,
+        player: 3,
+        enemy: 3,
+        bullet: 2,
         healthBar: 1,
         arenaBorder: 3,
         gridLine: 0.5,

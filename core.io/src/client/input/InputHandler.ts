@@ -1,6 +1,6 @@
 import Phaser from 'phaser';
 import type { InputState } from '../../shared/Types';
-import { eventBus, GameEvents } from '../../shared/EventBus';
+import { emitGameEvent, GameEvents } from '../../shared/EventBus';
 
 export class InputHandler {
     private keys: {
@@ -12,7 +12,12 @@ export class InputHandler {
         s: Phaser.Input.Keyboard.Key;
         a: Phaser.Input.Keyboard.Key;
         d: Phaser.Input.Keyboard.Key;
+        e: Phaser.Input.Keyboard.Key;
+        c: Phaser.Input.Keyboard.Key;
     };
+    private isEnabled = false;
+    private autoFireEnabled = false;
+    private autoSpinEnabled = false;
 
     constructor(
         private scene: Phaser.Scene,
@@ -28,38 +33,70 @@ export class InputHandler {
             s: kb.addKey(Phaser.Input.Keyboard.KeyCodes.S),
             a: kb.addKey(Phaser.Input.Keyboard.KeyCodes.A),
             d: kb.addKey(Phaser.Input.Keyboard.KeyCodes.D),
+            e: kb.addKey(Phaser.Input.Keyboard.KeyCodes.E),
+            c: kb.addKey(Phaser.Input.Keyboard.KeyCodes.C),
         };
+
+        this.keys.e.on('down', () => {
+            if (!this.isEnabled) return;
+            this.autoFireEnabled = !this.autoFireEnabled;
+            emitGameEvent(GameEvents.AUTO_FIRE_TOGGLED, { enabled: this.autoFireEnabled });
+        });
+        this.keys.c.on('down', () => {
+            if (!this.isEnabled) return;
+            this.autoSpinEnabled = !this.autoSpinEnabled;
+            emitGameEvent(GameEvents.AUTO_SPIN_TOGGLED, { enabled: this.autoSpinEnabled });
+        });
     }
 
-    /**
-     * Captura input do teclado e mouse, converte para coordenadas mundiais,
-     * e emite evento para a GameEngine processar
-     */
     handleInput(): void {
+        if (!this.isEnabled) {
+            return;
+        }
+
         const k = this.keys;
 
-        const movingUp = k.up.isDown || k.w.isDown;
-        const movingDown = k.down.isDown || k.s.isDown;
-        const movingLeft = k.left.isDown || k.a.isDown;
-        const movingRight = k.right.isDown || k.d.isDown;
-        const isShooting = this.scene.input.activePointer.isDown;
-
-        // Converter coordenadas da tela → coordenadas globais
         const worldPoint = this.camera.getWorldPoint(
             this.scene.input.activePointer.x,
             this.scene.input.activePointer.y
         );
 
         const input: InputState = {
-            up: movingUp,
-            down: movingDown,
-            left: movingLeft,
-            right: movingRight,
+            up: k.up.isDown || k.w.isDown,
+            down: k.down.isDown || k.s.isDown,
+            left: k.left.isDown || k.a.isDown,
+            right: k.right.isDown || k.d.isDown,
             targetX: worldPoint.x,
             targetY: worldPoint.y,
-            isShooting,
+            isShooting: this.scene.input.activePointer.isDown,
+            autoFire: this.autoFireEnabled,
+            autoSpin: this.autoSpinEnabled,
         };
 
-        eventBus.emit(GameEvents.PLAYER_INPUT, input);
+        emitGameEvent(GameEvents.PLAYER_INPUT, input);
+    }
+
+    public disable(): void {
+        if (!this.isEnabled) {
+            return;
+        }
+
+        this.isEnabled = false;
+
+        emitGameEvent(GameEvents.PLAYER_INPUT, {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            targetX: this.scene.input.activePointer.worldX,
+            targetY: this.scene.input.activePointer.worldY,
+            isShooting: false,
+            autoFire: false,
+            autoSpin: false,
+        });
+    }
+
+    public enable(): void {
+        this.isEnabled = true;
     }
 }
