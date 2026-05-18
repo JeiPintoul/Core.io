@@ -3,6 +3,7 @@ import { createIcons, Home, Volume2, VolumeX } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
+import { GodMode } from './debug/GodMode';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
 import type { CardRarity, EntityStats, UpgradeRollOption } from './shared/Types';
 import { DEATH_ANIMATION_DURATION_MS } from './client/constants/GameConstants';
@@ -12,6 +13,7 @@ console.log('Inicializando Core.io...');
 const engine = new GameEngine();
 createPhaserGame();
 const hudController = new HudController();
+new GodMode(engine);
 
 type UiMode = 'INITIAL_MENU' | 'COLOR_SELECTION' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
 
@@ -225,14 +227,6 @@ function setUpgradeModalVisible(visible: boolean): void {
     }
 
     upgradeModal.classList.toggle('is-visible', visible);
-}
-
-function isUpgradeModalVisible(): boolean {
-    if (!upgradeModal) {
-        return false;
-    }
-
-    return upgradeModal.classList.contains('is-visible');
 }
 
 function setUpgradesRemaining(value: number): void {

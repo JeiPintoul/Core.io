@@ -79,6 +79,8 @@ export class GameEngine {
     private isBossFightActive = false;
     private currentArena: { x: number; y: number; width: number; height: number };
     private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+    private debugGodModeInvincible = false;
+    private debugGodModeEnabled = false;
 
     private anomalySpawnCount = 0;
     private anomalyCurrentChance = ANOMALY_BASE_CHANCE;
@@ -238,6 +240,76 @@ export class GameEngine {
         }
 
         this.eventUnsubscribers.length = 0;
+    }
+
+    public toggleDebugGodMode(): boolean {
+        this.debugGodModeEnabled = !this.debugGodModeEnabled;
+        return this.debugGodModeEnabled;
+    }
+
+    public setDebugInvincibility(enabled: boolean): void {
+        this.debugGodModeInvincible = enabled;
+    }
+
+    public debugIsInvincible(): boolean {
+        return this.debugGodModeInvincible;
+    }
+
+    public debugHealPlayer(): void {
+        this.player.health = this.player.maxHealth;
+        this.emitStateUpdate();
+    }
+
+    public debugGrantRandomCard(): void {
+        const options = this.upgradeManager.rollUpgradeOptions(this.player.level);
+        const option = options[Math.floor(Math.random() * options.length)];
+        this.player.applyStatModifiers(option.card.modifiers);
+        this.player.applyColorBuff(option.colorHex);
+        this.player.applyUpgradeColor(option.colorHex);
+        this.syncPlayerCoreStats();
+        this.emitStateUpdate();
+    }
+
+    public debugForceAdvanceWave(): void {
+        const now = performance.now();
+
+        if (this.engineState === EngineState.BOSS_FIGHT) {
+            this.enemies = [];
+            this.endBossFight(now);
+            return;
+        }
+
+        this.enemies = [];
+        this.spawnQueue = [];
+        this.enemiesKilledThisWave = this.getCurrentWaveTotalToSpawn();
+        this.triggerWaveClear(now);
+    }
+
+    public debugSpawnEnemy(): void {
+        const milestone = getWaveMilestone(this.currentWave);
+        const enemyType = this.rollEnemyType(milestone.enemyWeights);
+        this.spawnEnemy(enemyType);
+    }
+
+    public debugSpawnBoss(): void {
+        if (this.isBossFightActive) {
+            return;
+        }
+
+        this.enterBossFight();
+    }
+
+    public debugLevelUpPlayer(): void {
+        this.player.level += 1;
+        this.player.pendingUpgrades += 1;
+        this.player.xpToNextLevel = Math.floor(this.player.xpToNextLevel * 1.25);
+
+        emitGameEvent(GameEvents.LEVEL_UP, { newLevel: this.player.level });
+        emitGameEvent(GameEvents.XP_UPDATE, {
+            currentXp: this.player.currentXp,
+            requires: this.player.xpToNextLevel
+        });
+        this.emitStateUpdate();
     }
 
     public togglePause(): boolean {
@@ -745,14 +817,16 @@ export class GameEngine {
 
             if (projectile.faction === 'enemy') {
                 if (this.checkCircularCollision(projectile.x, projectile.y, projectile.radius, this.player.x, this.player.y, this.player.radius)) {
-                    const shouldDestroy = projectile.handleCollisionWith(
-                        this.player,
-                        this.player.contactDamage,
-                        currentTime,
-                        () => this.missionManager.onPlayerDamaged()
-                    );
-                    if (shouldDestroy) {
-                        this.destroyProjectile(projectileIndex);
+                    if (!this.debugGodModeInvincible) {
+                        const shouldDestroy = projectile.handleCollisionWith(
+                            this.player,
+                            this.player.contactDamage,
+                            currentTime,
+                            () => this.missionManager.onPlayerDamaged()
+                        );
+                        if (shouldDestroy) {
+                            this.destroyProjectile(projectileIndex);
+                        }
                     }
                 }
                 continue;
@@ -841,6 +915,10 @@ export class GameEngine {
 
     private tryApplyBurstCollisionDamage(target: Entity, attacker: Entity, currentTime: number, onDamageTaken: () => void = () => {}): void {
         if (!target.canReceiveCollisionDamageFrom(attacker.id, currentTime, this.collisionMicroCooldownMs)) {
+            return;
+        }
+
+        if (this.debugGodModeInvincible && target instanceof Player) {
             return;
         }
 

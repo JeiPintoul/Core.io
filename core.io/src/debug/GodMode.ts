@@ -1,0 +1,168 @@
+import type { GameEngine } from '../logic/GameEngine';
+
+interface DebugCommand {
+    key: string;
+    title: string;
+    description: string;
+    action: () => void;
+}
+
+export class GodMode {
+    private isActive = false;
+    private readonly panel: HTMLElement;
+    private statusLabel!: HTMLElement;
+    private lastActionLabel!: HTMLElement;
+
+    private readonly commands: DebugCommand[];
+
+    constructor(private readonly engine: GameEngine) {
+        this.commands = [
+            {
+                key: 'I',
+                title: 'Invencibilidade',
+                description: 'Ativa ou desativa invencibilidade do jogador',
+                action: () => {
+                    this.engine.setDebugInvincibility(!this.engine.debugIsInvincible());
+                }
+            },
+            {
+                key: 'W',
+                title: 'Passar de onda',
+                description: 'Avança imediatamente para a próxima onda ou derrota o boss atual',
+                action: () => this.engine.debugForceAdvanceWave()
+            },
+            {
+                key: 'H',
+                title: 'Recuperar vida',
+                description: 'Restaura a vida do jogador para o máximo',
+                action: () => this.engine.debugHealPlayer()
+            },
+            {
+                key: 'C',
+                title: 'Pegar carta',
+                description: 'Concede um cartão de aprimoramento aleatório',
+                action: () => this.engine.debugGrantRandomCard()
+            },
+            {
+                key: 'E',
+                title: 'Spawnar inimigo',
+                description: 'Cria um inimigo extra próximo do jogador',
+                action: () => this.engine.debugSpawnEnemy()
+            },
+            {
+                key: 'B',
+                title: 'Spawnar boss',
+                description: 'Inicia um duelo contra o boss Anomalia',
+                action: () => this.engine.debugSpawnBoss()
+            },
+            {
+                key: 'L',
+                title: 'Upar nível',
+                description: 'Concede um nível extra e um aprimoramento pendente',
+                action: () => this.engine.debugLevelUpPlayer()
+            }
+        ];
+
+        this.panel = this.createPanel();
+        document.body.appendChild(this.panel);
+        globalThis.addEventListener('keydown', this.handleKeyDown);
+    }
+
+    private createPanel(): HTMLElement {
+        const panel = document.createElement('div');
+        panel.id = 'debug-mode-panel';
+        panel.className = 'hidden';
+
+        const title = document.createElement('div');
+        title.className = 'debug-mode-title';
+        title.textContent = 'GOD MODE';
+
+        const subtitle = document.createElement('div');
+        subtitle.className = 'debug-mode-subtitle';
+        subtitle.textContent = 'Shift+G para abrir; Shift + Tecla para executar';
+
+        this.statusLabel = document.createElement('div');
+        this.statusLabel.className = 'debug-mode-status';
+        this.statusLabel.textContent = 'Status: DESATIVADO';
+
+        this.lastActionLabel = document.createElement('div');
+        this.lastActionLabel.className = 'debug-mode-last-action';
+        this.lastActionLabel.textContent = 'Última ação: nenhuma';
+
+        const table = document.createElement('table');
+        table.className = 'debug-mode-table';
+
+        const header = document.createElement('thead');
+        header.innerHTML = '<tr><th>Tecla</th><th>Comando</th></tr>';
+        table.appendChild(header);
+
+        const body = document.createElement('tbody');
+        for (const command of this.commands) {
+            const row = document.createElement('tr');
+            row.innerHTML = `<td><kbd>${command.key}</kbd></td><td>${command.title}</td>`;
+            body.appendChild(row);
+        }
+
+        table.appendChild(body);
+        panel.append(title, subtitle, this.statusLabel, table, this.lastActionLabel);
+
+        return panel;
+    }
+
+    private readonly handleKeyDown = (event: KeyboardEvent): void => {
+        if (event.shiftKey && event.code === 'KeyG') {
+            event.preventDefault();
+            this.toggle();
+            return;
+        }
+
+        if (!this.isActive) {
+            return;
+        }
+
+        if (event.key === 'Escape') {
+            event.preventDefault();
+            this.hide();
+            return;
+        }
+
+        const command = this.commands.find((item) => item.key === event.key.toUpperCase());
+        if (!command) {
+            return;
+        }
+
+        // Only execute commands when Shift is held to avoid conflicting with gameplay keys
+        if (!event.shiftKey) {
+            return;
+        }
+
+        event.preventDefault();
+        event.stopPropagation();
+        command.action();
+        this.lastActionLabel.textContent = `Última ação: ${command.title}`;
+        this.refreshStatus();
+    };
+
+    private toggle(): void {
+        this.isActive = !this.isActive;
+        this.engine.toggleDebugGodMode();
+        this.panel.classList.toggle('hidden', !this.isActive);
+        this.refreshStatus();
+    }
+
+    private hide(): void {
+        if (!this.isActive) {
+            return;
+        }
+
+        this.isActive = false;
+        this.engine.toggleDebugGodMode();
+        this.panel.classList.add('hidden');
+        this.refreshStatus();
+    }
+
+    private refreshStatus(): void {
+        const invincibleText = this.engine.debugIsInvincible() ? 'SIM' : 'NÃO';
+        this.statusLabel.textContent = `Status: ${this.isActive ? 'ATIVADO' : 'DESATIVADO'} · Invencível: ${invincibleText}`;
+    }
+}

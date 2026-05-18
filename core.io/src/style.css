@@ -1368,6 +1368,83 @@ body {
   z-index: 60;
   opacity: 0;
   transition: opacity 0.18s ease;
+}
+
+#debug-mode-panel {
+  position: fixed;
+  left: 18px;
+  bottom: 18px;
+  width: min(260px, calc(100vw - 36px));
+  background: rgba(2, 8, 24, 0.88);
+  border: 1px solid rgba(140, 186, 255, 0.12);
+  border-radius: 12px;
+  box-shadow: 0 18px 40px rgba(0, 16, 46, 0.45);
+  padding: 10px 12px;
+  color: #eef3ff;
+  z-index: 120;
+  backdrop-filter: blur(6px);
+  font-family: ui-sans-serif, system-ui, sans-serif;
+}
+
+#debug-mode-panel.hidden {
+  display: none;
+}
+
+#debug-mode-panel .debug-mode-title {
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  margin-bottom: 4px;
+  color: #86b7ff;
+}
+
+#debug-mode-panel .debug-mode-subtitle,
+#debug-mode-panel .debug-mode-status,
+#debug-mode-panel .debug-mode-last-action {
+  font-size: 0.68rem;
+  color: #b8d4ff;
+  margin-bottom: 8px;
+}
+
+#debug-mode-panel table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+
+#debug-mode-panel th,
+#debug-mode-panel td {
+  padding: 4px 6px;
+  font-size: 0.72rem;
+  vertical-align: middle;
+}
+
+#debug-mode-panel th {
+  color: #8ec9ff;
+  text-align: left;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+#debug-mode-panel tr + tr td {
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+#debug-mode-panel kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  padding: 2px 5px;
+  border-radius: 6px;
+  border: 1px solid rgba(140, 186, 255, 0.36);
+  background: rgba(16, 28, 56, 0.88);
+  color: #cce2ff;
+  font-size: 0.68rem;
+  font-weight: 700;
+}
+
   white-space: nowrap;
 }
 
