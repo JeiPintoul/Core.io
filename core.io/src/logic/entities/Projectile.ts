@@ -87,6 +87,7 @@ export class Projectile implements TriangleCollidable {
     ): boolean {
         const effectiveDamage = Math.min(this.damage, this.health);
         if (effectiveDamage <= 0) {
+            this.applyImpactImpulse(target, false);
             return true;
         }
 

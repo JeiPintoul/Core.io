@@ -2,6 +2,16 @@ import { Entity } from '../Entity';
 import type { EnemyType, EntityData, EntityStats, TriangleCollidable } from '../../../shared/Types';
 import type { Player } from '../player/Player';
 
+export interface PendingEnemySpawn {
+    enemyType?: EnemyType;
+    x: number;
+    y: number;
+    multiplier?: number;
+    orbitSlot?: number;
+    orbitTotal?: number;
+    orbitRadius?: number;
+}
+
 export interface EnemyUpdateContext {
     readonly playerX: number;
     readonly playerY: number;
@@ -26,7 +36,12 @@ export abstract class HostileEntity extends Entity {
 
     public abstract tick(context: EnemyUpdateContext): void;
 
-    public drainPendingSpawns(): Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> {
+    public drainPendingSpawns(): PendingEnemySpawn[] {
+        return [];
+    }
+
+    public onProjectileHit(currentTimeMs: number): EnemyType[] {
+        void currentTimeMs;
         return [];
     }
 

@@ -1,6 +1,6 @@
 import type { EnemyType } from '../../shared/Types';
 
-export type MissionKind = 'KILL_COUNT' | 'ENEMY_TYPE_KILL_COUNT' | 'NO_DAMAGE_DURATION';
+export type MissionKind = 'KILL_COUNT' | 'ENEMY_TYPE_KILL_COUNT' | 'NO_DAMAGE_DURATION' | 'BOSS_NO_DAMAGE';
 
 export interface MissionDefinition {
     readonly id: string;
@@ -110,3 +110,23 @@ export const MISSIONS_DATABASE: readonly MissionDefinition[] = [
         weight: 10,
     },
 ];
+
+export const BOSS_FLAWLESS_MISSION: MissionDefinition = {
+    id: 'boss_flawless',
+    kind: 'BOSS_NO_DAMAGE',
+    title: 'Dominio Absoluto',
+    description: 'Derrote o boss sem receber dano',
+    target: 1,
+    rewardUpgrades: 2,
+    weight: 1,
+};
+
+export const ANOMALY_FLAWLESS_MISSION: MissionDefinition = {
+    id: 'anomaly_flawless',
+    kind: 'BOSS_NO_DAMAGE',
+    title: 'Leitura da Anomalia',
+    description: 'Derrote a Anomalia sem receber dano',
+    target: 1,
+    rewardUpgrades: 2,
+    weight: 1,
+};

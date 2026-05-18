@@ -1,5 +1,12 @@
 import type { EnemyType, WaveMilestone, WaveType } from '../../shared/Types';
 
+export type BossKind = 'ANOMALY' | 'DREADNOUGHT';
+
+export interface BossWaveRule {
+    readonly wave: number;
+    readonly bossKind: BossKind;
+}
+
 export const ENEMY_STAT_MULTIPLIER_PER_WAVE = 0.05;
 export const WAVE_UPGRADE_PHASE_DURATION_MS = 3000;
 export const WAVE_SPAWN_INTERVAL_SECONDS = 0.25;
@@ -8,6 +15,13 @@ export const ANOMALY_START_WAVE = 5;
 export const ANOMALY_BASE_CHANCE = 0.15;
 export const ANOMALY_CHANCE_INCREMENT = 0.03;
 export const ANOMALY_COOLDOWN_WAVES = 3;
+
+export const BOSS_WAVE_RULES: readonly BossWaveRule[] = [
+    {
+        wave: 1,
+        bossKind: 'DREADNOUGHT'
+    }
+];
 
 export const WAVE_MILESTONES: WaveMilestone[] = [
     {
@@ -71,7 +85,7 @@ export const WAVE_MILESTONES: WaveMilestone[] = [
         maxActiveEnemiesSurvive: 18,
         totalEnemiesToSpawn: 63,
         sizeMultiplier: 0.18,
-        surviveDurationSeconds: 62
+        surviveDurationSeconds: 60
     },
 ];
 
@@ -89,6 +103,10 @@ export function getWaveMilestone(currentWave: number): WaveMilestone {
     }
 
     return selectedMilestone;
+}
+
+export function getBossWaveRule(currentWave: number): BossWaveRule | undefined {
+    return BOSS_WAVE_RULES.find((rule) => rule.wave === currentWave);
 }
 
 export function getEnemyFirstWave(enemyType: EnemyType): number {

@@ -10,6 +10,7 @@ import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
 import { SkirmisherEnemy } from './entities/enemies/SkirmisherEnemy';
 import { BruteEnemy } from './entities/enemies/BruteEnemy';
 import { Anomaly } from './entities/enemies/Anomaly';
+import { AnomalyDecoy } from './entities/enemies/AnomalyDecoy';
 import { DreadnoughtBoss } from './entities/enemies/DreadnoughtBoss';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../shared/CombatMath';
@@ -22,6 +23,9 @@ import {
     ANOMALY_START_WAVE,
     ENEMY_STAT_MULTIPLIER_PER_WAVE,
     WAVE_SPAWN_INTERVAL_SECONDS,
+    type BossKind,
+    type BossWaveRule,
+    getBossWaveRule,
     getEnemyFirstWave,
     getRandomWaveType,
     getWaveMilestone
@@ -36,11 +40,7 @@ enum EngineState {
     BOSS_FIGHT = 'BOSS_FIGHT',
 }
 
-type BossKind = 'ANOMALY' | 'DREADNOUGHT';
-
 export class GameEngine {
-    private static readonly FIXED_DREADNOUGHT_WAVE = 5;
-
     private static readonly ENEMY_REGISTRY: Partial<Record<EnemyType, new (id: string, x: number, y: number, multiplier: number) => HostileEntity>> = {
         RANGED: RangedEnemy,
         SENTINEL: SentinelEnemy,
@@ -86,6 +86,7 @@ export class GameEngine {
     private readonly processedEnemyDeathIds = new Set<string>();
 
     private isBossFightActive = false;
+    private activeBossWaveRule: BossWaveRule | null = null;
     private currentArena: { x: number; y: number; width: number; height: number };
     private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
 
@@ -297,6 +298,7 @@ export class GameEngine {
         this.player.isUpgrading = false;
 
         this.isBossFightActive = false;
+        this.activeBossWaveRule = null;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.anomalySpawnCount = 0;
         this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
@@ -342,16 +344,20 @@ export class GameEngine {
         this.lastSpawnTime = now;
         this.lastTick = now;
 
-        if (this.currentWave === GameEngine.FIXED_DREADNOUGHT_WAVE) {
-            this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
-            this.enterBossFight('DREADNOUGHT');
+        const bossWaveRule = getBossWaveRule(this.currentWave);
+        if (bossWaveRule) {
+            this.startBossWaveAnimation(bossWaveRule, now);
+            return;
+        }
+
+        if (this.tryStartAnomalyEncounter(now, this.currentWave)) {
             return;
         }
 
         this.engineState = EngineState.WAVE_ACTIVE;
         const milestone = getWaveMilestone(this.currentWave);
         if (this.currentWaveType === 'SURVIVE') {
-            this.surviveWaveEndsAtMs = now + milestone.surviveDurationSeconds * 1000;
+            this.surviveWaveEndsAtMs = now + Math.min(60, milestone.surviveDurationSeconds) * 1000;
         }
         this.missionManager.roll(this.spawnQueue, this.currentWaveType, milestone, now);
     }
@@ -492,7 +498,10 @@ export class GameEngine {
                     spawn.enemyType ?? 'KAMIKAZE',
                     spawn.x,
                     spawn.y,
-                    spawn.multiplier ?? 0.25
+                    spawn.multiplier ?? 0.25,
+                    spawn.orbitSlot,
+                    spawn.orbitTotal,
+                    spawn.orbitRadius
                 );
             }
 
@@ -596,12 +605,25 @@ export class GameEngine {
         this.spawnEnemyAt(enemyType, spawnPoint.x, spawnPoint.y, multiplier);
     }
 
-    private spawnEnemyAt(enemyType: EnemyType, x: number, y: number, multiplier: number): void {
+    private spawnEnemyAt(enemyType: EnemyType, x: number, y: number, multiplier: number, orbitSlot = 0, orbitTotal = 1, orbitRadius = 0): void {
         const enemyId = `enemy_${this.enemyIdCounter++}`;
-        this.enemies.push(this.createEnemyInstance(enemyType, enemyId, x, y, multiplier));
+        this.enemies.push(this.createEnemyInstance(enemyType, enemyId, x, y, multiplier, orbitSlot, orbitTotal, orbitRadius));
     }
 
-    private createEnemyInstance(enemyType: EnemyType, id: string, x: number, y: number, multiplier: number): HostileEntity {
+    private createEnemyInstance(
+        enemyType: EnemyType,
+        id: string,
+        x: number,
+        y: number,
+        multiplier: number,
+        orbitSlot: number,
+        orbitTotal: number,
+        orbitRadius: number
+    ): HostileEntity {
+        if (enemyType === 'ANOMALY_DECOY') {
+            return new AnomalyDecoy(id, x, y, orbitSlot, orbitTotal, orbitRadius);
+        }
+
         const Constructor = GameEngine.ENEMY_REGISTRY[enemyType] ?? Enemy;
         return new Constructor(id, x, y, multiplier);
     }
@@ -801,6 +823,8 @@ export class GameEngine {
                     () => {}
                 );
 
+                this.removeEnemyTypes(enemy.onProjectileHit(currentTime));
+
                 if (shouldDestroy) {
                     this.destroyProjectile(projectileIndex);
                     break;
@@ -983,24 +1007,14 @@ export class GameEngine {
             this.anomalyCooldownWaves -= 1;
         }
 
-        // Garante o novo boss sempre na rodada 5.
-        if (nextWave === GameEngine.FIXED_DREADNOUGHT_WAVE) {
-            this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
-            this.enterBossFight('DREADNOUGHT');
+        const bossWaveRule = getBossWaveRule(nextWave);
+        if (bossWaveRule) {
+            this.startBossWaveAnimation(bossWaveRule, currentTime);
             return;
         }
 
-        if (waveCleared >= ANOMALY_START_WAVE && this.anomalyCooldownWaves === 0) {
-            if (Math.random() < this.anomalyCurrentChance) {
-                this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
-                this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
-                this.anomalySpawnCount += 1;
-                const bossKind = this.rollBossKind();
-                this.enterBossFight(bossKind);
-                return;
-            } else {
-                this.anomalyCurrentChance += ANOMALY_CHANCE_INCREMENT;
-            }
+        if (this.tryStartAnomalyEncounter(currentTime, nextWave)) {
+            return;
         }
 
         this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
@@ -1020,10 +1034,57 @@ export class GameEngine {
         return nextKind;
     }
 
-    private enterBossFight(kind: BossKind): void {
+    private tryStartAnomalyEncounter(currentTime: number, wave: number): boolean {
+        if (wave < ANOMALY_START_WAVE || this.anomalyCooldownWaves > 0) {
+            return false;
+        }
+
+        if (Math.random() >= this.anomalyCurrentChance) {
+            this.anomalyCurrentChance += ANOMALY_CHANCE_INCREMENT;
+            return false;
+        }
+
+        this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
+        this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
+        this.anomalySpawnCount += 1;
+        this.enterBossFight(this.rollBossKind(), currentTime);
+        return true;
+    }
+
+    private removeEnemyTypes(enemyTypes: EnemyType[]): void {
+        if (enemyTypes.length === 0) return;
+
+        const typesToRemove = new Set(enemyTypes);
+        this.enemies = this.enemies.filter((enemy) => !typesToRemove.has(enemy.enemyType));
+    }
+
+    private startBossWaveAnimation(rule: BossWaveRule, currentTime: number): void {
+        this.activeBossWaveRule = rule;
+        this.currentWaveType = 'BOSS';
+        this.spawnQueue = [];
+        this.engineState = EngineState.WAVE_STARTING_ANIMATION;
+        this.waveStartingAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
+
+        emitGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, {
+            wave: this.currentWave,
+            waveType: 'BOSS',
+            durationMs: this.waveTransitionAnimationDurationMs
+        });
+    }
+
+    private enterBossWave(rule: BossWaveRule, currentTime: number): void {
+        this.activeBossWaveRule = rule;
+        this.enterBossFight(rule.bossKind, currentTime);
+    }
+
+    private enterBossFight(kind: BossKind, currentTime: number): void {
         this.isBossFightActive = true;
+        this.currentWaveType = 'BOSS';
         this.totalAnomaliesMetInRun += 1;
         this.currentArena = { ...this.BOSS_ARENA };
+        this.spawnQueue = [];
+        this.enemiesSpawnedThisWave = 0;
+        this.enemiesKilledThisWave = 0;
 
         this.player.x = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
         this.player.y = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
@@ -1032,11 +1093,12 @@ export class GameEngine {
         const spawnX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
         const spawnY = this.BOSS_ARENA.y + 220;
         const boss = kind === 'ANOMALY'
-            ? new Anomaly('anomaly_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount)
+            ? new Anomaly('anomaly_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount, this.currentWave)
             : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount);
 
         this.enemies = [boss];
         this.engineState = EngineState.BOSS_FIGHT;
+        this.missionManager.startBossMission(currentTime, kind);
 
         emitGameEvent(GameEvents.BOSS_FIGHT_START, {
             bossArenaX: this.BOSS_ARENA.x,
@@ -1047,15 +1109,30 @@ export class GameEngine {
     }
 
     private endBossFight(currentTime: number): void {
+        const bossWaveRule = this.activeBossWaveRule;
         this.isBossFightActive = false;
+        this.activeBossWaveRule = null;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.enemies = [];
+        this.spawnQueue = [];
 
         this.player.x = this.arenaSize.width / 2;
         this.player.y = this.arenaSize.height / 2;
         this.player.knockbackVelocity = { x: 0, y: 0 };
 
+        this.missionManager.onBossDefeated();
         emitGameEvent(GameEvents.BOSS_DEFEATED, undefined);
+
+        if (bossWaveRule) {
+            const waveCleared = this.currentWave;
+            const nextWave = waveCleared + 1;
+
+            this.currentWave = nextWave;
+            this.enemiesSpawnedThisWave = 0;
+            this.enemiesKilledThisWave = 0;
+
+            emitGameEvent(GameEvents.WAVE_CLEARED, { waveCleared, nextWave });
+        }
 
         this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
         this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
@@ -1086,24 +1163,34 @@ export class GameEngine {
             return;
         }
 
+        if (!getBossWaveRule(this.currentWave)) {
+            this.currentWaveType = getRandomWaveType();
+        }
+
         this.engineState = EngineState.WAVE_STARTING_ANIMATION;
         this.waveStartingAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
 
         emitGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, {
             wave: this.currentWave,
+            waveType: this.currentWaveType,
             durationMs: this.waveTransitionAnimationDurationMs
         });
     }
 
     private resumeWaveSpawning(currentTime: number): void {
+        const bossWaveRule = this.activeBossWaveRule ?? getBossWaveRule(this.currentWave);
+        if (bossWaveRule) {
+            this.enterBossWave(bossWaveRule, currentTime);
+            return;
+        }
+
         this.engineState = EngineState.WAVE_ACTIVE;
         this.lastSpawnTime = currentTime;
 
         const milestone = getWaveMilestone(this.currentWave);
-        this.currentWaveType = getRandomWaveType();
 
         if (this.currentWaveType === 'SURVIVE') {
-            this.surviveWaveEndsAtMs = currentTime + milestone.surviveDurationSeconds * 1000;
+            this.surviveWaveEndsAtMs = currentTime + Math.min(60, milestone.surviveDurationSeconds) * 1000;
             this.initSpawnQueue(milestone, milestone.maxActiveEnemiesSurvive * 2);
         } else {
             this.surviveWaveEndsAtMs = 0;
@@ -1182,6 +1269,10 @@ export class GameEngine {
     }
 
     private getRemainingToKill(): number {
+        if (this.currentWaveType === 'BOSS') {
+            return this.enemies.some((enemy) => enemy.enemyType === 'ANOMALY' || enemy.enemyType === 'DREADNOUGHT') ? 1 : 0;
+        }
+
         if (this.currentWaveType === 'SURVIVE') return 0;
         return Math.max(0, this.getCurrentWaveTotalToSpawn() - this.enemiesKilledThisWave);
     }

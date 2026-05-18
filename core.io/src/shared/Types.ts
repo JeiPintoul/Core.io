@@ -1,6 +1,6 @@
 export const MAX_RELOAD_POINTS = 12;
 
-export type WaveType = 'CLEAR' | 'SURVIVE';
+export type WaveType = 'CLEAR' | 'SURVIVE' | 'BOSS';
 
 export interface EntityStats {
     maxHealth: number;
@@ -66,7 +66,7 @@ export interface CardSelectedPayload {
     colorHex: string;
 }
 
-export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'SKIRMISHER' | 'BRUTE' | 'ANOMALY' | 'DREADNOUGHT';
+export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'SKIRMISHER' | 'BRUTE' | 'ANOMALY' | 'ANOMALY_DECOY' | 'DREADNOUGHT';
 export type ProjectileFaction = 'player' | 'enemy';
 
 export interface TriangleCollidable {
@@ -213,6 +213,7 @@ export interface WaveClearedPayload {
 export interface WaveAnimationPayload {
     wave: number;
     durationMs: number;
+    waveType?: WaveType;
 }
 
 export interface WaveClearAnimationPayload extends WaveAnimationPayload {

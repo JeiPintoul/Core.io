@@ -13,28 +13,28 @@ export interface ColorDefinition {
 
 export const COLOR_REGISTRY: ColorDefinition[] = [
     {
-        id: 'vanguard_red',
+        id: 'primary_red',
         hex: '#ff4444',
-        name: 'Vanguard',
+        name: 'Red',
         tier: 'PRIMARY',
         modifiers: { bodyDamage: 4, bulletDamage: 3, maxHealth: -8 },
         effects: ['impact']
     },
     {
-        id: 'sentinel_blue',
-        hex: '#4488ff',
-        name: 'Sentinel',
-        tier: 'PRIMARY',
-        modifiers: { maxHealth: 20, healthRegen: 0.9, movementSpeed: -10 },
-        effects: ['fortify']
-    },
-    {
-        id: 'phantom_yellow',
-        hex: '#ffcc00',
-        name: 'Phantom',
+        id: 'primary_green',
+        hex: '#44cc66',
+        name: 'Green',
         tier: 'PRIMARY',
         modifiers: { movementSpeed: 28, bulletSpeed: 75, bodyDamage: -2 },
         effects: ['tempo']
+    },
+    {
+        id: 'primary_blue',
+        hex: '#4488ff',
+        name: 'Blue',
+        tier: 'PRIMARY',
+        modifiers: { maxHealth: 20, healthRegen: 0.9, movementSpeed: -10 },
+        effects: ['fortify']
     },
     {
         id: 'crimson',

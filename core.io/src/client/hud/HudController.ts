@@ -1,7 +1,7 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../../shared/EventBus';
 import { calculatePlayerShotCooldownSeconds } from '../../shared/CombatMath';
 import type { EntityStats, GameState, ObjectiveState, StatModifiers } from '../../shared/Types';
-import { type ColorDefinition, getColorDefinition } from '../../logic/constants/ColorConfig';
+import { type ColorDefinition, getColorDefinition, getColorsByTier } from '../../logic/constants/ColorConfig';
 
 interface StoredStats {
     maxWave: number;
@@ -78,15 +78,11 @@ export class HudController {
         if (!screen) return;
 
         const cards = screen.querySelectorAll<HTMLElement>('.color-card');
-        const colorMap: Record<string, string> = {
-            red: '#ff4444',
-            blue: '#4488ff',
-            yellow: '#ffcc00',
-        };
+        const primaryColors = getColorsByTier('PRIMARY');
 
-        for (const card of cards) {
-            const colorHex = colorMap[card.dataset.color ?? ''] ?? '#4488ff';
-            const colorDef = getColorDefinition(colorHex);
+        cards.forEach((card, index) => {
+            const colorDef = primaryColors[index] ?? getColorDefinition('#4488ff');
+            const colorHex = colorDef?.hex ?? '#4488ff';
             const mods: StatModifiers = colorDef?.modifiers ?? {};
 
             card.addEventListener('mouseenter', () => {
@@ -118,7 +114,7 @@ export class HudController {
                     }, 400);
                 }, 800);
             });
-        }
+        });
     }
 
     public getInitialAudioPrefs(): { volume: number; muted: boolean } {
@@ -213,8 +209,13 @@ export class HudController {
         );
 
         this.unsubscribers.push(
-            onGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, ({ wave, durationMs }) => {
-                this.playWaveMessage(`ONDA ${wave} INICIANDO...`, false, durationMs);
+            onGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, ({ wave, waveType, durationMs }) => {
+                const kindLabel = waveType === 'BOSS'
+                    ? 'BOSS'
+                    : waveType === 'SURVIVE'
+                        ? 'SOBREVIVENCIA'
+                        : 'ELIMINACAO';
+                this.playWaveMessage(`ONDA ${wave} - ${kindLabel}`, waveType === 'BOSS', durationMs);
             })
         );
 
@@ -307,17 +308,24 @@ export class HudController {
 
     private renderWaveInfo(
         wave: number,
-        waveType: 'CLEAR' | 'SURVIVE',
+        waveType: 'CLEAR' | 'SURVIVE' | 'BOSS',
         remainingToKill: number,
         surviveTimeRemaining: number
     ): void {
         if (this.waveInfoTitleEl) {
-            const typeLabel = waveType === 'SURVIVE' ? 'Sobrevivência' : 'Eliminação';
+            const typeLabel = waveType === 'BOSS'
+                ? 'Boss'
+                : waveType === 'SURVIVE'
+                    ? 'Sobrevivência'
+                    : 'Eliminação';
             this.waveInfoTitleEl.textContent = `Onda ${wave} — ${typeLabel}`;
         }
 
         if (this.waveInfoSubEl) {
-            if (waveType === 'SURVIVE') {
+            if (waveType === 'BOSS') {
+                this.waveInfoSubEl.textContent = 'Derrote o boss';
+                this.waveInfoSubEl.classList.remove('is-danger');
+            } else if (waveType === 'SURVIVE') {
                 this.waveInfoSubEl.textContent = `Tempo: ${this.formatCountdown(surviveTimeRemaining)}`;
                 this.waveInfoSubEl.classList.toggle('is-danger', surviveTimeRemaining <= 10);
             } else {

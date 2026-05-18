@@ -35,12 +35,13 @@ export class GameRenderer {
     private readonly dreadnoughtProjectileAura = 0xbb7bff;
     private readonly dreadnoughtProjectileRing = 0x5d2ea1;
     private readonly enemyColorByType: Record<EnemyType, number> = {
-        KAMIKAZE: 0xff7b54,
-        RANGED: 0xff7a66,
-        SENTINEL: 0x9eb6ff,
-        SKIRMISHER: 0xffc857,
-        BRUTE: 0xc66b3d,
+        KAMIKAZE: COLORS.ENEMY,
+        RANGED: COLORS.ENEMY,
+        SENTINEL: COLORS.ENEMY,
+        SKIRMISHER: COLORS.ENEMY,
+        BRUTE: COLORS.ENEMY,
         ANOMALY: 0xdde8ff,
+        ANOMALY_DECOY: 0xdde8ff,
         DREADNOUGHT: 0xb184ff
     };
 
@@ -285,6 +286,7 @@ export class GameRenderer {
      */
     private drawEnemies(state: GameState, activeEntityIds: Set<string>) {
         const nowSeconds = this.scene.time.now / 1000;
+        const shouldMaskAnomalyHealth = state.enemies.some((enemy) => enemy.enemyType === 'ANOMALY_DECOY');
 
         for (const enemy of state.enemies) {
             const { x, y, radius, health, stats, isDead, enemyType, aimAngle, sentinelTriangles } = enemy;
@@ -301,12 +303,12 @@ export class GameRenderer {
 
             const barrelRetraction = this.enemyBarrelRetractions.get(enemy.id)?.value ?? 0;
 
-            if ((enemyType === 'RANGED' || enemyType === 'SKIRMISHER' || enemyType === 'ANOMALY' || enemyType === 'DREADNOUGHT')
+            if ((enemyType === 'RANGED' || enemyType === 'SKIRMISHER' || enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY' || enemyType === 'DREADNOUGHT')
                 && typeof aimAngle === 'number') {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
 
-            if (enemyType === 'ANOMALY') {
+            if (enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY') {
                 this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
                 this.gfxGame.strokeCircle(x, y, radius + 8);
                 this.gfxGame.lineStyle(1, 0xaabbff, 0.15);
@@ -332,14 +334,16 @@ export class GameRenderer {
                 VISUAL.STROKE.enemy
             );
 
-            this.healthBarRenderer.drawWorldHealthBar(
-                enemy.id,
-                x,
-                y - radius - 10,
-                radius * 2,
-                health,
-                stats.maxHealth
-            );
+            if (!this.shouldHideEnemyHealthBar(enemyType, shouldMaskAnomalyHealth)) {
+                this.healthBarRenderer.drawWorldHealthBar(
+                    enemy.id,
+                    x,
+                    y - radius - 10,
+                    radius * 2,
+                    health,
+                    stats.maxHealth
+                );
+            }
 
             // Draw sentinel triangles if present
             if (sentinelTriangles) {
@@ -360,6 +364,10 @@ export class GameRenderer {
                 }
             }
         }
+    }
+
+    private shouldHideEnemyHealthBar(enemyType: EnemyType | undefined, shouldMaskAnomalyHealth: boolean): boolean {
+        return shouldMaskAnomalyHealth && (enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY');
     }
 
     /**

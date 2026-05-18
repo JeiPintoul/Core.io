@@ -1,4 +1,4 @@
-import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
+import { HostileEntity, type EnemyUpdateContext, type PendingEnemySpawn } from './HostileEntity';
 import type { EntityData, EntityStats, EnemyType } from '../../../shared/Types';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../shared/CombatMath';
 import type { AnomalyAbility } from './anomaly_abilities/AnomalyAbility';
@@ -22,8 +22,9 @@ export class Anomaly extends HostileEntity {
     public aimAngle = 0;
     public damage: number;
     public readonly spawnCount: number;
+    public readonly spawnWave: number;
     public isInverted = false;
-    public readonly pendingSpawns: Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> = [];
+    public readonly pendingSpawns: PendingEnemySpawn[] = [];
     public readonly activeAbilities: AnomalyAbility[];
 
     static readonly BASE_XP_DROP = 300;
@@ -31,15 +32,18 @@ export class Anomaly extends HostileEntity {
     private readonly preferredDistance = 380;
     private lastShotAtMs = 0;
 
-    constructor(id: string, x: number, y: number, playerStats: EntityStats, spawnCount: number) {
+    constructor(id: string, x: number, y: number, playerStats: EntityStats, spawnCount: number, spawnWave = 5) {
         super(id, x, y, playerStats.maxHealth, playerStats.maxHealth, playerStats.movementSpeed);
         this.stats = {
             ...playerStats,
+            healthRegen: playerStats.healthRegen * 0.65,
+            bulletPenetration: playerStats.bulletPenetration * 0.85,
             reloadPoints: Math.max(0, playerStats.reloadPoints - 3)
         };
         this.damage = playerStats.bodyDamage;
         this.xpDrop = Anomaly.BASE_XP_DROP;
         this.spawnCount = spawnCount;
+        this.spawnWave = spawnWave;
         this.activeAbilities = Anomaly.selectAbilities(spawnCount);
         this.setBarrels([{
             id: 'anomaly_front_barrel',
@@ -57,12 +61,26 @@ export class Anomaly extends HostileEntity {
         return { ...super.toData(), aimAngle: this.aimAngle };
     }
 
-    public override drainPendingSpawns(): Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> {
+    public override drainPendingSpawns(): PendingEnemySpawn[] {
         return this.pendingSpawns.splice(0);
     }
 
     public tick(context: EnemyUpdateContext): void {
         const { playerX, playerY, player, dt, currentTime, onShoot } = context;
+        this.isInverted = false;
+        let skipBaseBehavior = false;
+        const abilitiesByPriority = [...this.activeAbilities].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
+        for (const ability of abilitiesByPriority) {
+            const result = ability.execute(this, player, dt, currentTime);
+            skipBaseBehavior ||= result?.skipBaseBehavior ?? false;
+            if (skipBaseBehavior) break;
+        }
+
+        if (skipBaseBehavior) {
+            this.tryShoot(currentTime, onShoot);
+            return;
+        }
+
         const dx = playerX - this.x;
         const dy = playerY - this.y;
         const distance = Math.hypot(dx, dy);
@@ -81,16 +99,28 @@ export class Anomaly extends HostileEntity {
             }
         }
 
-        const reloadMs = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, this.stats.reloadPoints) * 1000;
-        if (currentTime - this.lastShotAtMs >= reloadMs && distance > 0.0001) {
-            this.lastShotAtMs = currentTime;
-            onShoot(this.aimAngle);
+        this.tryShoot(currentTime, onShoot);
+    }
+
+    public override updatePhysics(dt: number): void {
+        if (this.activeAbilities.some((ability) => ability.suppressesPhysics?.() ?? false)) {
+            this.knockbackVelocity = { x: 0, y: 0 };
+            return;
         }
 
-        this.isInverted = false;
-        for (const ability of this.activeAbilities) {
-            ability.execute(this, player, dt, currentTime);
-        }
+        super.updatePhysics(dt);
+    }
+
+    public override onProjectileHit(currentTimeMs: number): EnemyType[] {
+        return this.activeAbilities.flatMap((ability) => ability.onOwnerHit?.(currentTimeMs) ?? []);
+    }
+
+    private tryShoot(currentTimeMs: number, onShoot: (aimAngle: number) => void): void {
+        const reloadMs = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, this.stats.reloadPoints) * 1000;
+        if (currentTimeMs - this.lastShotAtMs < reloadMs) return;
+
+        this.lastShotAtMs = currentTimeMs;
+        onShoot(this.aimAngle);
     }
 
     private static selectAbilities(count: number): AnomalyAbility[] {
