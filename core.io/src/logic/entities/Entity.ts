@@ -108,7 +108,8 @@ export class Entity {
         }
     }
 
-    public updateRegeneration(dt: number, _currentTime: number): void {
+    public updateRegeneration(dt: number, currentTime: number): void {
+        void currentTime;
         if (this.health <= 0) return;
         const regen = this.healthRegen * dt;
         if (regen <= 0) return;

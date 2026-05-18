@@ -7,7 +7,10 @@ import { Player } from './entities/player/Player';
 import { Enemy } from './entities/enemies/Enemy';
 import { RangedEnemy } from './entities/enemies/RangedEnemy';
 import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
+import { SkirmisherEnemy } from './entities/enemies/SkirmisherEnemy';
+import { BruteEnemy } from './entities/enemies/BruteEnemy';
 import { Anomaly } from './entities/enemies/Anomaly';
+import { DreadnoughtBoss } from './entities/enemies/DreadnoughtBoss';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../shared/CombatMath';
 import { UpgradeManager } from './UpgradeManager';
@@ -33,10 +36,16 @@ enum EngineState {
     BOSS_FIGHT = 'BOSS_FIGHT',
 }
 
+type BossKind = 'ANOMALY' | 'DREADNOUGHT';
+
 export class GameEngine {
+    private static readonly FIXED_DREADNOUGHT_WAVE = 5;
+
     private static readonly ENEMY_REGISTRY: Partial<Record<EnemyType, new (id: string, x: number, y: number, multiplier: number) => HostileEntity>> = {
         RANGED: RangedEnemy,
         SENTINEL: SentinelEnemy,
+        SKIRMISHER: SkirmisherEnemy,
+        BRUTE: BruteEnemy,
     };
 
     private player: Player;
@@ -83,6 +92,7 @@ export class GameEngine {
     private anomalySpawnCount = 0;
     private anomalyCurrentChance = ANOMALY_BASE_CHANCE;
     private anomalyCooldownWaves = 0;
+    private bossEncounterCount = 0;
 
     private totalEnemiesKilledInRun = 0;
     private totalAnomaliesMetInRun = 0;
@@ -142,7 +152,6 @@ export class GameEngine {
 
         this.eventUnsubscribers.push(
             onGameEvent(GameEvents.START_RUN_WITH_COLOR, ({ colorHex }) => {
-                this.player.applyColorBuff(colorHex);
                 this.startGameWithColor(colorHex);
             })
         );
@@ -292,6 +301,7 @@ export class GameEngine {
         this.anomalySpawnCount = 0;
         this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
         this.anomalyCooldownWaves = 0;
+        this.bossEncounterCount = 0;
         this.totalEnemiesKilledInRun = 0;
         this.totalAnomaliesMetInRun = 0;
 
@@ -327,10 +337,18 @@ export class GameEngine {
 
     public startGameWithColor(colorHex: string): void {
         const now = performance.now();
+        this.player.setPrimaryColorBuff(colorHex);
         this.player.applyUpgradeColor(colorHex);
-        this.engineState = EngineState.WAVE_ACTIVE;
         this.lastSpawnTime = now;
         this.lastTick = now;
+
+        if (this.currentWave === GameEngine.FIXED_DREADNOUGHT_WAVE) {
+            this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
+            this.enterBossFight('DREADNOUGHT');
+            return;
+        }
+
+        this.engineState = EngineState.WAVE_ACTIVE;
         const milestone = getWaveMilestone(this.currentWave);
         if (this.currentWaveType === 'SURVIVE') {
             this.surviveWaveEndsAtMs = now + milestone.surviveDurationSeconds * 1000;
@@ -470,7 +488,12 @@ export class GameEngine {
             enemy.tick(context);
 
             for (const spawn of enemy.drainPendingSpawns()) {
-                this.enemies.push(new Enemy(`enemy_${this.enemyIdCounter++}`, spawn.x, spawn.y, 0.25));
+                this.spawnEnemyAt(
+                    spawn.enemyType ?? 'KAMIKAZE',
+                    spawn.x,
+                    spawn.y,
+                    spawn.multiplier ?? 0.25
+                );
             }
 
             enemy.updatePhysics(dt);
@@ -570,10 +593,17 @@ export class GameEngine {
     private spawnEnemy(enemyType: EnemyType): void {
         const multiplier = this.buildScaledMultiplier(enemyType);
         const spawnPoint = this.rollOffscreenSpawnPoint();
-        const enemyId = `enemy_${this.enemyIdCounter++}`;
+        this.spawnEnemyAt(enemyType, spawnPoint.x, spawnPoint.y, multiplier);
+    }
 
+    private spawnEnemyAt(enemyType: EnemyType, x: number, y: number, multiplier: number): void {
+        const enemyId = `enemy_${this.enemyIdCounter++}`;
+        this.enemies.push(this.createEnemyInstance(enemyType, enemyId, x, y, multiplier));
+    }
+
+    private createEnemyInstance(enemyType: EnemyType, id: string, x: number, y: number, multiplier: number): HostileEntity {
         const Constructor = GameEngine.ENEMY_REGISTRY[enemyType] ?? Enemy;
-        this.enemies.push(new Constructor(enemyId, spawnPoint.x, spawnPoint.y, multiplier));
+        return new Constructor(id, x, y, multiplier);
     }
 
     private rollOffscreenSpawnPoint(): { x: number; y: number } {
@@ -890,7 +920,7 @@ export class GameEngine {
 
     private advanceWaveState(currentTime: number): void {
         if (this.engineState === EngineState.BOSS_FIGHT) {
-            const bossAlive = this.enemies.some(e => e instanceof Anomaly);
+            const bossAlive = this.enemies.some((enemy) => enemy.enemyType === 'ANOMALY' || enemy.enemyType === 'DREADNOUGHT');
             if (!bossAlive) {
                 this.endBossFight(currentTime);
             }
@@ -953,12 +983,20 @@ export class GameEngine {
             this.anomalyCooldownWaves -= 1;
         }
 
+        // Garante o novo boss sempre na rodada 5.
+        if (nextWave === GameEngine.FIXED_DREADNOUGHT_WAVE) {
+            this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
+            this.enterBossFight('DREADNOUGHT');
+            return;
+        }
+
         if (waveCleared >= ANOMALY_START_WAVE && this.anomalyCooldownWaves === 0) {
             if (Math.random() < this.anomalyCurrentChance) {
                 this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
                 this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
                 this.anomalySpawnCount += 1;
-                this.enterBossFight();
+                const bossKind = this.rollBossKind();
+                this.enterBossFight(bossKind);
                 return;
             } else {
                 this.anomalyCurrentChance += ANOMALY_CHANCE_INCREMENT;
@@ -976,7 +1014,13 @@ export class GameEngine {
         });
     }
 
-    private enterBossFight(): void {
+    private rollBossKind(): BossKind {
+        const nextKind: BossKind = this.bossEncounterCount % 2 === 0 ? 'ANOMALY' : 'DREADNOUGHT';
+        this.bossEncounterCount += 1;
+        return nextKind;
+    }
+
+    private enterBossFight(kind: BossKind): void {
         this.isBossFightActive = true;
         this.totalAnomaliesMetInRun += 1;
         this.currentArena = { ...this.BOSS_ARENA };
@@ -985,13 +1029,11 @@ export class GameEngine {
         this.player.y = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
         this.player.knockbackVelocity = { x: 0, y: 0 };
 
-        const boss = new Anomaly(
-            'anomaly_boss',
-            this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2,
-            this.BOSS_ARENA.y + 200,
-            this.player.currentStats,
-            this.anomalySpawnCount
-        );
+        const spawnX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
+        const spawnY = this.BOSS_ARENA.y + 220;
+        const boss = kind === 'ANOMALY'
+            ? new Anomaly('anomaly_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount)
+            : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount);
 
         this.enemies = [boss];
         this.engineState = EngineState.BOSS_FIGHT;
@@ -1007,6 +1049,7 @@ export class GameEngine {
     private endBossFight(currentTime: number): void {
         this.isBossFightActive = false;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
+        this.enemies = [];
 
         this.player.x = this.arenaSize.width / 2;
         this.player.y = this.arenaSize.height / 2;
@@ -1108,7 +1151,7 @@ export class GameEngine {
         }
 
         this.player.applyStatModifiers(selectedCard.modifiers);
-        this.player.applyColorBuff(selection.colorHex);
+        this.player.applyUpgradeColorBuff(selection.colorHex);
         this.player.applyUpgradeColor(selection.colorHex);
         this.player.consumePendingUpgrade();
         this.syncPlayerCoreStats();

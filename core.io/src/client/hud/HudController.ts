@@ -403,12 +403,20 @@ export class HudController {
         if (!this.activeColorDef) {
             this.colorBadgeEl.textContent = '';
             this.colorBadgeEl.removeAttribute('style');
+            this.colorBadgeEl.removeAttribute('title');
             this.colorBadgeEl.classList.remove('is-visible');
             return;
         }
 
-        this.colorBadgeEl.textContent = this.activeColorDef.name;
+        const tierLabel = this.activeColorDef.tier === 'PRIMARY'
+            ? 'Base'
+            : this.activeColorDef.tier === 'SECONDARY'
+                ? 'Core'
+                : 'Prime';
+
+        this.colorBadgeEl.textContent = `${this.activeColorDef.name} ${tierLabel}`;
         this.colorBadgeEl.style.setProperty('--badge-color', this.activeColorDef.hex);
+        this.colorBadgeEl.title = this.activeColorDef.effects.join(' • ');
         this.colorBadgeEl.classList.add('is-visible');
     }
 

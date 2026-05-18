@@ -73,11 +73,19 @@ function getUpgradeCardSymbol(cardId: string): string {
     const map: Record<string, string> = {
         heavy_plating: 'HP',
         lightweight_tracks: 'MV',
+        kinetic_ram: 'KR',
+        stability_gyros: 'GY',
         rapid_reloader: 'RL',
         tungsten_rounds: 'TR',
+        shield_matrix: 'SM',
+        burst_chamber: 'BC',
         nanite_repair: 'NR',
+        vector_thrusters: 'VT',
+        phase_alloy: 'PA',
         overclocked_core: 'OC',
-        singularity_shells: 'SS'
+        helix_launcher: 'HX',
+        singularity_shells: 'SS',
+        apex_drive: 'AX'
     };
 
     return map[cardId] ?? 'UP';
@@ -87,11 +95,19 @@ function getUpgradeCardFlavor(cardId: string): string {
     const map: Record<string, string> = {
         heavy_plating: 'Camadas extras para segurar o caos da horda.',
         lightweight_tracks: 'Atrito minimo para cortes agressivos no mapa.',
+        kinetic_ram: 'Impacto cinetico para furar linhas de inimigos.',
+        stability_gyros: 'Estabilizacao do canhao para tiros limpos e retos.',
         rapid_reloader: 'Sequencia de disparo calibrada para ritmo brutal.',
+        shield_matrix: 'Camada reativa para segurar a frente sem recuar.',
+        burst_chamber: 'Pressurizacao extra para abrir sequencias curtas.',
         tungsten_rounds: 'Municao densa que perfura formações compactas.',
         nanite_repair: 'Nanitas de campo estabilizam sua estrutura.',
+        vector_thrusters: 'Microimpulsos para trocar de angulo instantaneamente.',
+        phase_alloy: 'Composto adaptativo para resistir em lutas longas.',
         overclocked_core: 'Potencia extrema para pushes curtos e letais.',
-        singularity_shells: 'Projetis instaveis com inercia monstruosa.'
+        helix_launcher: 'Matriz de tiro helicoidal para perfuracao pesada.',
+        singularity_shells: 'Projetis instaveis com inercia monstruosa.',
+        apex_drive: 'Nucleo em limite absoluto para explosao de dano.'
     };
 
     return map[cardId] ?? 'Modulo experimental para combates extremos.';
@@ -225,14 +241,6 @@ function setUpgradeModalVisible(visible: boolean): void {
     }
 
     upgradeModal.classList.toggle('is-visible', visible);
-}
-
-function isUpgradeModalVisible(): boolean {
-    if (!upgradeModal) {
-        return false;
-    }
-
-    return upgradeModal.classList.contains('is-visible');
 }
 
 function setUpgradesRemaining(value: number): void {
@@ -484,7 +492,7 @@ if (btnJogar && menuInicial && tituloMenu) {
         setUiMode('IN_GAME');
     });
 
-    onGameEvent(GameEvents.GAME_OVER, (_payload) => {
+    onGameEvent(GameEvents.GAME_OVER, () => {
         console.log('Game Over!');
 
         engine.stop();

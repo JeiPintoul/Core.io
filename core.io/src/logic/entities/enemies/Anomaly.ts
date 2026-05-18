@@ -23,7 +23,7 @@ export class Anomaly extends HostileEntity {
     public damage: number;
     public readonly spawnCount: number;
     public isInverted = false;
-    public readonly pendingSpawns: Array<{ type: EnemyType; x: number; y: number }> = [];
+    public readonly pendingSpawns: Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> = [];
     public readonly activeAbilities: AnomalyAbility[];
 
     static readonly BASE_XP_DROP = 300;
@@ -57,7 +57,7 @@ export class Anomaly extends HostileEntity {
         return { ...super.toData(), aimAngle: this.aimAngle };
     }
 
-    public override drainPendingSpawns(): Array<{ x: number; y: number }> {
+    public override drainPendingSpawns(): Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> {
         return this.pendingSpawns.splice(0);
     }
 

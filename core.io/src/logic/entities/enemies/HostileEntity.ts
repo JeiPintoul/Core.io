@@ -26,18 +26,25 @@ export abstract class HostileEntity extends Entity {
 
     public abstract tick(context: EnemyUpdateContext): void;
 
-    public drainPendingSpawns(): Array<{ x: number; y: number }> {
+    public drainPendingSpawns(): Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> {
         return [];
     }
 
     public resolveSpecialCollisions(
-        _player: Entity,
-        _projectiles: TriangleCollidable[],
-        _currentTime: number,
-        _onPlayerDamaged: () => void,
-        _clampToArena: (entity: Entity) => void,
-        _onProjectileDestroyed: (id: string) => void
-    ): void {}
+        player: Entity,
+        projectiles: TriangleCollidable[],
+        currentTime: number,
+        onPlayerDamaged: () => void,
+        clampToArena: (entity: Entity) => void,
+        onProjectileDestroyed: (id: string) => void
+    ): void {
+        void player;
+        void projectiles;
+        void currentTime;
+        void onPlayerDamaged;
+        void clampToArena;
+        void onProjectileDestroyed;
+    }
 
     public toData(): EntityData {
         return {

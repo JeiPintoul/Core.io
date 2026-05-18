@@ -18,9 +18,10 @@ export class SwarmAbility implements AnomalyAbility {
         for (let i = 0; i < CLONE_COUNT; i++) {
             const angle = (i / CLONE_COUNT) * Math.PI * 2;
             anomaly.pendingSpawns.push({
-                type: 'KAMIKAZE',
+                enemyType: 'KAMIKAZE',
                 x: anomaly.x + Math.cos(angle) * SPAWN_RADIUS,
-                y: anomaly.y + Math.sin(angle) * SPAWN_RADIUS
+                y: anomaly.y + Math.sin(angle) * SPAWN_RADIUS,
+                multiplier: 0.28
             });
         }
     }

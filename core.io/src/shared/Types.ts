@@ -66,7 +66,7 @@ export interface CardSelectedPayload {
     colorHex: string;
 }
 
-export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'ANOMALY';
+export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'SKIRMISHER' | 'BRUTE' | 'ANOMALY' | 'DREADNOUGHT';
 export type ProjectileFaction = 'player' | 'enemy';
 
 export interface TriangleCollidable {
