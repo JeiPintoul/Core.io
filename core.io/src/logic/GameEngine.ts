@@ -1,5 +1,17 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../shared/EventBus';
-import type { CardSelectedPayload, EnemyType, EntityStats, GameState, InputState, ProjectileFaction, WaveType } from '../shared/Types';
+import {
+    PLAYER_IDS,
+    type CardSelectedPayload,
+    type EnemyType,
+    type EntityStats,
+    type GameState,
+    type InputState,
+    type PlayerId,
+    type PlayerInputPayload,
+    type ProjectileFaction,
+    type RunConfiguration,
+    type WaveType
+} from '../shared/Types';
 import { Entity } from './entities/Entity';
 import { HostileEntity, type EnemyUpdateContext } from './entities/enemies/HostileEntity';
 import { Projectile } from './entities/Projectile';
@@ -31,6 +43,101 @@ import {
     getWaveMilestone
 } from './constants/WaveConfig';
 
+const PLAYER_DEFAULT_COLORS: Record<PlayerId, number> = {
+    player_1: 0x4488ff,
+    player_2: 0x55ffaa,
+    player_3: 0xffcc00,
+    player_4: 0xff77aa,
+};
+
+const PLAYER_DEFAULT_COLOR_HEX: Record<PlayerId, string> = {
+    player_1: '#4488ff',
+    player_2: '#55ffaa',
+    player_3: '#ffcc00',
+    player_4: '#ff77aa',
+};
+
+interface DifficultyProfile {
+    enemyStatScale: number;
+    spawnScale: number;
+    activeEnemyScale: number;
+    bossMaxHealthScale: number;
+    bossHealthRegenScale: number;
+    bossBodyDamageScale: number;
+    bossBulletSpeedScale: number;
+    bossBulletPenetrationScale: number;
+    bossBulletDamageScale: number;
+    bossReloadBonus: number;
+    bossMovementSpeedScale: number;
+}
+
+const DIFFICULTY_PROFILE_BY_PLAYER_COUNT: Record<1 | 2 | 3 | 4, DifficultyProfile> = {
+    1: {
+        enemyStatScale: 1,
+        spawnScale: 1,
+        activeEnemyScale: 1,
+        bossMaxHealthScale: 1,
+        bossHealthRegenScale: 1,
+        bossBodyDamageScale: 1,
+        bossBulletSpeedScale: 1,
+        bossBulletPenetrationScale: 1,
+        bossBulletDamageScale: 1,
+        bossReloadBonus: 0,
+        bossMovementSpeedScale: 1,
+    },
+    2: {
+        enemyStatScale: 1.2,
+        spawnScale: 1.34,
+        activeEnemyScale: 1.28,
+        bossMaxHealthScale: 1.3,
+        bossHealthRegenScale: 1.13,
+        bossBodyDamageScale: 1.16,
+        bossBulletSpeedScale: 1.04,
+        bossBulletPenetrationScale: 1.08,
+        bossBulletDamageScale: 1.18,
+        bossReloadBonus: 0.8,
+        bossMovementSpeedScale: 1.04,
+    },
+    3: {
+        enemyStatScale: 1.34,
+        spawnScale: 1.62,
+        activeEnemyScale: 1.5,
+        bossMaxHealthScale: 1.56,
+        bossHealthRegenScale: 1.24,
+        bossBodyDamageScale: 1.3,
+        bossBulletSpeedScale: 1.08,
+        bossBulletPenetrationScale: 1.14,
+        bossBulletDamageScale: 1.34,
+        bossReloadBonus: 1.6,
+        bossMovementSpeedScale: 1.08,
+    },
+    4: {
+        enemyStatScale: 1.46,
+        spawnScale: 1.86,
+        activeEnemyScale: 1.68,
+        bossMaxHealthScale: 1.78,
+        bossHealthRegenScale: 1.33,
+        bossBodyDamageScale: 1.42,
+        bossBulletSpeedScale: 1.12,
+        bossBulletPenetrationScale: 1.2,
+        bossBulletDamageScale: 1.48,
+        bossReloadBonus: 2.3,
+        bossMovementSpeedScale: 1.12,
+    },
+};
+
+const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
+    playerCount: 1,
+    players: {
+        player_1: { name: 'Jogador', control: 'KEYBOARD' },
+        player_2: { name: 'Jogador 2', control: 'GAMEPAD' },
+        player_3: { name: 'Jogador 3', control: 'GAMEPAD' },
+        player_4: { name: 'Jogador 4', control: 'GAMEPAD' },
+    }
+};
+
+// use BossKind type from WaveConfig import
+
 enum EngineState {
     COLOR_SELECTION = 'COLOR_SELECTION',
     WAVE_ACTIVE = 'WAVE_ACTIVE',
@@ -41,6 +148,8 @@ enum EngineState {
 }
 
 export class GameEngine {
+    private static readonly FIXED_DREADNOUGHT_WAVE = 5;
+
     private static readonly ENEMY_REGISTRY: Partial<Record<EnemyType, new (id: string, x: number, y: number, multiplier: number) => HostileEntity>> = {
         RANGED: RangedEnemy,
         SENTINEL: SentinelEnemy,
@@ -49,6 +158,7 @@ export class GameEngine {
     };
 
     private player: Player;
+    private readonly additionalPlayers = new Map<PlayerId, Player>();
     private enemies: HostileEntity[];
     private projectiles: Projectile[];
     private readonly arenaSize: { width: number; height: number };
@@ -61,9 +171,9 @@ export class GameEngine {
     private readonly viewportSafeSpawnRadius = Math.max(1100, Math.hypot(1920 / 2, 1080 / 2) + 120);
     private readonly minimumSpawnDistance = 1100;
 
-    private currentInput: InputState;
+    private currentInputs: Record<PlayerId, InputState>;
     private lastTick: number;
-    private lastShotTime = 0;
+    private lastShotTimes: Record<PlayerId, number> = { player_1: 0, player_2: 0, player_3: 0, player_4: 0 };
     private lastSpawnTime = 0;
     private projectileIdCounter = 0;
     private enemyIdCounter = 0;
@@ -97,33 +207,33 @@ export class GameEngine {
 
     private totalEnemiesKilledInRun = 0;
     private totalAnomaliesMetInRun = 0;
+    private runConfiguration: RunConfiguration = structuredClone(DEFAULT_RUN_CONFIGURATION);
+    private upgradeSelectionQueue: PlayerId[] = [];
+    private activeUpgradePlayerId: PlayerId | null = null;
 
     constructor() {
         this.upgradeManager = new UpgradeManager();
         this.missionManager = new MissionManager((rewardUpgrades) => {
-            this.player.pendingUpgrades += rewardUpgrades;
+            for (const player of this.getPlayers()) {
+                player.pendingUpgrades += rewardUpgrades;
+            }
         });
 
         this.arenaSize = { width: ARENA.width, height: ARENA.height };
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
-        this.player = this.createPlayer('Jogador');
+        this.player = this.createPlayer('player_1', 'Jogador', 0, true, PLAYER_DEFAULT_COLORS.player_1);
         this.enemies = [];
         this.projectiles = [];
-        this.currentInput = {
-            up: false,
-            down: false,
-            left: false,
-            right: false,
-            targetX: 0,
-            targetY: 0,
-            isShooting: false,
-            autoFire: false,
-            autoSpin: false,
+        this.currentInputs = {
+            player_1: this.createNeutralInputState(),
+            player_2: this.createNeutralInputState(),
+            player_3: this.createNeutralInputState(),
+            player_4: this.createNeutralInputState(),
         };
 
         const now = performance.now();
         this.lastTick = now;
-        this.lastShotTime = now;
+        this.lastShotTimes = { player_1: now, player_2: now, player_3: now, player_4: now };
         this.lastSpawnTime = now;
         this.currentWaveType = 'CLEAR';
         const wave1Milestone = getWaveMilestone(1);
@@ -134,8 +244,14 @@ export class GameEngine {
 
     private setupListeners(): void {
         this.eventUnsubscribers.push(
-            onGameEvent(GameEvents.PLAYER_INPUT, (input: InputState) => {
-                this.currentInput = input;
+            onGameEvent(GameEvents.PLAYER_INPUT, ({ playerId, input }: PlayerInputPayload) => {
+                this.currentInputs[playerId] = input;
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.RUN_CONFIG_CHANGED, (nextConfig: RunConfiguration) => {
+                this.runConfiguration = structuredClone(nextConfig);
             })
         );
 
@@ -152,22 +268,26 @@ export class GameEngine {
         );
 
         this.eventUnsubscribers.push(
-            onGameEvent(GameEvents.START_RUN_WITH_COLOR, ({ colorHex }) => {
-                this.startGameWithColor(colorHex);
+            onGameEvent(GameEvents.START_RUN_WITH_COLOR, ({ playerColors }) => {
+                this.startGameWithColor(playerColors);
             })
         );
 
         this.eventUnsubscribers.push(
             onGameEvent(GameEvents.ENTITY_DESTROYED, (data: { id: string }) => {
-                if (data.id === this.player.id) {
-                    this.stop();
-                    this.player.isUpgrading = false;
-                    emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
-                    emitGameEvent(GameEvents.GAME_OVER, {
-                        waveReached: this.currentWave,
-                        enemiesKilled: this.totalEnemiesKilledInRun,
-                        anomaliesMet: this.totalAnomaliesMetInRun,
-                    });
+                const destroyedPlayer = this.getPlayers().find((candidate) => candidate.id === data.id);
+                if (destroyedPlayer) {
+                    const hasAlivePlayer = this.getPlayers().some((candidate) => candidate.health > 0);
+                    if (!hasAlivePlayer) {
+                        this.stop();
+                        this.clearUpgradeSelectionState();
+                        emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+                        emitGameEvent(GameEvents.GAME_OVER, {
+                            waveReached: this.currentWave,
+                            enemiesKilled: this.totalEnemiesKilledInRun,
+                            anomaliesMet: this.totalAnomaliesMetInRun,
+                        });
+                    }
                     return;
                 }
 
@@ -198,24 +318,153 @@ export class GameEngine {
         );
     }
 
-    private createPlayer(name: string): Player {
+    private createNeutralInputState(): InputState {
+        return {
+            up: false,
+            down: false,
+            left: false,
+            right: false,
+            targetX: 0,
+            targetY: 0,
+            isShooting: false,
+            autoFire: false,
+            autoSpin: false,
+        };
+    }
+
+    private createPlayer(playerId: PlayerId, name: string, spawnOffsetX: number, progressionEnabled: boolean, color: number): Player {
         const centerX = this.arenaSize.width / 2;
         const centerY = this.arenaSize.height / 2;
 
         return new Player(
-            'player_1',
-            centerX,
+            playerId,
+            centerX + spawnOffsetX,
             centerY,
-            name
+            name,
+            color,
+            progressionEnabled
         );
     }
 
-    private syncPlayerCoreStats(): EntityStats {
-        const stats = this.player.currentStats;
-        this.player.maxHealth = stats.maxHealth;
-        this.player.speed = stats.movementSpeed;
-        this.player.health = Math.min(this.player.health, this.player.maxHealth);
+    private getPlayers(): Player[] {
+        const players: Player[] = [this.player];
+        for (const playerId of PLAYER_IDS) {
+            if (playerId === 'player_1') {
+                continue;
+            }
+
+            const player = this.additionalPlayers.get(playerId);
+            if (player) {
+                players.push(player);
+            }
+        }
+
+        return players;
+    }
+
+    private getPlayerById(playerId: PlayerId): Player | null {
+        if (this.player.id === playerId) {
+            return this.player;
+        }
+
+        return this.additionalPlayers.get(playerId) ?? null;
+    }
+
+    private getActivePlayerIds(): PlayerId[] {
+        return PLAYER_IDS.slice(0, this.runConfiguration.playerCount) as PlayerId[];
+    }
+
+    private getPlayerSpawnOffset(index: number, totalPlayers: number): number {
+        const spacing = 90;
+        const centeredIndex = index - ((totalPlayers - 1) / 2);
+        return centeredIndex * spacing;
+    }
+
+    private getDefaultPlayerColor(playerId: PlayerId): number {
+        return PLAYER_DEFAULT_COLORS[playerId] ?? PLAYER_DEFAULT_COLORS.player_1;
+    }
+
+    private getDefaultPlayerColorHex(playerId: PlayerId): string {
+        return PLAYER_DEFAULT_COLOR_HEX[playerId] ?? PLAYER_DEFAULT_COLOR_HEX.player_1;
+    }
+
+    private normalizeColorHex(value: string | undefined, fallbackHex: string): string {
+        if (typeof value !== 'string') {
+            return fallbackHex;
+        }
+
+        const trimmed = value.trim();
+        if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) {
+            return fallbackHex;
+        }
+
+        return trimmed.startsWith('#') ? trimmed.toLowerCase() : `#${trimmed.toLowerCase()}`;
+    }
+
+    private getNearestAlivePlayer(x: number, y: number): Player | null {
+        const alivePlayers = this.getPlayers().filter((player) => player.health > 0);
+        if (alivePlayers.length === 0) {
+            return null;
+        }
+
+        let nearest = alivePlayers[0];
+        let nearestDistance = Math.hypot(nearest.x - x, nearest.y - y);
+
+        for (let i = 1; i < alivePlayers.length; i++) {
+            const player = alivePlayers[i];
+            const distance = Math.hypot(player.x - x, player.y - y);
+            if (distance < nearestDistance) {
+                nearest = player;
+                nearestDistance = distance;
+            }
+        }
+
+        return nearest;
+    }
+
+    private getPlayerAnchorPosition(): { x: number; y: number } {
+        const alivePlayers = this.getPlayers().filter((player) => player.health > 0);
+        if (alivePlayers.length === 0) {
+            return { x: this.player.x, y: this.player.y };
+        }
+
+        if (alivePlayers.length === 1) {
+            return { x: alivePlayers[0].x, y: alivePlayers[0].y };
+        }
+
+        const sum = alivePlayers.reduce(
+            (acc, player) => {
+                acc.x += player.x;
+                acc.y += player.y;
+                return acc;
+            },
+            { x: 0, y: 0 }
+        );
+
+        return {
+            x: sum.x / alivePlayers.length,
+            y: sum.y / alivePlayers.length,
+        };
+    }
+
+    private syncPlayerCoreStats(player: Player): EntityStats {
+        const stats = player.currentStats;
+        player.maxHealth = stats.maxHealth;
+        player.speed = stats.movementSpeed;
+        player.health = Math.min(player.health, player.maxHealth);
         return stats;
+    }
+
+    private setPlayersUpgradingState(isUpgrading: boolean): void {
+        for (const player of this.getPlayers()) {
+            player.isUpgrading = isUpgrading;
+        }
+    }
+
+    private clearUpgradeSelectionState(): void {
+        this.upgradeSelectionQueue = [];
+        this.activeUpgradePlayerId = null;
+        this.setPlayersUpgradingState(false);
     }
 
     public start(): void {
@@ -241,7 +490,10 @@ export class GameEngine {
 
     public destroy(): void {
         this.stop();
-        this.player.destroy();
+        for (const player of this.getPlayers()) {
+            player.destroy();
+        }
+        this.additionalPlayers.clear();
 
         for (const unsubscribe of this.eventUnsubscribers) {
             unsubscribe();
@@ -264,9 +516,41 @@ export class GameEngine {
         return this.isPaused;
     }
 
-    public reset(playerName: string = 'Jogador'): void {
-        this.player.destroy();
-        this.player = this.createPlayer(playerName);
+    public reset(playerName: string = 'Jogador', runConfiguration?: RunConfiguration): void {
+        if (runConfiguration) {
+            this.runConfiguration = structuredClone(runConfiguration);
+        }
+
+        this.runConfiguration.players.player_1.name = playerName;
+
+        for (const player of this.getPlayers()) {
+            player.destroy();
+        }
+        this.additionalPlayers.clear();
+
+        const activePlayerIds = this.getActivePlayerIds();
+        for (let index = 0; index < activePlayerIds.length; index++) {
+            const playerId = activePlayerIds[index];
+            const configuredName = this.runConfiguration.players[playerId]?.name ?? '';
+            const fallbackName = playerId === 'player_1'
+                ? playerName
+                : `Jogador ${index + 1}`;
+            const resolvedName = configuredName.trim() || fallbackName;
+            const spawnOffset = this.getPlayerSpawnOffset(index, activePlayerIds.length);
+            const player = this.createPlayer(
+                playerId,
+                resolvedName,
+                spawnOffset,
+                true,
+                this.getDefaultPlayerColor(playerId)
+            );
+
+            if (playerId === 'player_1') {
+                this.player = player;
+            } else {
+                this.additionalPlayers.set(playerId, player);
+            }
+        }
 
         this.enemies = [];
         this.projectiles = [];
@@ -277,8 +561,14 @@ export class GameEngine {
 
         const now = performance.now();
         this.lastTick = now;
-        this.lastShotTime = now;
+        this.lastShotTimes = { player_1: now, player_2: now, player_3: now, player_4: now };
         this.lastSpawnTime = now;
+        this.currentInputs = {
+            player_1: this.createNeutralInputState(),
+            player_2: this.createNeutralInputState(),
+            player_3: this.createNeutralInputState(),
+            player_4: this.createNeutralInputState(),
+        };
         this.projectileIdCounter = 0;
         this.enemyIdCounter = 0;
         this.isPaused = false;
@@ -295,7 +585,7 @@ export class GameEngine {
         const wave1Milestone = getWaveMilestone(1);
         this.initSpawnQueue(wave1Milestone, this.getCurrentWaveTotalToSpawn());
         this.missionManager.reset();
-        this.player.isUpgrading = false;
+        this.clearUpgradeSelectionState();
 
         this.isBossFightActive = false;
         this.activeBossWaveRule = null;
@@ -337,10 +627,16 @@ export class GameEngine {
         this.scheduleNextTick();
     };
 
-    public startGameWithColor(colorHex: string): void {
+    public startGameWithColor(playerColors: Partial<Record<PlayerId, string>>): void {
         const now = performance.now();
-        this.player.setPrimaryColorBuff(colorHex);
-        this.player.applyUpgradeColor(colorHex);
+        for (const player of this.getPlayers()) {
+            const playerId = player.id as PlayerId;
+            const fallbackColorHex = this.getDefaultPlayerColorHex(playerId);
+            const selectedColorHex = this.normalizeColorHex(playerColors[playerId], fallbackColorHex);
+            player.setPrimaryColorBuff(selectedColorHex);
+            player.applyUpgradeColor(selectedColorHex);
+        }
+
         this.lastSpawnTime = now;
         this.lastTick = now;
 
@@ -363,24 +659,45 @@ export class GameEngine {
     }
 
     private update(dt: number, currentTime: number): void {
-        const playerStats = this.syncPlayerCoreStats();
+        const playerStatsById = new Map<PlayerId, EntityStats>();
+        for (const player of this.getPlayers()) {
+            playerStatsById.set(player.id as PlayerId, this.syncPlayerCoreStats(player));
+        }
 
         if (this.engineState === EngineState.COLOR_SELECTION) {
-            this.player.updateRegeneration(dt, currentTime);
+            for (const player of this.getPlayers()) {
+                player.updateRegeneration(dt, currentTime);
+            }
             this.updateProjectiles(dt);
             return;
         }
 
-        const playerLockedForUpgrade = this.engineState === EngineState.UPGRADE_PHASE && this.player.isUpgrading;
+        const playerLockedForUpgrade = this.engineState === EngineState.UPGRADE_PHASE && this.activeUpgradePlayerId !== null;
 
         if (!playerLockedForUpgrade) {
-            this.updatePlayerMovement(dt);
-            this.tryPlayerShoot(currentTime, playerStats);
+            for (const player of this.getPlayers()) {
+                if (player.health <= 0) {
+                    continue;
+                }
+
+                const playerId = player.id as PlayerId;
+                const input = this.currentInputs[playerId];
+                const playerStats = playerStatsById.get(playerId);
+                if (!input || !playerStats) {
+                    continue;
+                }
+
+                this.updatePlayerMovement(player, input, dt);
+                this.tryPlayerShoot(player, input, currentTime, playerStats);
+            }
         }
 
         this.updateEnemies(dt, currentTime);
 
-        this.player.updateRegeneration(dt, currentTime);
+        for (const player of this.getPlayers()) {
+            player.updateRegeneration(dt, currentTime);
+        }
+
         for (const enemy of this.enemies) {
             enemy.updateRegeneration(dt, currentTime);
         }
@@ -397,19 +714,23 @@ export class GameEngine {
     }
 
     private emitStateUpdate(): void {
+        const playersData = this.getPlayers().map((player) => ({
+            id: player.id,
+            x: player.x,
+            y: player.y,
+            health: player.health,
+            isDead: player.health <= 0,
+            radius: player.radius,
+            color: player.color,
+            name: player.name,
+            stats: player.currentStats,
+            aimAngle: player.aimAngle,
+        }));
+
+        const primaryPlayerData = playersData[0];
         const exportState: GameState = {
-            player: {
-                id: this.player.id,
-                x: this.player.x,
-                y: this.player.y,
-                health: this.player.health,
-                isDead: this.player.health <= 0,
-                radius: this.player.radius,
-                color: this.player.color,
-                name: this.player.name,
-                stats: this.player.currentStats,
-                aimAngle: this.player.spinAngle,
-            },
+            player: primaryPlayerData,
+            players: playersData,
             enemies: this.enemies.map((enemy) => enemy.toData()),
             projectiles: this.projectiles.map((projectile) => ({
                 id: projectile.id,
@@ -417,7 +738,8 @@ export class GameEngine {
                 faction: projectile.faction,
                 x: projectile.x,
                 y: projectile.y,
-                radius: projectile.radius
+                radius: projectile.radius,
+                color: this.getProjectileColor(projectile),
             })),
             arena: this.arenaSize,
             arenaOffset: { x: this.currentArena.x, y: this.currentArena.y },
@@ -430,62 +752,47 @@ export class GameEngine {
             isPaused: this.isPaused,
             objective: this.missionManager.getObjectiveState(),
             isColorSelection: this.engineState === EngineState.COLOR_SELECTION,
-            autoSpin: this.currentInput.autoSpin,
+            autoSpin: this.currentInputs.player_1.autoSpin,
+            isCoop: playersData.length > 1,
         };
 
         emitGameEvent(GameEvents.STATE_UPDATE, exportState);
     }
 
-    private updatePlayerMovement(dt: number): void {
+    private updatePlayerMovement(player: Player, input: InputState, dt: number): void {
         const isInverted = this.isBossFightActive && (this.getActiveAnomaly()?.isInverted ?? false);
-        this.player.update(this.currentInput, dt, isInverted);
-        this.player.updatePhysics(dt);
-        this.clampToArena(this.player);
+        player.update(input, dt, isInverted);
+        player.updatePhysics(dt);
+        this.clampToArena(player);
     }
 
-    private tryPlayerShoot(currentTime: number, playerStats: EntityStats): void {
-        if (!this.currentInput.isShooting && !this.currentInput.autoFire) {
+    private tryPlayerShoot(player: Player, input: InputState, currentTime: number, playerStats: EntityStats): void {
+        if (!input.isShooting && !input.autoFire) {
             return;
         }
 
-        const timeSinceLastShot = (currentTime - this.lastShotTime) / 1000;
+        const playerId = player.id as PlayerId;
+        const timeSinceLastShot = (currentTime - this.lastShotTimes[playerId]) / 1000;
         const actualCooldown = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, playerStats.reloadPoints);
 
         if (timeSinceLastShot < actualCooldown) {
             return;
         }
 
-        let aimAngle: number;
-
-        if (this.currentInput.autoSpin) {
-            aimAngle = this.player.spinAngle;
-        } else {
-            const isInvertedShoot = this.isBossFightActive && (this.getActiveAnomaly()?.isInverted ?? false);
-            const targetX = isInvertedShoot
-                ? 2 * this.player.x - this.currentInput.targetX
-                : this.currentInput.targetX;
-            const targetY = isInvertedShoot
-                ? 2 * this.player.y - this.currentInput.targetY
-                : this.currentInput.targetY;
-
-            const dx = targetX - this.player.x;
-            const dy = targetY - this.player.y;
-            const distance = Math.hypot(dx, dy);
-
-            if (distance <= 0.0001) return;
-            aimAngle = Math.atan2(dy, dx);
-        }
-
-        this.spawnProjectiles(this.player, 'player', aimAngle, playerStats);
-        this.lastShotTime = currentTime;
+        const aimAngle = Number.isFinite(player.aimAngle) ? player.aimAngle : 0;
+        this.spawnProjectiles(player, 'player', aimAngle, playerStats);
+        this.lastShotTimes[playerId] = currentTime;
     }
 
     private updateEnemies(dt: number, currentTime: number): void {
+        const fallbackTarget = this.getNearestAlivePlayer(this.player.x, this.player.y) ?? this.getPlayers()[0] ?? this.player;
+
         for (const enemy of this.enemies) {
+            const targetPlayer = this.getNearestAlivePlayer(enemy.x, enemy.y) ?? fallbackTarget;
             const context: EnemyUpdateContext = {
-                playerX: this.player.x,
-                playerY: this.player.y,
-                player: this.player,
+                playerX: targetPlayer.x,
+                playerY: targetPlayer.y,
+                player: targetPlayer,
                 dt,
                 currentTime,
                 onShoot: (aimAngle) => this.spawnProjectiles(enemy, 'enemy', aimAngle, enemy.stats)
@@ -578,9 +885,10 @@ export class GameEngine {
 
     private trySpawnEnemies(currentTime: number): void {
         const milestone = getWaveMilestone(this.currentWave);
-        const maxActive = this.currentWaveType === 'SURVIVE'
+        const baseMaxActive = this.currentWaveType === 'SURVIVE'
             ? milestone.maxActiveEnemiesSurvive
             : milestone.maxActiveEnemies;
+        const maxActive = Math.max(1, Math.round(baseMaxActive * this.getDifficultyActiveEnemyScale()));
 
         if (this.enemies.length >= maxActive) return;
 
@@ -588,7 +896,11 @@ export class GameEngine {
         if (timeSinceLastSpawn < WAVE_SPAWN_INTERVAL_SECONDS) return;
 
         if (this.currentWaveType === 'SURVIVE' && this.spawnQueue.length === 0) {
-            this.initSpawnQueue(milestone, milestone.maxActiveEnemiesSurvive * 2);
+            const refillTotal = Math.max(
+                1,
+                Math.round((milestone.maxActiveEnemiesSurvive * 2) * this.getDifficultySpawnScale())
+            );
+            this.initSpawnQueue(milestone, refillTotal);
         }
 
         if (this.spawnQueue.length === 0) return;
@@ -620,25 +932,40 @@ export class GameEngine {
         orbitTotal: number,
         orbitRadius: number
     ): HostileEntity {
-        if (enemyType === 'ANOMALY_DECOY') {
-            return new AnomalyDecoy(id, x, y, orbitSlot, orbitTotal, orbitRadius);
+        switch (enemyType) {
+            case 'KAMIKAZE':
+                return new Enemy(id, x, y, multiplier);
+            case 'RANGED':
+                return new RangedEnemy(id, x, y, multiplier);
+            case 'SENTINEL':
+                return new SentinelEnemy(id, x, y, multiplier);
+            case 'SKIRMISHER':
+                return new SkirmisherEnemy(id, x, y, multiplier);
+            case 'BRUTE':
+                return new BruteEnemy(id, x, y, multiplier);
+            case 'ANOMALY_DECOY':
+                return new AnomalyDecoy(id, x, y, orbitSlot, orbitTotal, orbitRadius);
+            case 'ANOMALY':
+                return new Anomaly(id, x, y, this.buildBossReferenceStats(), Math.max(1, Math.round(multiplier)));
+            case 'DREADNOUGHT':
+                return new DreadnoughtBoss(id, x, y, this.buildBossReferenceStats(), Math.max(1, Math.round(multiplier)));
+            default:
+                return new Enemy(id, x, y, multiplier);
         }
-
-        const Constructor = GameEngine.ENEMY_REGISTRY[enemyType] ?? Enemy;
-        return new Constructor(id, x, y, multiplier);
     }
 
     private rollOffscreenSpawnPoint(): { x: number; y: number } {
-        let fallbackX = this.player.x;
-        let fallbackY = this.player.y;
+        const anchor = this.getPlayerAnchorPosition();
+        let fallbackX = anchor.x;
+        let fallbackY = anchor.y;
 
         for (let attempt = 0; attempt < 16; attempt++) {
             const angle = Math.random() * Math.PI * 2;
-            const desiredX = this.player.x + Math.cos(angle) * this.viewportSafeSpawnRadius;
-            const desiredY = this.player.y + Math.sin(angle) * this.viewportSafeSpawnRadius;
+            const desiredX = anchor.x + Math.cos(angle) * this.viewportSafeSpawnRadius;
+            const desiredY = anchor.y + Math.sin(angle) * this.viewportSafeSpawnRadius;
             const clampedX = Math.max(0, Math.min(desiredX, this.arenaSize.width));
             const clampedY = Math.max(0, Math.min(desiredY, this.arenaSize.height));
-            const playerDistance = Math.hypot(clampedX - this.player.x, clampedY - this.player.y);
+            const playerDistance = Math.hypot(clampedX - anchor.x, clampedY - anchor.y);
 
             fallbackX = clampedX;
             fallbackY = clampedY;
@@ -654,7 +981,24 @@ export class GameEngine {
     private buildScaledMultiplier(enemyType: EnemyType): number {
         const enemyStartWave = getEnemyFirstWave(enemyType);
         const waveOffset = Math.max(0, this.currentWave - enemyStartWave);
-        return 1 + (waveOffset * ENEMY_STAT_MULTIPLIER_PER_WAVE);
+        return (1 + (waveOffset * ENEMY_STAT_MULTIPLIER_PER_WAVE)) * this.getDifficultyEnemyStatScale();
+    }
+
+    private getDifficultyProfile(): DifficultyProfile {
+        const playerCount = Math.max(1, Math.min(4, this.getPlayers().length)) as 1 | 2 | 3 | 4;
+        return DIFFICULTY_PROFILE_BY_PLAYER_COUNT[playerCount];
+    }
+
+    private getDifficultyEnemyStatScale(): number {
+        return this.getDifficultyProfile().enemyStatScale;
+    }
+
+    private getDifficultySpawnScale(): number {
+        return this.getDifficultyProfile().spawnScale;
+    }
+
+    private getDifficultyActiveEnemyScale(): number {
+        return this.getDifficultyProfile().activeEnemyScale;
     }
 
     private rollEnemyType(weights: Partial<Record<EnemyType, number>>): EnemyType {
@@ -713,9 +1057,18 @@ export class GameEngine {
 
     private checkCollisions(currentTime: number): void {
         const onPlayerDamaged = () => this.missionManager.onPlayerDamaged();
+        const alivePlayers = this.getPlayers().filter((player) => player.health > 0);
 
-        for (const enemy of this.enemies) {
-            this.resolveEntityCollision(this.player, enemy, true, currentTime, onPlayerDamaged);
+        for (const player of alivePlayers) {
+            for (const enemy of this.enemies) {
+                this.resolveEntityCollision(player, enemy, true, currentTime, onPlayerDamaged);
+            }
+        }
+
+        for (let i = 0; i < alivePlayers.length; i++) {
+            for (let j = i + 1; j < alivePlayers.length; j++) {
+                this.resolveEntityCollision(alivePlayers[i], alivePlayers[j], true, currentTime);
+            }
         }
 
         for (let i = 0; i < this.enemies.length; i++) {
@@ -728,8 +1081,9 @@ export class GameEngine {
         this.resolveProjectileEntityCollisions(currentTime);
 
         for (const enemy of this.enemies) {
+            const targetPlayer = this.getNearestAlivePlayer(enemy.x, enemy.y) ?? this.player;
             enemy.resolveSpecialCollisions(
-                this.player,
+                targetPlayer,
                 this.projectiles,
                 currentTime,
                 () => this.missionManager.onPlayerDamaged(),
@@ -796,15 +1150,22 @@ export class GameEngine {
             const projectile = this.projectiles[projectileIndex];
 
             if (projectile.faction === 'enemy') {
-                if (this.checkCircularCollision(projectile.x, projectile.y, projectile.radius, this.player.x, this.player.y, this.player.radius)) {
+                const alivePlayers = this.getPlayers().filter((player) => player.health > 0);
+
+                for (const player of alivePlayers) {
+                    if (!this.checkCircularCollision(projectile.x, projectile.y, projectile.radius, player.x, player.y, player.radius)) {
+                        continue;
+                    }
+
                     const shouldDestroy = projectile.handleCollisionWith(
-                        this.player,
-                        this.player.contactDamage,
+                        player,
+                        player.contactDamage,
                         currentTime,
                         () => this.missionManager.onPlayerDamaged()
                     );
                     if (shouldDestroy) {
                         this.destroyProjectile(projectileIndex);
+                        break;
                     }
                 }
                 continue;
@@ -870,7 +1231,6 @@ export class GameEngine {
         overlap: number
     ): void {
         const gentlePushDistance = overlap / 2;
-
         entityA.x -= normalX * gentlePushDistance;
         entityA.y -= normalY * gentlePushDistance;
         entityB.x += normalX * gentlePushDistance;
@@ -924,6 +1284,15 @@ export class GameEngine {
         entity.y = Math.max(this.currentArena.y, Math.min(entity.y, this.currentArena.y + this.currentArena.height));
     }
 
+    private getProjectileColor(projectile: Projectile): number | undefined {
+        if (projectile.faction !== 'player') {
+            return undefined;
+        }
+
+        const owner = this.getPlayers().find((player) => player.id === projectile.ownerId);
+        return owner?.color ?? this.player.color;
+    }
+
 
     private destroyProjectile(projectileIndex: number): void {
         const projectile = this.projectiles[projectileIndex];
@@ -936,46 +1305,46 @@ export class GameEngine {
             x: projectile.x,
             y: projectile.y,
             radius: projectile.radius,
-            color: projectile.faction === 'player' ? this.player.color : undefined,
+            color: this.getProjectileColor(projectile),
         });
 
         this.projectiles.splice(projectileIndex, 1);
     }
 
     private advanceWaveState(currentTime: number): void {
-        if (this.engineState === EngineState.BOSS_FIGHT) {
-            const bossAlive = this.enemies.some((enemy) => enemy.enemyType === 'ANOMALY' || enemy.enemyType === 'DREADNOUGHT');
-            if (!bossAlive) {
-                this.endBossFight(currentTime);
+        switch (this.engineState) {
+            case EngineState.BOSS_FIGHT: {
+                const bossAlive = this.enemies.some((enemy) => enemy.enemyType === 'ANOMALY' || enemy.enemyType === 'DREADNOUGHT');
+                if (!bossAlive) {
+                    this.endBossFight(currentTime);
+                }
+                return;
             }
-            return;
-        }
-
-        if (this.engineState === EngineState.WAVE_ACTIVE) {
-            if (this.currentWaveType === 'SURVIVE') {
-                this.tryEndSurviveWave(currentTime);
-            } else {
-                this.tryEnterWaveClearAnimation(currentTime);
-            }
-            return;
-        }
-
-        if (this.engineState === EngineState.WAVE_CLEAR_ANIMATION) {
-            if (currentTime >= this.waveClearAnimationEndsAtMs) {
-                this.enterUpgradePhase(currentTime);
-            }
-            return;
-        }
-
-        if (this.engineState === EngineState.UPGRADE_PHASE) {
-            if (!this.player.isUpgrading) {
-                this.startWaveStartingAnimation(currentTime);
-            }
-            return;
-        }
-
-        if (this.engineState === EngineState.WAVE_STARTING_ANIMATION && currentTime >= this.waveStartingAnimationEndsAtMs) {
-            this.resumeWaveSpawning(currentTime);
+            case EngineState.WAVE_ACTIVE:
+                if (this.currentWaveType === 'SURVIVE') {
+                    this.tryEndSurviveWave(currentTime);
+                } else {
+                    this.tryEnterWaveClearAnimation(currentTime);
+                }
+                return;
+            case EngineState.WAVE_CLEAR_ANIMATION:
+                if (currentTime >= this.waveClearAnimationEndsAtMs) {
+                    this.enterUpgradePhase(currentTime);
+                }
+                return;
+            case EngineState.UPGRADE_PHASE:
+                if (this.activeUpgradePlayerId === null) {
+                    this.startWaveStartingAnimation(currentTime);
+                }
+                return;
+            case EngineState.WAVE_STARTING_ANIMATION:
+                if (currentTime >= this.waveStartingAnimationEndsAtMs) {
+                    this.resumeWaveSpawning(currentTime);
+                }
+                return;
+            case EngineState.COLOR_SELECTION:
+            default:
+                return;
         }
     }
 
@@ -1077,6 +1446,25 @@ export class GameEngine {
         this.enterBossFight(rule.bossKind, currentTime);
     }
 
+    private buildBossReferenceStats(): EntityStats {
+        const base = this.player.currentStats;
+        const profile = this.getDifficultyProfile();
+        if (profile.bossMaxHealthScale === 1) {
+            return base;
+        }
+
+        return {
+            maxHealth: base.maxHealth * profile.bossMaxHealthScale,
+            healthRegen: base.healthRegen * profile.bossHealthRegenScale,
+            bodyDamage: base.bodyDamage * profile.bossBodyDamageScale,
+            bulletSpeed: base.bulletSpeed * profile.bossBulletSpeedScale,
+            bulletPenetration: base.bulletPenetration * profile.bossBulletPenetrationScale,
+            bulletDamage: base.bulletDamage * profile.bossBulletDamageScale,
+            reloadPoints: base.reloadPoints + profile.bossReloadBonus,
+            movementSpeed: base.movementSpeed * profile.bossMovementSpeedScale,
+        };
+    }
+
     private enterBossFight(kind: BossKind, currentTime: number): void {
         this.isBossFightActive = true;
         this.currentWaveType = 'BOSS';
@@ -1085,16 +1473,19 @@ export class GameEngine {
         this.spawnQueue = [];
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
+        this.clearUpgradeSelectionState();
+        this.reviveDefeatedPlayers();
 
-        this.player.x = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
-        this.player.y = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
-        this.player.knockbackVelocity = { x: 0, y: 0 };
+        const centerX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
+        const centerY = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
+        this.positionPlayers(centerX, centerY);
 
         const spawnX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
         const spawnY = this.BOSS_ARENA.y + 220;
+        const bossReferenceStats = this.buildBossReferenceStats();
         const boss = kind === 'ANOMALY'
-            ? new Anomaly('anomaly_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount, this.currentWave)
-            : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, this.player.currentStats, this.anomalySpawnCount);
+            ? new Anomaly('anomaly_boss', spawnX, spawnY, bossReferenceStats, this.anomalySpawnCount)
+            : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, bossReferenceStats, this.anomalySpawnCount);
 
         this.enemies = [boss];
         this.engineState = EngineState.BOSS_FIGHT;
@@ -1116,9 +1507,9 @@ export class GameEngine {
         this.enemies = [];
         this.spawnQueue = [];
 
-        this.player.x = this.arenaSize.width / 2;
-        this.player.y = this.arenaSize.height / 2;
-        this.player.knockbackVelocity = { x: 0, y: 0 };
+        const centerX = this.arenaSize.width / 2;
+        const centerY = this.arenaSize.height / 2;
+        this.positionPlayers(centerX, centerY);
 
         this.missionManager.onBossDefeated();
         emitGameEvent(GameEvents.BOSS_DEFEATED, undefined);
@@ -1140,22 +1531,28 @@ export class GameEngine {
 
     private enterUpgradePhase(currentTime: number): void {
         this.engineState = EngineState.UPGRADE_PHASE;
+        this.clearUpgradeSelectionState();
+
+        const playersWithPendingUpgrades = this
+            .getPlayers()
+            .filter((candidate) => candidate.pendingUpgrades > 0);
+        const totalPendingUpgrades = playersWithPendingUpgrades.reduce(
+            (total, candidate) => total + candidate.pendingUpgrades,
+            0
+        );
 
         emitGameEvent(GameEvents.UPGRADE_PHASE_STARTED, {
             wave: this.currentWave,
-            pendingUpgrades: this.player.pendingUpgrades
+            pendingUpgrades: totalPendingUpgrades
         });
 
-        if (this.player.pendingUpgrades > 0) {
-            this.player.isUpgrading = true;
-            emitGameEvent(GameEvents.SHOW_UPGRADE_MODAL, {
-                upgradesRemaining: this.player.pendingUpgrades
-            });
+        if (playersWithPendingUpgrades.length === 0) {
+            this.startWaveStartingAnimation(currentTime);
             return;
         }
 
-        this.player.isUpgrading = false;
-        this.startWaveStartingAnimation(currentTime);
+        this.upgradeSelectionQueue = playersWithPendingUpgrades.map((candidate) => candidate.id as PlayerId);
+        this.advanceUpgradeSelection();
     }
 
     private startWaveStartingAnimation(currentTime: number): void {
@@ -1167,6 +1564,7 @@ export class GameEngine {
             this.currentWaveType = getRandomWaveType();
         }
 
+        this.reviveDefeatedPlayersForNextWave();
         this.engineState = EngineState.WAVE_STARTING_ANIMATION;
         this.waveStartingAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
 
@@ -1192,6 +1590,11 @@ export class GameEngine {
         if (this.currentWaveType === 'SURVIVE') {
             this.surviveWaveEndsAtMs = currentTime + Math.min(60, milestone.surviveDurationSeconds) * 1000;
             this.initSpawnQueue(milestone, milestone.maxActiveEnemiesSurvive * 2);
+            const surviveTotal = Math.max(
+                1,
+                Math.round((milestone.maxActiveEnemiesSurvive * 2) * this.getDifficultySpawnScale())
+            );
+            this.initSpawnQueue(milestone, surviveTotal);
         } else {
             this.surviveWaveEndsAtMs = 0;
             this.initSpawnQueue(milestone, this.getCurrentWaveTotalToSpawn());
@@ -1219,16 +1622,28 @@ export class GameEngine {
 
     private handleUpgradeModalRequested(): void {
         queueMicrotask(() => {
-            if (!this.player.isUpgrading || this.player.pendingUpgrades <= 0) {
+            if (this.engineState !== EngineState.UPGRADE_PHASE || !this.activeUpgradePlayerId) {
                 return;
             }
 
-            this.emitUpgradeOptions(this.player.pendingUpgrades);
+            const activePlayer = this.getPlayerById(this.activeUpgradePlayerId);
+            if (!activePlayer || activePlayer.pendingUpgrades <= 0) {
+                this.advanceUpgradeSelection();
+                return;
+            }
+
+            this.emitUpgradeOptions(this.activeUpgradePlayerId, activePlayer.pendingUpgrades, activePlayer.level);
         });
     }
 
     private handleCardSelected(selection: CardSelectedPayload): void {
-        if (this.player.pendingUpgrades <= 0) {
+        if (!this.activeUpgradePlayerId || selection.playerId !== this.activeUpgradePlayerId) {
+            return;
+        }
+
+        const activePlayer = this.getPlayerById(selection.playerId);
+        if (!activePlayer || activePlayer.pendingUpgrades <= 0) {
+            this.advanceUpgradeSelection();
             return;
         }
 
@@ -1241,29 +1656,114 @@ export class GameEngine {
         this.player.applyUpgradeColorBuff(selection.colorHex);
         this.player.applyUpgradeColor(selection.colorHex);
         this.player.consumePendingUpgrade();
-        this.syncPlayerCoreStats();
+        this.syncPlayerCoreStats(this.player);
+        const colorHex = this.normalizeColorHex(selection.colorHex, '#4488ff');
 
-        if (this.player.pendingUpgrades > 0) {
-            this.emitUpgradeOptions(this.player.pendingUpgrades);
+        activePlayer.applyStatModifiers(selectedCard.modifiers);
+        activePlayer.applyUpgradeColorBuff(colorHex);
+        activePlayer.applyUpgradeColor(colorHex);
+        activePlayer.consumePendingUpgrade();
+        this.syncPlayerCoreStats(activePlayer);
+
+        if (activePlayer.pendingUpgrades > 0) {
+            this.emitUpgradeOptions(selection.playerId, activePlayer.pendingUpgrades, activePlayer.level);
             return;
         }
 
-        this.player.isUpgrading = false;
+        this.advanceUpgradeSelection();
+    }
+
+    private advanceUpgradeSelection(): void {
+        while (this.upgradeSelectionQueue.length > 0) {
+            const nextPlayerId = this.upgradeSelectionQueue.shift();
+            if (!nextPlayerId) {
+                continue;
+            }
+
+            const nextPlayer = this.getPlayerById(nextPlayerId);
+            if (!nextPlayer || nextPlayer.pendingUpgrades <= 0) {
+                continue;
+            }
+
+            this.activeUpgradePlayerId = nextPlayerId;
+            this.setPlayersUpgradingState(true);
+            emitGameEvent(GameEvents.SHOW_UPGRADE_MODAL, {
+                playerId: nextPlayerId,
+                upgradesRemaining: nextPlayer.pendingUpgrades
+            });
+            return;
+        }
+
+        this.clearUpgradeSelectionState();
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
     }
 
-    private emitUpgradeOptions(upgradesRemaining: number): void {
-        const options = this.upgradeManager.rollUpgradeOptions(this.player.level);
+    private emitUpgradeOptions(playerId: PlayerId, upgradesRemaining: number, playerLevel: number): void {
+        const options = this.upgradeManager.rollUpgradeOptions(playerLevel);
         emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
+            playerId,
             upgradesRemaining,
             options
         });
     }
 
+    private reviveDefeatedPlayers(): void {
+        for (const player of this.getPlayers()) {
+            if (player.health > 0) {
+                continue;
+            }
+
+            this.syncPlayerCoreStats(player);
+            player.health = player.maxHealth;
+            player.knockbackVelocity = { x: 0, y: 0 };
+            player.damageTimers.clear();
+        }
+    }
+
+    private positionPlayers(centerX: number, centerY: number): void {
+        const players = this.getPlayers();
+
+        for (let i = 0; i < players.length; i++) {
+            const player = players[i];
+            player.x = centerX + this.getPlayerSpawnOffset(i, players.length);
+            player.y = centerY;
+            player.knockbackVelocity = { x: 0, y: 0 };
+            this.clampToArena(player);
+        }
+    }
+
+    private reviveDefeatedPlayersForNextWave(): void {
+        const players = this.getPlayers();
+        if (players.length <= 1) {
+            return;
+        }
+
+        const alivePlayers = players.filter((player) => player.health > 0);
+        const fallbackAnchor = players[0];
+        const anchor = alivePlayers[0] ?? fallbackAnchor;
+        const anchorX = anchor?.x ?? this.arenaSize.width / 2;
+        const anchorY = anchor?.y ?? this.arenaSize.height / 2;
+
+        for (let i = 0; i < players.length; i++) {
+            const player = players[i];
+            if (player.health > 0) {
+                continue;
+            }
+
+            this.syncPlayerCoreStats(player);
+            player.health = player.maxHealth;
+            player.x = anchorX + this.getPlayerSpawnOffset(i, players.length);
+            player.y = anchorY;
+            this.clampToArena(player);
+            player.knockbackVelocity = { x: 0, y: 0 };
+            player.damageTimers.clear();
+        }
+    }
+
     private getCurrentWaveTotalToSpawn(): number {
         const waveRule = getWaveMilestone(this.currentWave);
         const waveOffset = Math.max(0, this.currentWave - waveRule.startWave);
-        const scaledTotal = waveRule.totalEnemiesToSpawn * (1 + (waveOffset * waveRule.sizeMultiplier));
+        const scaledTotal = waveRule.totalEnemiesToSpawn * (1 + (waveOffset * waveRule.sizeMultiplier)) * this.getDifficultySpawnScale();
 
         return Math.max(1, Math.round(scaledTotal));
     }

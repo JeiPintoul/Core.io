@@ -47,6 +47,7 @@ export class Player extends Entity {
     public color: number;
     public isUpgrading: boolean;
     public spinAngle = 0;
+    public aimAngle = 0;
     private static readonly SPIN_RATE = 2.5;
     public level: number;
     public currentXp: number;
@@ -55,6 +56,7 @@ export class Player extends Entity {
     public readonly appliedUpgradeColors: number[];
     public bonusStats: StatModifiers;
     public colorBonusStats: StatModifiers;
+    private readonly progressionEnabled: boolean;
     private primaryColorHex: string | null = null;
     private selectedUpgradeColorHexes: string[] = [];
     private readonly baseStats: EntityStats = {
@@ -74,7 +76,8 @@ export class Player extends Entity {
         x: number,
         y: number,
         name: string,
-        color: number = 0x4488ff
+        color: number = 0x4488ff,
+        progressionEnabled: boolean = true
     ) {
         const base = {
             maxHealth: 100,
@@ -90,6 +93,7 @@ export class Player extends Entity {
         this.name = name;
         this.color = color;
         this.isUpgrading = false;
+        this.progressionEnabled = progressionEnabled;
         this.level = 1;
         this.currentXp = 0;
         this.xpToNextLevel = 100;
@@ -110,7 +114,9 @@ export class Player extends Entity {
             }
         ]);
 
-        this.setupListeners();
+        if (this.progressionEnabled) {
+            this.setupListeners();
+        }
     }
 
     public override get contactDamage(): number {
@@ -152,6 +158,7 @@ export class Player extends Entity {
     public update(input: InputState, dt: number, isControlsInverted: boolean): void {
         if (input.autoSpin) {
             this.spinAngle += Player.SPIN_RATE * dt;
+            this.aimAngle = this.spinAngle;
         }
 
         const up    = isControlsInverted ? input.down  : input.up;
@@ -172,6 +179,16 @@ export class Player extends Entity {
             const speedPerFrame = this.speed * dt;
             this.x += (movementX / magnitude) * speedPerFrame;
             this.y += (movementY / magnitude) * speedPerFrame;
+        }
+
+        if (!input.autoSpin) {
+            const targetX = isControlsInverted ? (2 * this.x) - input.targetX : input.targetX;
+            const targetY = isControlsInverted ? (2 * this.y) - input.targetY : input.targetY;
+            const aimDx = targetX - this.x;
+            const aimDy = targetY - this.y;
+            if (Math.hypot(aimDx, aimDy) > 0.0001) {
+                this.aimAngle = Math.atan2(aimDy, aimDx);
+            }
         }
     }
 
@@ -289,6 +306,10 @@ export class Player extends Entity {
     }
 
     public gainXp(amount: number): void {
+        if (!this.progressionEnabled) {
+            return;
+        }
+
         this.currentXp += amount;
 
         while (this.currentXp >= this.xpToNextLevel) {

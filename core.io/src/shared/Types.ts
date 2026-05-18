@@ -1,6 +1,20 @@
 export const MAX_RELOAD_POINTS = 12;
 
 export type WaveType = 'CLEAR' | 'SURVIVE' | 'BOSS';
+export const PLAYER_IDS = ['player_1', 'player_2', 'player_3', 'player_4'] as const;
+export type PlayerId = (typeof PLAYER_IDS)[number];
+export type PlayerCount = 1 | 2 | 3 | 4;
+export type ControlPreference = 'KEYBOARD' | 'GAMEPAD';
+
+export interface PlayerRunConfiguration {
+    name: string;
+    control: ControlPreference;
+}
+
+export interface RunConfiguration {
+    playerCount: PlayerCount;
+    players: Record<PlayerId, PlayerRunConfiguration>;
+}
 
 export interface EntityStats {
     maxHealth: number;
@@ -54,6 +68,7 @@ export interface UpgradeRollOption {
 }
 
 export interface UpgradeModalVisibilityPayload {
+    playerId: PlayerId;
     upgradesRemaining: number;
 }
 
@@ -62,6 +77,7 @@ export interface UpgradeModalOptionsPayload extends UpgradeModalVisibilityPayloa
 }
 
 export interface CardSelectedPayload {
+    playerId: PlayerId;
     cardId: string;
     colorHex: string;
 }
@@ -117,11 +133,12 @@ export interface EntityData {
 
 export interface ProjectileData {
     id: string;
-    ownerId: string; // pra saber quem atirou e não dar dano em si mesmo
+    ownerId: string; // pra saber quem atirou e nÃ£o dar dano em si mesmo
     faction: ProjectileFaction;
     x: number;
     y: number;
     radius: number;
+    color?: number;
 }
 export interface BossFightStartPayload {
     bossArenaX: number;
@@ -142,6 +159,7 @@ export interface ObjectiveState {
 
 export interface GameState {
     player: EntityData;
+    players: EntityData[];
     enemies: EntityData[];
     projectiles: ProjectileData[];
     arena: { width: number; height: number };
@@ -156,6 +174,7 @@ export interface GameState {
     arenaOffset?: { x: number; y: number };
     isColorSelection: boolean;
     autoSpin: boolean;
+    isCoop: boolean;
 }
 
 export interface InputState {
@@ -168,6 +187,11 @@ export interface InputState {
     isShooting: boolean;
     autoFire: boolean;
     autoSpin: boolean;
+}
+
+export interface PlayerInputPayload {
+    playerId: PlayerId;
+    input: InputState;
 }
 
 export interface EntityDamagePayload {
@@ -269,7 +293,7 @@ export interface GameOverPayload {
 }
 
 export interface GameEventPayloads {
-    player_input: InputState;
+    player_input: PlayerInputPayload;
     state_update: GameState;
     level_up: LevelUpPayload;
     show_upgrade_modal: UpgradeModalVisibilityPayload;
@@ -296,7 +320,9 @@ export interface GameEventPayloads {
     arena_resized: { width: number; height: number };
     anomaly_teleport: AnomalyTeleportPayload;
     anomaly_dash: AnomalyDashPayload;
-    start_run_with_color: { colorHex: string };
+    start_run_with_color: { playerColors: Partial<Record<PlayerId, string>> };
     auto_fire_toggled: { enabled: boolean };
     auto_spin_toggled: { enabled: boolean };
+    run_config_changed: RunConfiguration;
 }
+

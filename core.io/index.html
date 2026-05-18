@@ -96,7 +96,59 @@
 
       <div id="menu-inicial">
         <h1>CORE.IO</h1>
+        <p id="menu-subtitle">Sobreviva em cooperativo local e evolua sua build onda apos onda.</p>
         <input type="text" id="player-name" placeholder="Digite seu Nome" />
+        <div id="menu-options">
+          <div class="menu-option-row">
+            <label for="player-count">Jogadores</label>
+            <select id="player-count">
+              <option value="1">1 Jogador</option>
+              <option value="2">2 Jogadores</option>
+              <option value="3">3 Jogadores</option>
+              <option value="4">4 Jogadores</option>
+            </select>
+          </div>
+          <div class="menu-option-row">
+            <label id="player1-control-label" for="player1-control">P1</label>
+            <select id="player1-control">
+              <option value="keyboard">Teclado + Mouse</option>
+              <option value="gamepad">Controle</option>
+            </select>
+          </div>
+          <div class="menu-option-row is-multiplayer-only" id="player2-name-wrap">
+            <label for="player2-name">P2 Nome</label>
+            <input type="text" id="player2-name" placeholder="Nome do Jogador 2" />
+          </div>
+          <div class="menu-option-row is-multiplayer-only" id="player2-control-wrap">
+            <label id="player2-control-label" for="player2-control">P2</label>
+            <select id="player2-control">
+              <option value="gamepad">Controle</option>
+              <option value="keyboard">Teclado</option>
+            </select>
+          </div>
+          <div class="menu-option-row is-multiplayer-only" id="player3-name-wrap">
+            <label for="player3-name">P3 Nome</label>
+            <input type="text" id="player3-name" placeholder="Nome do Jogador 3" />
+          </div>
+          <div class="menu-option-row is-multiplayer-only" id="player3-control-wrap">
+            <label id="player3-control-label" for="player3-control">P3</label>
+            <select id="player3-control">
+              <option value="gamepad">Controle</option>
+            </select>
+          </div>
+          <div class="menu-option-row is-multiplayer-only" id="player4-name-wrap">
+            <label for="player4-name">P4 Nome</label>
+            <input type="text" id="player4-name" placeholder="Nome do Jogador 4" />
+          </div>
+          <div class="menu-option-row is-multiplayer-only" id="player4-control-wrap">
+            <label id="player4-control-label" for="player4-control">P4</label>
+            <select id="player4-control">
+              <option value="gamepad">Controle</option>
+            </select>
+          </div>
+        </div>
+        <p id="menu-control-slots-hint">Slots de controle: conexao automatica por ordem dos jogadores ativos.</p>
+        <p id="menu-gamepad-help">No controle: D-pad para navegar e A para confirmar.</p>
         <button id="btn-jogar">JOGAR</button>
         <button id="btn-menu-home" class="btn-home" style="display:none"><i data-lucide="home"></i> MENU</button>
         <div id="global-stats">
@@ -110,6 +162,7 @@
       <div id="color-selection-screen" class="hidden">
         <p class="color-selection-subtitle">SELECIONE SEU TANQUE</p>
         <h2>Escolha uma Faccao</h2>
+        <p class="color-selection-hint">Controle: use esquerda/direita e confirme com A</p>
         <div class="color-cards">
           <div class="color-card" data-color="red" style="--card-glow:#cc2222">
             <div class="css-tank">

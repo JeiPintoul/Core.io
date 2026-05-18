@@ -1,6 +1,6 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../../shared/EventBus';
 import { calculatePlayerShotCooldownSeconds } from '../../shared/CombatMath';
-import type { EntityStats, GameState, ObjectiveState, StatModifiers } from '../../shared/Types';
+import { PLAYER_IDS, type EntityStats, type GameState, type ObjectiveState, type PlayerId, type RunConfiguration, type StatModifiers } from '../../shared/Types';
 import { type ColorDefinition, getColorDefinition, getColorsByTier } from '../../logic/constants/ColorConfig';
 
 interface StoredStats {
@@ -57,8 +57,22 @@ export class HudController {
     private readonly globalTotalAnomaliesEl = this.getEl<HTMLElement>('stat-total-anomalies');
     private readonly toastEl = this.getEl<HTMLElement>('hud-toast');
     private readonly colorBadgeEl = this.getEl<HTMLElement>('hud-color-badge');
+    private readonly colorSelectionScreenEl = this.getEl<HTMLElement>('color-selection-screen');
+    private readonly colorSelectionSubtitleEl = this.colorSelectionScreenEl?.querySelector('.color-selection-subtitle') as HTMLElement | null;
+    private readonly colorSelectionTitleEl = this.colorSelectionScreenEl?.querySelector('h2') as HTMLElement | null;
     private toastTimeoutId: number | null = null;
     private activeColorDef: ColorDefinition | null = null;
+    private selectedColorByPlayer: Partial<Record<PlayerId, string>> = {};
+    private activeColorSelectionIndex = 0;
+    private runConfiguration: RunConfiguration = {
+        playerCount: 1,
+        players: {
+            player_1: { name: 'Jogador', control: 'KEYBOARD' },
+            player_2: { name: 'Jogador 2', control: 'GAMEPAD' },
+            player_3: { name: 'Jogador 3', control: 'GAMEPAD' },
+            player_4: { name: 'Jogador 4', control: 'GAMEPAD' },
+        }
+    };
 
     constructor() {
         this.bindColorSelectionScreen();
@@ -74,7 +88,7 @@ export class HudController {
     }
 
     private bindColorSelectionScreen(): void {
-        const screen = this.getEl<HTMLElement>('color-selection-screen');
+        const screen = this.colorSelectionScreenEl;
         if (!screen) return;
 
         const cards = screen.querySelectorAll<HTMLElement>('.color-card');
@@ -95,12 +109,34 @@ export class HudController {
 
             card.addEventListener('click', () => {
                 this.clearStatPreview();
+                const activePlayerIds = this.getActivePlayerIds();
+                const activePlayerId = activePlayerIds[this.activeColorSelectionIndex] ?? activePlayerIds[0];
+                if (!activePlayerId) {
+                    return;
+                }
+
+                this.selectedColorByPlayer[activePlayerId] = colorHex;
 
                 for (const other of cards) {
-                    if (other !== card) other.classList.add('faded');
+                    if (other !== card) {
+                        other.classList.add('faded');
+                    }
                 }
                 card.classList.add('selected');
 
+                const isLastSelection = this.activeColorSelectionIndex >= activePlayerIds.length - 1;
+                if (!isLastSelection) {
+                    window.setTimeout(() => {
+                        this.activeColorSelectionIndex += 1;
+                        for (const c of cards) {
+                            c.classList.remove('faded', 'selected', 'is-primary-selected');
+                        }
+                        this.updateColorSelectionPrompt();
+                    }, 320);
+                    return;
+                }
+
+                const playerColors = { ...this.selectedColorByPlayer };
                 window.setTimeout(() => {
                     screen.classList.add('fade-out');
 
@@ -108,13 +144,46 @@ export class HudController {
                         screen.classList.add('hidden');
                         screen.classList.remove('fade-out');
                         for (const c of cards) {
-                            c.classList.remove('faded', 'selected');
+                            c.classList.remove('faded', 'selected', 'is-primary-selected');
                         }
-                        emitGameEvent(GameEvents.START_RUN_WITH_COLOR, { colorHex });
+                        this.selectedColorByPlayer = {};
+                        this.activeColorSelectionIndex = 0;
+                        this.updateColorSelectionPrompt();
+                        emitGameEvent(GameEvents.START_RUN_WITH_COLOR, { playerColors });
                     }, 400);
-                }, 800);
+                }, 650);
             });
         });
+
+        this.updateColorSelectionPrompt();
+    }
+
+    private getActivePlayerIds(): PlayerId[] {
+        return PLAYER_IDS.slice(0, this.runConfiguration.playerCount) as PlayerId[];
+    }
+
+    private updateColorSelectionPrompt(): void {
+        if (!this.colorSelectionSubtitleEl || !this.colorSelectionTitleEl) {
+            return;
+        }
+
+        const activePlayerIds = this.getActivePlayerIds();
+        if (activePlayerIds.length <= 1) {
+            this.activeColorSelectionIndex = 0;
+            this.selectedColorByPlayer = {};
+            this.colorSelectionSubtitleEl.textContent = 'SELECIONE SEU TANQUE';
+            this.colorSelectionTitleEl.textContent = 'Escolha uma Faccao';
+            return;
+        }
+
+        if (this.activeColorSelectionIndex >= activePlayerIds.length) {
+            this.activeColorSelectionIndex = activePlayerIds.length - 1;
+        }
+
+        this.colorSelectionSubtitleEl.textContent = 'CO-OP LOCAL';
+        const playerId = activePlayerIds[this.activeColorSelectionIndex];
+        const playerName = playerId ? this.runConfiguration.players[playerId].name : 'Jogador';
+        this.colorSelectionTitleEl.textContent = `${playerName} - Escolha sua Faccao`;
     }
 
     public getInitialAudioPrefs(): { volume: number; muted: boolean } {
@@ -151,6 +220,9 @@ export class HudController {
         this.renderEnemyCount(0);
         this.renderObjective(null);
         this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
+        this.selectedColorByPlayer = {};
+        this.activeColorSelectionIndex = 0;
+        this.updateColorSelectionPrompt();
     }
 
     public destroy(): void {
@@ -228,6 +300,15 @@ export class HudController {
         this.unsubscribers.push(
             onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, (prefs) => {
                 localStorage.setItem('coreio_audio', JSON.stringify(prefs));
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.RUN_CONFIG_CHANGED, (config) => {
+                this.runConfiguration = { ...config };
+                this.selectedColorByPlayer = {};
+                this.activeColorSelectionIndex = 0;
+                this.updateColorSelectionPrompt();
             })
         );
 

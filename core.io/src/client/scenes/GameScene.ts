@@ -23,6 +23,12 @@ export class GameScene extends Phaser.Scene {
     private cameraFollowTarget!: Phaser.GameObjects.Zone;
     private colorPanX = 0;
     private colorPanY = 0;
+    private readonly cameraMaxZoom = 1.02;
+    private readonly cameraMinZoom = 0.58;
+    private readonly cameraZoomLerp = 0.14;
+    private readonly cameraFramingPadding = 360;
+    private cameraCullOverrideActive = false;
+    private hudCamera: Phaser.Cameras.Scene2D.Camera | null = null;
 
     constructor() {
         super({ key: 'GameScene' });
@@ -35,7 +41,7 @@ export class GameScene extends Phaser.Scene {
     create() {
         // Configurar câmera
         this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
-        this.cameras.main.setZoom(1);
+        this.cameras.main.setZoom(this.cameraMaxZoom);
 
         // Target invisivel para follow suave da camera.
         this.cameraFollowTarget = this.add.zone(ARENA.width / 2, ARENA.height / 2, 1, 1);
@@ -45,8 +51,45 @@ export class GameScene extends Phaser.Scene {
         const gfxWorld = this.add.graphics(); // grid + arena
         const gfxGame = this.add.graphics();  // entidades + projéteis
         const gfxPlayer = this.add.graphics(); // player principal (objeto real para tween de morte)
-        const gfxHud = this.add.graphics();   // HUD (fixo na tela)
+        const gfxHud = this.add.graphics();   // HUD fixo na tela
         gfxHud.setScrollFactor(0);
+
+        this.hudCamera = this.cameras.add(0, 0, this.scale.width, this.scale.height, false, 'HUDCamera');
+        this.hudCamera.setZoom(1);
+        this.hudCamera.setScroll(0, 0);
+
+        this.cameras.main.ignore(gfxHud);
+
+        const ignoreFromHudCamera = (gameObject: Phaser.GameObjects.GameObject): void => {
+            if (!this.hudCamera || gameObject === gfxHud) {
+                return;
+            }
+
+            this.hudCamera.ignore(gameObject);
+        };
+
+        for (const gameObject of this.children.getAll()) {
+            ignoreFromHudCamera(gameObject as Phaser.GameObjects.GameObject);
+        }
+
+        const handleObjectAdded = (gameObject: Phaser.GameObjects.GameObject): void => {
+            ignoreFromHudCamera(gameObject);
+        };
+
+        const syncHudCameraViewport = (): void => {
+            if (!this.hudCamera) {
+                return;
+            }
+
+            this.hudCamera.setViewport(0, 0, this.scale.width, this.scale.height);
+        };
+
+        this.events.on(Phaser.Scenes.Events.ADDED_TO_SCENE, handleObjectAdded);
+        this.scale.on(Phaser.Scale.Events.RESIZE, syncHudCameraViewport);
+        this.subscriptions.push(() => {
+            this.events.off(Phaser.Scenes.Events.ADDED_TO_SCENE, handleObjectAdded);
+            this.scale.off(Phaser.Scale.Events.RESIZE, syncHudCameraViewport);
+        });
 
         // Inicializar renderer e input handler
         this.gameRenderer = new GameRenderer(this, this.cameras.main, gfxWorld, gfxGame, gfxPlayer, gfxHud);
@@ -59,15 +102,16 @@ export class GameScene extends Phaser.Scene {
         this.subscriptions.push(
             onGameEvent(GameEvents.STATE_UPDATE, (state: GameState) => {
                 this.latestState = state;
+                const alivePlayers = state.players.filter((player) => !player.isDead);
 
-                if (!state.isColorSelection && state.player.health > 0) {
+                if (!state.isColorSelection && alivePlayers.length > 0) {
                     this.inputHandler.enable();
                 }
 
                 if (!state.isColorSelection) {
                     this.colorPanX = 0;
                     this.colorPanY = 0;
-                    this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
+                    this.applyDynamicCameraFraming(state);
                 }
             })
         );
@@ -197,6 +241,7 @@ export class GameScene extends Phaser.Scene {
         if (!this.latestState) return;
 
         const state = this.latestState;
+        this.updateCameraCullMode(state);
 
         if (state.isColorSelection) {
             this.colorPanX += 0.5;
@@ -205,18 +250,30 @@ export class GameScene extends Phaser.Scene {
                 state.player.x + this.colorPanX,
                 state.player.y + this.colorPanY
             );
+            const nextZoom = Phaser.Math.Linear(this.cameras.main.zoom, this.cameraMaxZoom, this.cameraZoomLerp);
+            this.cameras.main.setZoom(nextZoom);
             this.gameRenderer.renderFrame(state);
             return;
         }
 
-        this.cameraFollowTarget.setPosition(state.player.x, state.player.y);
-        this.inputHandler.handleInput();
+        this.applyDynamicCameraFraming(state);
+        this.inputHandler.handleInput(state);
 
         if (!state.isPaused) {
             this.updateCursorWorldPoint();
         }
 
         this.gameRenderer.renderFrame(state);
+    }
+
+    private updateCameraCullMode(state: GameState): void {
+        const shouldDisableCull = state.isCoop;
+        if (this.cameraCullOverrideActive === shouldDisableCull) {
+            return;
+        }
+
+        this.cameraCullOverrideActive = shouldDisableCull;
+        this.cameras.main.disableCull = shouldDisableCull;
     }
 
     private updateCursorWorldPoint(): void {
@@ -227,6 +284,56 @@ export class GameScene extends Phaser.Scene {
 
     private lockInputAfterDeath(): void {
         this.inputHandler.disable();
+    }
+
+    private applyDynamicCameraFraming(state: GameState): void {
+        const framing = this.getDynamicCameraFraming(state);
+        this.cameraFollowTarget.setPosition(framing.x, framing.y);
+        const nextZoom = Phaser.Math.Linear(this.cameras.main.zoom, framing.zoom, this.cameraZoomLerp);
+        this.cameras.main.setZoom(nextZoom);
+    }
+
+    private getDynamicCameraFraming(state: GameState): { x: number; y: number; zoom: number } {
+        const alivePlayers = state.players.filter((player) => !player.isDead);
+        if (alivePlayers.length === 0) {
+            return { x: state.player.x, y: state.player.y, zoom: this.cameraMaxZoom };
+        }
+
+        let minX = alivePlayers[0].x;
+        let maxX = alivePlayers[0].x;
+        let minY = alivePlayers[0].y;
+        let maxY = alivePlayers[0].y;
+
+        for (let i = 1; i < alivePlayers.length; i++) {
+            const player = alivePlayers[i];
+            minX = Math.min(minX, player.x);
+            maxX = Math.max(maxX, player.x);
+            minY = Math.min(minY, player.y);
+            maxY = Math.max(maxY, player.y);
+        }
+
+        const focusX = (minX + maxX) / 2;
+        const focusY = (minY + maxY) / 2;
+
+        const spreadX = Math.max(0, maxX - minX);
+        const spreadY = Math.max(0, maxY - minY);
+        const viewportWidth = Math.max(1, this.scale.width);
+        const viewportHeight = Math.max(1, this.scale.height);
+        const widthWithPadding = Math.max(1, spreadX + (this.cameraFramingPadding * 2));
+        const heightWithPadding = Math.max(1, spreadY + (this.cameraFramingPadding * 2));
+
+        const zoomByWidth = viewportWidth / widthWithPadding;
+        const zoomByHeight = viewportHeight / heightWithPadding;
+        const desiredZoom = alivePlayers.length === 1
+            ? this.cameraMaxZoom
+            : Math.min(zoomByWidth, zoomByHeight, this.cameraMaxZoom);
+        const clampedZoom = Phaser.Math.Clamp(desiredZoom, this.cameraMinZoom, this.cameraMaxZoom);
+
+        return {
+            x: focusX,
+            y: focusY,
+            zoom: clampedZoom,
+        };
     }
 
     private startBackgroundMusic(): void {
@@ -283,7 +390,12 @@ export class GameScene extends Phaser.Scene {
 
     private cleanupListeners(): void {
         this.cameras.main.stopFollow();
+        if (this.hudCamera) {
+            this.hudCamera.destroy();
+            this.hudCamera = null;
+        }
         this.gameRenderer.destroy();
+        this.inputHandler.destroy();
 
         if (this.bgm) {
             this.bgm.stop();

@@ -40,6 +40,7 @@ export const GameEvents = {
     START_RUN_WITH_COLOR: 'start_run_with_color',
     AUTO_FIRE_TOGGLED: 'auto_fire_toggled',
     AUTO_SPIN_TOGGLED: 'auto_spin_toggled',
+    RUN_CONFIG_CHANGED: 'run_config_changed',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

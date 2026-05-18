@@ -124,6 +124,14 @@ export class Anomaly extends HostileEntity {
     }
 
     private static selectAbilities(count: number): AnomalyAbility[] {
+        if (count <= 0) {
+            return [];
+        }
+
+        if (count === 1) {
+            return [new DashAbility()];
+        }
+
         const selected: AnomalyAbility[] = [];
         const selectedCtors = new Set<new () => AnomalyAbility>();
         const available = ABILITY_POOL.map(e => ({ ...e }));

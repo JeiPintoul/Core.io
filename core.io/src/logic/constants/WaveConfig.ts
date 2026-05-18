@@ -18,7 +18,7 @@ export const ANOMALY_COOLDOWN_WAVES = 3;
 
 export const BOSS_WAVE_RULES: readonly BossWaveRule[] = [
     {
-        wave: 1,
+        wave: 5,
         bossKind: 'DREADNOUGHT'
     }
 ];

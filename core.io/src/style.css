@@ -478,6 +478,64 @@ body {
   box-shadow: 0 0 10px rgba(68, 136, 255, 0.8);
 }
 
+#menu-options {
+  width: min(420px, 84vw);
+  margin-bottom: clamp(0.7rem, 1.4vh, 1.2rem);
+  display: grid;
+  gap: 8px;
+}
+
+.menu-option-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid rgba(140, 186, 255, 0.28);
+  border-radius: 8px;
+  background: rgba(7, 12, 27, 0.66);
+}
+
+.menu-option-row.is-hidden {
+  display: none;
+}
+
+.menu-option-row label {
+  min-width: 70px;
+  color: var(--hud-accent-strong);
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.7px;
+  font-weight: 700;
+}
+
+.menu-option-row select,
+.menu-option-row input {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid rgba(140, 186, 255, 0.35);
+  border-radius: 6px;
+  background: rgba(12, 18, 34, 0.92);
+  color: #ffffff;
+  padding: 7px 9px;
+  font-size: 0.9rem;
+}
+
+.menu-option-row select:focus,
+.menu-option-row input:focus {
+  outline: none;
+  border-color: #66a3ff;
+  box-shadow: 0 0 8px rgba(68, 136, 255, 0.6);
+}
+
+#menu-control-slots-hint {
+  width: min(420px, 84vw);
+  margin: -2px 0 clamp(0.7rem, 1.4vh, 1.2rem);
+  font-size: 0.74rem;
+  color: rgba(180, 214, 255, 0.82);
+  letter-spacing: 0.4px;
+  text-align: left;
+}
+
 #btn-jogar {
   padding: clamp(10px, 1.4vh, 15px) clamp(26px, 4.5vw, 60px);
   font-size: clamp(1rem, 1.9vh, 2rem);
@@ -1180,6 +1238,12 @@ body {
   pointer-events: none;
 }
 
+.color-card.is-primary-selected {
+  border-color: #7fd6ff;
+  box-shadow: 0 0 24px rgba(127, 214, 255, 0.55), 0 14px 28px rgba(0, 0, 0, 0.46);
+  transform: translateY(-6px) scale(1.03);
+}
+
 .color-card-frame {
   position: relative;
   width: clamp(72px, 9vw, 108px);
@@ -1381,4 +1445,104 @@ body {
   12%  { opacity: 1; transform: translateX(-50%) translateY(0); }
   75%  { opacity: 1; }
   100% { opacity: 0; transform: translateX(-50%) translateY(-4px); }
+}
+
+/* UI polish and controller focus states */
+
+#menu-inicial {
+  background:
+    radial-gradient(circle at 18% 12%, rgba(66, 116, 230, 0.2), transparent 38%),
+    radial-gradient(circle at 88% 78%, rgba(40, 84, 176, 0.18), transparent 42%),
+    rgba(10, 16, 34, 0.82);
+  backdrop-filter: blur(5px);
+}
+
+#menu-inicial h1 {
+  margin-bottom: clamp(0.35rem, 1.2vh, 0.8rem);
+  text-shadow: 0 0 18px rgba(68, 136, 255, 0.72);
+}
+
+#menu-subtitle {
+  width: min(540px, 88vw);
+  margin-bottom: clamp(0.75rem, 1.8vh, 1.3rem);
+  text-align: center;
+  color: rgba(203, 226, 255, 0.92);
+  letter-spacing: 0.35px;
+  line-height: 1.35;
+  font-size: clamp(0.78rem, 1.45vh, 1rem);
+}
+
+#menu-options {
+  padding: 10px;
+  border: 1px solid rgba(137, 184, 255, 0.26);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(8, 14, 31, 0.8), rgba(8, 13, 29, 0.64));
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.menu-option-row {
+  transition: border-color 140ms ease, box-shadow 140ms ease, transform 140ms ease;
+}
+
+.menu-option-row:hover {
+  border-color: rgba(140, 186, 255, 0.5);
+}
+
+.menu-option-row.is-gamepad-focused {
+  border-color: rgba(153, 205, 255, 0.85);
+  box-shadow: 0 0 0 1px rgba(153, 205, 255, 0.3), 0 0 18px rgba(68, 136, 255, 0.35);
+  transform: translateY(-1px);
+}
+
+#menu-control-slots-hint {
+  margin: -2px 0 4px;
+}
+
+#menu-gamepad-help {
+  width: min(420px, 84vw);
+  margin: 0 0 clamp(0.7rem, 1.4vh, 1.2rem);
+  font-size: 0.75rem;
+  color: rgba(202, 228, 255, 0.9);
+  letter-spacing: 0.35px;
+  text-align: left;
+}
+
+#btn-jogar.is-gamepad-focused,
+#btn-menu-home.is-gamepad-focused {
+  border-color: rgba(170, 220, 255, 0.95);
+  box-shadow: 0 0 0 1px rgba(170, 220, 255, 0.45), 0 0 22px rgba(82, 153, 255, 0.52);
+}
+
+#pause-menu > button.is-gamepad-focused,
+#pause-menu #pause-audio-panel button.is-gamepad-focused,
+#pause-menu #pause-audio-panel input.is-gamepad-focused {
+  border-color: rgba(178, 228, 255, 0.96);
+  box-shadow: 0 0 0 2px rgba(178, 228, 255, 0.3), 0 0 22px rgba(92, 170, 255, 0.58);
+  transform: translateY(-1px);
+}
+
+#pause-menu #pause-audio-panel input.is-gamepad-focused {
+  accent-color: #8ed4ff;
+}
+
+.upgrade-card.is-gamepad-selected {
+  transform: translateY(-6px) scale(1.02);
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 38%);
+  box-shadow:
+    0 0 0 2px rgba(173, 219, 255, 0.45),
+    0 20px 34px rgba(0, 0, 0, 0.5),
+    0 0 32px color-mix(in srgb, var(--upgrade-card-color), transparent 52%);
+}
+
+.color-selection-hint {
+  margin-top: -8px;
+  font-size: clamp(0.7rem, 0.95vw, 0.84rem);
+  letter-spacing: 0.5px;
+  color: rgba(196, 224, 255, 0.9);
+}
+
+.color-card.is-gamepad-selected {
+  border-color: rgba(156, 218, 255, 0.92);
+  box-shadow: 0 0 0 1px rgba(156, 218, 255, 0.45), 0 0 26px rgba(76, 152, 255, 0.45);
+  transform: translateY(-6px) scale(1.03);
 }
