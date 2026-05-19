@@ -1,4 +1,5 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../shared/EventBus';
+import { normalizeColorHex } from '../shared/ColorUtils';
 import {
     PLAYER_IDS,
     type CardSelectedPayload,
@@ -42,101 +43,13 @@ import {
     getRandomWaveType,
     getWaveMilestone
 } from './constants/WaveConfig';
-
-const PLAYER_DEFAULT_COLORS: Record<PlayerId, number> = {
-    player_1: 0x4488ff,
-    player_2: 0x55ffaa,
-    player_3: 0xffcc00,
-    player_4: 0xff77aa,
-};
-
-const PLAYER_DEFAULT_COLOR_HEX: Record<PlayerId, string> = {
-    player_1: '#4488ff',
-    player_2: '#55ffaa',
-    player_3: '#ffcc00',
-    player_4: '#ff77aa',
-};
-
-interface DifficultyProfile {
-    enemyStatScale: number;
-    spawnScale: number;
-    activeEnemyScale: number;
-    bossMaxHealthScale: number;
-    bossHealthRegenScale: number;
-    bossBodyDamageScale: number;
-    bossBulletSpeedScale: number;
-    bossBulletPenetrationScale: number;
-    bossBulletDamageScale: number;
-    bossReloadBonus: number;
-    bossMovementSpeedScale: number;
-}
-
-const DIFFICULTY_PROFILE_BY_PLAYER_COUNT: Record<1 | 2 | 3 | 4, DifficultyProfile> = {
-    1: {
-        enemyStatScale: 1,
-        spawnScale: 1,
-        activeEnemyScale: 1,
-        bossMaxHealthScale: 1,
-        bossHealthRegenScale: 1,
-        bossBodyDamageScale: 1,
-        bossBulletSpeedScale: 1,
-        bossBulletPenetrationScale: 1,
-        bossBulletDamageScale: 1,
-        bossReloadBonus: 0,
-        bossMovementSpeedScale: 1,
-    },
-    2: {
-        enemyStatScale: 1.2,
-        spawnScale: 1.34,
-        activeEnemyScale: 1.28,
-        bossMaxHealthScale: 1.3,
-        bossHealthRegenScale: 1.13,
-        bossBodyDamageScale: 1.16,
-        bossBulletSpeedScale: 1.04,
-        bossBulletPenetrationScale: 1.08,
-        bossBulletDamageScale: 1.18,
-        bossReloadBonus: 0.8,
-        bossMovementSpeedScale: 1.04,
-    },
-    3: {
-        enemyStatScale: 1.34,
-        spawnScale: 1.62,
-        activeEnemyScale: 1.5,
-        bossMaxHealthScale: 1.56,
-        bossHealthRegenScale: 1.24,
-        bossBodyDamageScale: 1.3,
-        bossBulletSpeedScale: 1.08,
-        bossBulletPenetrationScale: 1.14,
-        bossBulletDamageScale: 1.34,
-        bossReloadBonus: 1.6,
-        bossMovementSpeedScale: 1.08,
-    },
-    4: {
-        enemyStatScale: 1.46,
-        spawnScale: 1.86,
-        activeEnemyScale: 1.68,
-        bossMaxHealthScale: 1.78,
-        bossHealthRegenScale: 1.33,
-        bossBodyDamageScale: 1.42,
-        bossBulletSpeedScale: 1.12,
-        bossBulletPenetrationScale: 1.2,
-        bossBulletDamageScale: 1.48,
-        bossReloadBonus: 2.3,
-        bossMovementSpeedScale: 1.12,
-    },
-};
-
-const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
-    playerCount: 1,
-    players: {
-        player_1: { name: 'Jogador', control: 'KEYBOARD' },
-        player_2: { name: 'Jogador 2', control: 'GAMEPAD' },
-        player_3: { name: 'Jogador 3', control: 'GAMEPAD' },
-        player_4: { name: 'Jogador 4', control: 'GAMEPAD' },
-    }
-};
-
-// use BossKind type from WaveConfig import
+import {
+    DEFAULT_RUN_CONFIGURATION,
+    PLAYER_DEFAULT_COLOR_HEX,
+    PLAYER_DEFAULT_COLORS,
+    getDifficultyProfile,
+    type DifficultyProfile
+} from './constants/GameBalance';
 
 enum EngineState {
     COLOR_SELECTION = 'COLOR_SELECTION',
@@ -148,15 +61,6 @@ enum EngineState {
 }
 
 export class GameEngine {
-    private static readonly FIXED_DREADNOUGHT_WAVE = 5;
-
-    private static readonly ENEMY_REGISTRY: Partial<Record<EnemyType, new (id: string, x: number, y: number, multiplier: number) => HostileEntity>> = {
-        RANGED: RangedEnemy,
-        SENTINEL: SentinelEnemy,
-        SKIRMISHER: SkirmisherEnemy,
-        BRUTE: BruteEnemy,
-    };
-
     private player: Player;
     private readonly additionalPlayers = new Map<PlayerId, Player>();
     private enemies: HostileEntity[];
@@ -179,6 +83,7 @@ export class GameEngine {
     private enemyIdCounter = 0;
     private isRunning = false;
     private isPaused = false;
+    private pauseStartedAtMs = 0;
     private animationFrameRequestId: number | null = null;
     private readonly maxFrameDeltaSeconds = 0.05;
     private readonly eventUnsubscribers: Array<() => void> = [];
@@ -388,19 +293,6 @@ export class GameEngine {
         return PLAYER_DEFAULT_COLOR_HEX[playerId] ?? PLAYER_DEFAULT_COLOR_HEX.player_1;
     }
 
-    private normalizeColorHex(value: string | undefined, fallbackHex: string): string {
-        if (typeof value !== 'string') {
-            return fallbackHex;
-        }
-
-        const trimmed = value.trim();
-        if (!/^#?[0-9a-fA-F]{6}$/.test(trimmed)) {
-            return fallbackHex;
-        }
-
-        return trimmed.startsWith('#') ? trimmed.toLowerCase() : `#${trimmed.toLowerCase()}`;
-    }
-
     private getNearestAlivePlayer(x: number, y: number): Player | null {
         const alivePlayers = this.getPlayers().filter((player) => player.health > 0);
         if (alivePlayers.length === 0) {
@@ -510,10 +402,31 @@ export class GameEngine {
         this.isPaused = !this.isPaused;
 
         if (!this.isPaused) {
-            this.lastTick = performance.now();
+            const now = performance.now();
+            this.shiftPausedTimers(now - this.pauseStartedAtMs);
+            this.pauseStartedAtMs = 0;
+            this.lastTick = now;
+        } else {
+            this.pauseStartedAtMs = performance.now();
         }
 
         return this.isPaused;
+    }
+
+    private shiftPausedTimers(pausedDurationMs: number): void {
+        if (pausedDurationMs <= 0) {
+            return;
+        }
+
+        this.lastSpawnTime += pausedDurationMs;
+        this.surviveWaveEndsAtMs = this.shiftFutureTimestamp(this.surviveWaveEndsAtMs, pausedDurationMs);
+        this.waveClearAnimationEndsAtMs = this.shiftFutureTimestamp(this.waveClearAnimationEndsAtMs, pausedDurationMs);
+        this.waveStartingAnimationEndsAtMs = this.shiftFutureTimestamp(this.waveStartingAnimationEndsAtMs, pausedDurationMs);
+        this.missionManager.shiftActiveObjectiveTime(pausedDurationMs);
+    }
+
+    private shiftFutureTimestamp(timestampMs: number, offsetMs: number): number {
+        return timestampMs > 0 ? timestampMs + offsetMs : timestampMs;
     }
 
     public reset(playerName: string = 'Jogador', runConfiguration?: RunConfiguration): void {
@@ -572,6 +485,7 @@ export class GameEngine {
         this.projectileIdCounter = 0;
         this.enemyIdCounter = 0;
         this.isPaused = false;
+        this.pauseStartedAtMs = 0;
 
         this.engineState = EngineState.COLOR_SELECTION;
         this.currentWave = 1;
@@ -611,8 +525,7 @@ export class GameEngine {
         }
 
         if (this.isPaused) {
-            this.lastTick = currentTimeMs;
-            this.emitStateUpdate();
+            this.emitStateUpdate(this.pauseStartedAtMs);
             this.scheduleNextTick();
             return;
         }
@@ -622,7 +535,7 @@ export class GameEngine {
         this.lastTick = currentTimeMs;
 
         this.update(dt, currentTimeMs);
-        this.emitStateUpdate();
+        this.emitStateUpdate(currentTimeMs);
 
         this.scheduleNextTick();
     };
@@ -632,7 +545,7 @@ export class GameEngine {
         for (const player of this.getPlayers()) {
             const playerId = player.id as PlayerId;
             const fallbackColorHex = this.getDefaultPlayerColorHex(playerId);
-            const selectedColorHex = this.normalizeColorHex(playerColors[playerId], fallbackColorHex);
+            const selectedColorHex = normalizeColorHex(playerColors[playerId], fallbackColorHex);
             player.setPrimaryColorBuff(selectedColorHex);
             player.applyUpgradeColor(selectedColorHex);
         }
@@ -713,7 +626,7 @@ export class GameEngine {
         this.advanceWaveState(currentTime);
     }
 
-    private emitStateUpdate(): void {
+    private emitStateUpdate(currentTimeMs: number = this.lastTick): void {
         const playersData = this.getPlayers().map((player) => ({
             id: player.id,
             x: player.x,
@@ -748,7 +661,7 @@ export class GameEngine {
             waveType: this.currentWaveType,
             remainingToKill: this.getRemainingToKill(),
             activeEnemyCount: this.enemies.length,
-            surviveTimeRemainingSeconds: this.getSurviveTimeRemaining(this.lastTick),
+            surviveTimeRemainingSeconds: this.getSurviveTimeRemaining(currentTimeMs),
             isPaused: this.isPaused,
             objective: this.missionManager.getObjectiveState(),
             isColorSelection: this.engineState === EngineState.COLOR_SELECTION,
@@ -946,9 +859,9 @@ export class GameEngine {
             case 'ANOMALY_DECOY':
                 return new AnomalyDecoy(id, x, y, orbitSlot, orbitTotal, orbitRadius);
             case 'ANOMALY':
-                return new Anomaly(id, x, y, this.buildBossReferenceStats(), Math.max(1, Math.round(multiplier)));
+                return new Anomaly(id, x, y, this.buildAnomalyReferenceStats(), Math.max(1, Math.round(multiplier)));
             case 'DREADNOUGHT':
-                return new DreadnoughtBoss(id, x, y, this.buildBossReferenceStats(), Math.max(1, Math.round(multiplier)));
+                return new DreadnoughtBoss(id, x, y, Math.max(1, Math.round(multiplier)));
             default:
                 return new Enemy(id, x, y, multiplier);
         }
@@ -985,8 +898,7 @@ export class GameEngine {
     }
 
     private getDifficultyProfile(): DifficultyProfile {
-        const playerCount = Math.max(1, Math.min(4, this.getPlayers().length)) as 1 | 2 | 3 | 4;
-        return DIFFICULTY_PROFILE_BY_PLAYER_COUNT[playerCount];
+        return getDifficultyProfile(this.getPlayers().length);
     }
 
     private getDifficultyEnemyStatScale(): number {
@@ -1446,7 +1358,7 @@ export class GameEngine {
         this.enterBossFight(rule.bossKind, currentTime);
     }
 
-    private buildBossReferenceStats(): EntityStats {
+    private buildAnomalyReferenceStats(): EntityStats {
         const base = this.player.currentStats;
         const profile = this.getDifficultyProfile();
         if (profile.bossMaxHealthScale === 1) {
@@ -1482,10 +1394,9 @@ export class GameEngine {
 
         const spawnX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
         const spawnY = this.BOSS_ARENA.y + 220;
-        const bossReferenceStats = this.buildBossReferenceStats();
         const boss = kind === 'ANOMALY'
-            ? new Anomaly('anomaly_boss', spawnX, spawnY, bossReferenceStats, this.anomalySpawnCount)
-            : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, bossReferenceStats, this.anomalySpawnCount);
+            ? new Anomaly('anomaly_boss', spawnX, spawnY, this.buildAnomalyReferenceStats(), this.anomalySpawnCount)
+            : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, this.bossEncounterCount);
 
         this.enemies = [boss];
         this.engineState = EngineState.BOSS_FIGHT;
@@ -1652,12 +1563,7 @@ export class GameEngine {
             return;
         }
 
-        this.player.applyStatModifiers(selectedCard.modifiers);
-        this.player.applyUpgradeColorBuff(selection.colorHex);
-        this.player.applyUpgradeColor(selection.colorHex);
-        this.player.consumePendingUpgrade();
-        this.syncPlayerCoreStats(this.player);
-        const colorHex = this.normalizeColorHex(selection.colorHex, '#4488ff');
+        const colorHex = normalizeColorHex(selection.colorHex, '#4488ff');
 
         activePlayer.applyStatModifiers(selectedCard.modifiers);
         activePlayer.applyUpgradeColorBuff(colorHex);

@@ -1,7 +1,8 @@
 import Phaser from 'phaser';
 import type { EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
-import { COLORS, ARENA, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
+import { COLORS, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
+import { MinimapRenderer } from './MinimapRenderer';
 import { ParticleManager } from './ParticleManager';
 import { darkenColor } from './RenderUtils';
 
@@ -17,6 +18,7 @@ interface EntityRenderSnapshot {
 
 export class GameRenderer {
     private healthBarRenderer: HealthBarRenderer;
+    private minimapRenderer: MinimapRenderer;
     private particleManager: ParticleManager;
     private readonly entitySnapshots = new Map<string, EntityRenderSnapshot>();
     private currentPlayerId: string | null = null;
@@ -28,11 +30,6 @@ export class GameRenderer {
     private readonly enemyRecoilTweens = new Map<string, Phaser.Tweens.Tween>();
     private playerRecoilTween: Phaser.Tweens.Tween | null = null;
 
-    private readonly minimapBackground = 0x060b1f;
-    private readonly minimapBorder = 0x9cc8ff;
-    private readonly minimapGrid = 0x38517c;
-    private readonly minimapViewport = 0xd5e9ff;
-    private readonly minimapPlayerDot = 0xffffff;
     private readonly dreadnoughtProjectileCore = 0xf8e9ff;
     private readonly dreadnoughtProjectileAura = 0xbb7bff;
     private readonly dreadnoughtProjectileRing = 0x5d2ea1;
@@ -56,6 +53,7 @@ export class GameRenderer {
         private gfxHud: Phaser.GameObjects.Graphics
     ) {
         this.healthBarRenderer = new HealthBarRenderer(scene, gfxGame);
+        this.minimapRenderer = new MinimapRenderer(scene, camera, gfxHud);
         this.particleManager = new ParticleManager(scene);
     }
 
@@ -78,7 +76,7 @@ export class GameRenderer {
         this.drawEnemies(state, activeEntityIds);
         this.drawPlayers(players, activeEntityIds);
         this.updatePlayerNames(players);
-        this.drawMinimap(players);
+        this.minimapRenderer.draw(players);
         this.pruneEnemyBarrelRetraction(activeEntityIds);
 
         this.healthBarRenderer.pruneWorldHealthBars(activeEntityIds);
@@ -702,114 +700,6 @@ export class GameRenderer {
         }
 
         text.setVisible(false);
-    }
-
-    private getMinimapMetrics(): { size: number; padding: number } {
-        const h = this.scene.scale.displaySize.height;
-        if (h <= 900) return { size: 148, padding: 18 };
-        if (h <= 1120) return { size: 168, padding: 22 };
-        return { size: 192, padding: 28 };
-    }
-
-    private drawMinimap(players: GameState['players']): void {
-        const metrics = this.getMinimapMetrics();
-        const mapSize = metrics.size;
-        const x = this.camera.width - mapSize - metrics.padding;
-        const y = this.camera.height - mapSize - metrics.padding;
-        const frameInset = 8;
-        const borderWidth = 2;
-        const gridWidth = 1;
-        const dotRadiusPrimary = 4.8;
-        const dotRadiusSecondary = 4.1;
-        const cornerTick = 16;
-        const cornerOffset = 5;
-
-        this.gfxHud.fillStyle(this.minimapBackground, 0.8);
-        this.gfxHud.fillRoundedRect(
-            x - frameInset,
-            y - frameInset,
-            mapSize + (frameInset * 2),
-            mapSize + (frameInset * 2),
-            8
-        );
-
-        this.gfxHud.fillStyle(0x0f1b44, 0.98);
-        this.gfxHud.fillRoundedRect(x, y, mapSize, mapSize, 5);
-
-        this.gfxHud.lineStyle(borderWidth, this.minimapBorder, 0.95);
-        this.gfxHud.strokeRect(x, y, mapSize, mapSize);
-
-        this.gfxHud.lineStyle(gridWidth, this.minimapGrid, 0.42);
-        const split1 = mapSize / 4;
-        const split2 = split1 * 2;
-        const split3 = split1 * 3;
-        this.gfxHud.beginPath();
-        this.gfxHud.moveTo(x + split1, y);
-        this.gfxHud.lineTo(x + split1, y + mapSize);
-        this.gfxHud.moveTo(x + split2, y);
-        this.gfxHud.lineTo(x + split2, y + mapSize);
-        this.gfxHud.moveTo(x + split3, y);
-        this.gfxHud.lineTo(x + split3, y + mapSize);
-        this.gfxHud.moveTo(x, y + split1);
-        this.gfxHud.lineTo(x + mapSize, y + split1);
-        this.gfxHud.moveTo(x, y + split2);
-        this.gfxHud.lineTo(x + mapSize, y + split2);
-        this.gfxHud.moveTo(x, y + split3);
-        this.gfxHud.lineTo(x + mapSize, y + split3);
-        this.gfxHud.strokePath();
-
-        this.gfxHud.lineStyle(borderWidth, this.minimapBorder, 0.75);
-        this.gfxHud.beginPath();
-        this.gfxHud.moveTo(x + cornerOffset, y + cornerOffset);
-        this.gfxHud.lineTo(x + cornerOffset + cornerTick, y + cornerOffset);
-        this.gfxHud.moveTo(x + cornerOffset, y + cornerOffset);
-        this.gfxHud.lineTo(x + cornerOffset, y + cornerOffset + cornerTick);
-        this.gfxHud.moveTo(x + mapSize - cornerOffset, y + cornerOffset);
-        this.gfxHud.lineTo(x + mapSize - cornerOffset - cornerTick, y + cornerOffset);
-        this.gfxHud.moveTo(x + mapSize - cornerOffset, y + cornerOffset);
-        this.gfxHud.lineTo(x + mapSize - cornerOffset, y + cornerOffset + cornerTick);
-        this.gfxHud.moveTo(x + cornerOffset, y + mapSize - cornerOffset);
-        this.gfxHud.lineTo(x + cornerOffset + cornerTick, y + mapSize - cornerOffset);
-        this.gfxHud.moveTo(x + cornerOffset, y + mapSize - cornerOffset);
-        this.gfxHud.lineTo(x + cornerOffset, y + mapSize - cornerOffset - cornerTick);
-        this.gfxHud.moveTo(x + mapSize - cornerOffset, y + mapSize - cornerOffset);
-        this.gfxHud.lineTo(x + mapSize - cornerOffset - cornerTick, y + mapSize - cornerOffset);
-        this.gfxHud.moveTo(x + mapSize - cornerOffset, y + mapSize - cornerOffset);
-        this.gfxHud.lineTo(x + mapSize - cornerOffset, y + mapSize - cornerOffset - cornerTick);
-        this.gfxHud.strokePath();
-
-        const worldView = this.camera.worldView;
-        const viewLeftRatio = Phaser.Math.Clamp(worldView.left / ARENA.width, 0, 1);
-        const viewTopRatio = Phaser.Math.Clamp(worldView.top / ARENA.height, 0, 1);
-        const viewRightRatio = Phaser.Math.Clamp(worldView.right / ARENA.width, 0, 1);
-        const viewBottomRatio = Phaser.Math.Clamp(worldView.bottom / ARENA.height, 0, 1);
-        const viewX = x + (viewLeftRatio * mapSize);
-        const viewY = y + (viewTopRatio * mapSize);
-        const viewWidth = Math.max(10, (viewRightRatio - viewLeftRatio) * mapSize);
-        const viewHeight = Math.max(10, (viewBottomRatio - viewTopRatio) * mapSize);
-        this.gfxHud.fillStyle(this.minimapViewport, 0.1);
-        this.gfxHud.fillRect(viewX, viewY, viewWidth, viewHeight);
-        this.gfxHud.lineStyle(1.2, this.minimapViewport, 0.72);
-        this.gfxHud.strokeRect(viewX, viewY, viewWidth, viewHeight);
-
-        for (const [index, player] of players.entries()) {
-            if (player.isDead) {
-                continue;
-            }
-
-            const mapX = Phaser.Math.Clamp(player.x, 0, ARENA.width);
-            const mapY = Phaser.Math.Clamp(player.y, 0, ARENA.height);
-            const dotX = x + (mapX / ARENA.width) * mapSize;
-            const dotY = y + (mapY / ARENA.height) * mapSize;
-            const isPrimaryPlayer = index === 0;
-            const dotRadius = isPrimaryPlayer ? dotRadiusPrimary : dotRadiusSecondary;
-
-            const dotColor = player.color ?? this.minimapPlayerDot;
-            this.gfxHud.fillStyle(dotColor, 1);
-            this.gfxHud.fillCircle(dotX, dotY, dotRadius);
-            this.gfxHud.lineStyle(1.1, this.minimapBorder, 0.76);
-            this.gfxHud.strokeCircle(dotX, dotY, dotRadius + 0.8);
-        }
     }
 
     private isInCameraView(x: number, y: number, radius: number, padding = 0): boolean {

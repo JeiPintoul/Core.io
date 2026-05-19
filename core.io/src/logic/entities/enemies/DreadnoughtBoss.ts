@@ -23,24 +23,25 @@ export class DreadnoughtBoss extends HostileEntity {
     private lastDashAtMs = -Infinity;
     private strafeDirection: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
 
-    constructor(id: string, x: number, y: number, playerStats: EntityStats, bossCount: number) {
-        const waveScale = 1 + Math.max(0, bossCount - 1) * 0.14;
+    constructor(id: string, x: number, y: number, bossCount: number) {
+        const encounterCount = Math.max(1, bossCount);
+        const encounterScale = 1 + (encounterCount - 1) * 0.14;
 
         const stats: EntityStats = {
-            maxHealth: Math.max(1800, playerStats.maxHealth * 6.4 * waveScale),
-            healthRegen: Math.max(2, playerStats.healthRegen * 0.9 + bossCount * 0.35),
-            bodyDamage: Math.max(22, playerStats.bodyDamage * 2.2),
-            bulletSpeed: Math.max(380, playerStats.bulletSpeed * 0.92),
-            bulletPenetration: Math.max(2.2, playerStats.bulletPenetration * 0.82 + 1),
-            bulletDamage: Math.max(20, playerStats.bulletDamage * 1.9),
-            reloadPoints: Math.max(2, Math.floor(playerStats.reloadPoints * 0.75) + 2),
-            movementSpeed: Math.max(100, playerStats.movementSpeed * 0.74)
+            maxHealth: 1800 * encounterScale,
+            healthRegen: 2 + (encounterCount - 1) * 0.35,
+            bodyDamage: 22 * encounterScale,
+            bulletSpeed: 380,
+            bulletPenetration: 2.2 + (encounterCount - 1) * 0.12,
+            bulletDamage: 20 * encounterScale,
+            reloadPoints: 2 + (encounterCount - 1) * 0.25,
+            movementSpeed: 100
         };
 
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed, 52);
         this.stats = stats;
         this.damage = stats.bodyDamage;
-        this.xpDrop = DreadnoughtBoss.BASE_XP_DROP + Math.round((bossCount - 1) * 80);
+        this.xpDrop = DreadnoughtBoss.BASE_XP_DROP + Math.round((encounterCount - 1) * 80);
         this.applyPhaseLoadout(1);
     }
 

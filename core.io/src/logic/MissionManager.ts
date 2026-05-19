@@ -102,6 +102,14 @@ export class MissionManager {
         this.current = null;
     }
 
+    public shiftActiveObjectiveTime(offsetMs: number): void {
+        if (!this.current || offsetMs <= 0) {
+            return;
+        }
+
+        this.current.createdAtMs += offsetMs;
+    }
+
     private isEligible(mission: MissionDefinition, spawnQueue: EnemyType[], waveType: WaveType, milestone: WaveMilestone): boolean {
         switch (mission.kind) {
             case 'KILL_COUNT':

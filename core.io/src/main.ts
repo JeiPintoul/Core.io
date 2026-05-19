@@ -3,8 +3,16 @@ import { createIcons, Home, Volume2, VolumeX } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
+import {
+    MODIFIER_META,
+    RARITY_LABELS_PTBR,
+    formatModifierValue,
+    getUpgradeCardFlavor,
+    getUpgradeCardSymbol
+} from './client/hud/UpgradePresentation';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
-import { PLAYER_IDS, type CardRarity, type ControlPreference, type EntityStats, type PlayerCount, type PlayerId, type RunConfiguration, type UpgradeRollOption } from './shared/Types';
+import { normalizeColorHex } from './shared/ColorUtils';
+import { PLAYER_IDS, type ControlPreference, type EntityStats, type PlayerCount, type PlayerId, type RunConfiguration, type UpgradeRollOption } from './shared/Types';
 import { DEATH_ANIMATION_DURATION_MS } from './client/constants/GameConstants';
 
 console.log('Inicializando Core.io...');
@@ -73,6 +81,7 @@ let colorGamepadCardIndex = 0;
 let pauseMenuGamepadFocusIndex = 0;
 let activeUpgradeOptions: UpgradeRollOption[] = [];
 let gamepadUiPollFrameId: number | null = null;
+let activeRunPlayerColors: Partial<Record<PlayerId, string>> = {};
 
 type UiGamepadActionKey = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel' | 'pause';
 type UiGamepadActionState = Record<UiGamepadActionKey, boolean>;
@@ -94,80 +103,13 @@ const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
     }
 };
 let activeRunConfiguration: RunConfiguration = structuredClone(DEFAULT_RUN_CONFIGURATION);
-
-const RARITY_LABELS_PTBR: Record<CardRarity, string> = {
-    COMMON: 'COMUM',
-    UNCOMMON: 'INCOMUM',
-    RARE: 'RARO',
-    EPIC: 'EPICO',
-    LEGENDARY: 'LENDARIO'
+const DEFAULT_PLAYER_COLOR_HEX: Record<PlayerId, string> = {
+    player_1: '#4488ff',
+    player_2: '#55ffaa',
+    player_3: '#ffcc00',
+    player_4: '#ff77aa',
 };
 
-const MODIFIER_META: Record<keyof EntityStats, { label: string; icon: string; tone: 'offense' | 'defense' | 'mobility' | 'utility' }> = {
-    maxHealth: { label: 'Vida Max', icon: 'HP', tone: 'defense' },
-    healthRegen: { label: 'Regeneracao', icon: 'RG', tone: 'defense' },
-    bodyDamage: { label: 'Dano Corpo', icon: 'BD', tone: 'offense' },
-    bulletSpeed: { label: 'Vel. Tiro', icon: 'SP', tone: 'offense' },
-    bulletPenetration: { label: 'Penetracao', icon: 'PN', tone: 'offense' },
-    bulletDamage: { label: 'Dano Tiro', icon: 'DM', tone: 'offense' },
-    reloadPoints: { label: 'Recarga', icon: 'RL', tone: 'utility' },
-    movementSpeed: { label: 'Velocidade', icon: 'MV', tone: 'mobility' }
-};
-
-function getUpgradeCardSymbol(cardId: string): string {
-    const map: Record<string, string> = {
-        heavy_plating: 'HP',
-        lightweight_tracks: 'MV',
-        kinetic_ram: 'KR',
-        stability_gyros: 'GY',
-        rapid_reloader: 'RL',
-        tungsten_rounds: 'TR',
-        shield_matrix: 'SM',
-        burst_chamber: 'BC',
-        nanite_repair: 'NR',
-        vector_thrusters: 'VT',
-        phase_alloy: 'PA',
-        overclocked_core: 'OC',
-        helix_launcher: 'HX',
-        singularity_shells: 'SS',
-        apex_drive: 'AX'
-    };
-
-    return map[cardId] ?? 'UP';
-}
-
-function getUpgradeCardFlavor(cardId: string): string {
-    const map: Record<string, string> = {
-        heavy_plating: 'Camadas extras para segurar o caos da horda.',
-        lightweight_tracks: 'Atrito minimo para cortes agressivos no mapa.',
-        kinetic_ram: 'Impacto cinetico para furar linhas de inimigos.',
-        stability_gyros: 'Estabilizacao do canhao para tiros limpos e retos.',
-        rapid_reloader: 'Sequencia de disparo calibrada para ritmo brutal.',
-        shield_matrix: 'Camada reativa para segurar a frente sem recuar.',
-        burst_chamber: 'Pressurizacao extra para abrir sequencias curtas.',
-        tungsten_rounds: 'Municao densa que perfura formações compactas.',
-        nanite_repair: 'Nanitas de campo estabilizam sua estrutura.',
-        vector_thrusters: 'Microimpulsos para trocar de angulo instantaneamente.',
-        phase_alloy: 'Composto adaptativo para resistir em lutas longas.',
-        overclocked_core: 'Potencia extrema para pushes curtos e letais.',
-        helix_launcher: 'Matriz de tiro helicoidal para perfuracao pesada.',
-        singularity_shells: 'Projetis instaveis com inercia monstruosa.',
-        apex_drive: 'Nucleo em limite absoluto para explosao de dano.'
-    };
-
-    return map[cardId] ?? 'Modulo experimental para combates extremos.';
-}
-
-function formatModifierValue(stat: keyof EntityStats, value: number): string {
-    const sign = value >= 0 ? '+' : '';
-
-    if (stat === 'reloadPoints') {
-        return `${sign}${value.toFixed(1)} pts`;
-    }
-
-    const hasFraction = Math.abs(value % 1) > 0.001;
-    return `${sign}${value.toFixed(hasFraction ? 1 : 0)}`;
-}
 
 function setUiMode(nextMode: UiMode): void {
     const previousMode = uiMode;
@@ -508,6 +450,17 @@ function normalizePlayerName(rawName: string, fallbackName: string = 'Jogador'):
 
 function mapControlPreference(rawValue: string | null | undefined): ControlPreference {
     return rawValue === 'gamepad' ? 'GAMEPAD' : 'KEYBOARD';
+}
+
+function resolveRunPlayerColors(playerColors: Partial<Record<PlayerId, string>>): Partial<Record<PlayerId, string>> {
+    const resolvedColors: Partial<Record<PlayerId, string>> = {};
+    const activePlayerIds = PLAYER_IDS.slice(0, activeRunConfiguration.playerCount) as PlayerId[];
+
+    for (const playerId of activePlayerIds) {
+        resolvedColors[playerId] = normalizeColorHex(playerColors[playerId], DEFAULT_PLAYER_COLOR_HEX[playerId]);
+    }
+
+    return resolvedColors;
 }
 
 function mapPlayerCount(rawValue: string | null | undefined): PlayerCount {
@@ -1282,6 +1235,7 @@ if (btnJogar && menuInicial && tituloMenu) {
         const playerName = normalizePlayerName(playerNameInput?.value ?? '', 'Jogador');
         const runConfiguration = buildRunConfiguration(playerName);
         activeRunConfiguration = runConfiguration;
+        activeRunPlayerColors = {};
         emitGameEvent(GameEvents.RUN_CONFIG_CHANGED, runConfiguration);
         hudController.resetForNewRun();
         applyPauseUi(false);
@@ -1299,7 +1253,8 @@ if (btnJogar && menuInicial && tituloMenu) {
         setUiMode('COLOR_SELECTION');
     });
 
-    onGameEvent(GameEvents.START_RUN_WITH_COLOR, () => {
+    onGameEvent(GameEvents.START_RUN_WITH_COLOR, ({ playerColors }) => {
+        activeRunPlayerColors = resolveRunPlayerColors(playerColors);
         setUpgradeSelectionOwner(null);
         hudController.clearStatPreview();
         createIcons({ icons: { Home, Volume2, VolumeX } });
@@ -1428,7 +1383,7 @@ if (btnRestart) {
         emitGameEvent(GameEvents.RUN_CONFIG_CHANGED, activeRunConfiguration);
         engine.reset(activeRunConfiguration.players.player_1.name, activeRunConfiguration);
         engine.start();
-        engine.startGameWithColor({ player_1: '#4488ff' });
+        engine.startGameWithColor(activeRunPlayerColors);
         emitGameEvent(GameEvents.AUDIO_RESTART_REQUESTED, undefined);
         setUiMode('IN_GAME');
 
