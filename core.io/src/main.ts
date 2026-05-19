@@ -10,6 +10,7 @@ import {
     getUpgradeCardFlavor,
     getUpgradeCardSymbol
 } from './client/hud/UpgradePresentation';
+import { GodMode } from './debug/GodMode';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
 import { normalizeColorHex } from './shared/ColorUtils';
 import { PLAYER_IDS, type ControlPreference, type EntityStats, type PlayerCount, type PlayerId, type RunConfiguration, type UpgradeRollOption } from './shared/Types';
@@ -20,6 +21,7 @@ console.log('Inicializando Core.io...');
 const engine = new GameEngine();
 createPhaserGame();
 const hudController = new HudController();
+new GodMode(engine);
 
 type UiMode = 'INITIAL_MENU' | 'COLOR_SELECTION' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
 

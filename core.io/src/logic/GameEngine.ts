@@ -104,6 +104,8 @@ export class GameEngine {
     private activeBossWaveRule: BossWaveRule | null = null;
     private currentArena: { x: number; y: number; width: number; height: number };
     private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+    private debugGodModeInvincible = false;
+    private debugGodModeEnabled = false;
 
     private anomalySpawnCount = 0;
     private anomalyCurrentChance = ANOMALY_BASE_CHANCE;
@@ -392,6 +394,82 @@ export class GameEngine {
         }
 
         this.eventUnsubscribers.length = 0;
+    }
+
+    public toggleDebugGodMode(): boolean {
+        this.debugGodModeEnabled = !this.debugGodModeEnabled;
+        return this.debugGodModeEnabled;
+    }
+
+    public setDebugInvincibility(enabled: boolean): void {
+        this.debugGodModeInvincible = enabled;
+    }
+
+    public debugIsInvincible(): boolean {
+        return this.debugGodModeInvincible;
+    }
+
+    public debugHealPlayer(): void {
+        for (const player of this.getPlayers()) {
+            player.health = player.maxHealth;
+        }
+        this.emitStateUpdate();
+    }
+
+    public debugGrantRandomCard(): void {
+        for (const player of this.getPlayers()) {
+            const options = this.upgradeManager.rollUpgradeOptions(player.level);
+            const option = options[Math.floor(Math.random() * options.length)];
+            player.applyStatModifiers(option.card.modifiers);
+            player.applyUpgradeColorBuff(option.colorHex);
+            player.applyUpgradeColor(option.colorHex);
+            this.syncPlayerCoreStats(player);
+        }
+        this.emitStateUpdate();
+    }
+
+    public debugForceAdvanceWave(): void {
+        const now = performance.now();
+
+        if (this.engineState === EngineState.BOSS_FIGHT) {
+            this.enemies = [];
+            this.endBossFight(now);
+            return;
+        }
+
+        this.enemies = [];
+        this.spawnQueue = [];
+        this.enemiesKilledThisWave = this.getCurrentWaveTotalToSpawn();
+        this.triggerWaveClear(now);
+    }
+
+    public debugSpawnEnemy(): void {
+        const milestone = getWaveMilestone(this.currentWave);
+        const enemyType = this.rollEnemyType(milestone.enemyWeights);
+        this.spawnEnemy(enemyType);
+    }
+
+    public debugSpawnBoss(): void {
+        if (this.isBossFightActive) {
+            return;
+        }
+
+        this.enterBossFight(this.rollBossKind(), performance.now());
+    }
+
+    public debugLevelUpPlayer(): void {
+        for (const player of this.getPlayers()) {
+            player.level += 1;
+            player.pendingUpgrades += 1;
+            player.xpToNextLevel = Math.floor(player.xpToNextLevel * 1.25);
+        }
+
+        emitGameEvent(GameEvents.LEVEL_UP, { newLevel: this.player.level });
+        emitGameEvent(GameEvents.XP_UPDATE, {
+            currentXp: this.player.currentXp,
+            requires: this.player.xpToNextLevel
+        });
+        this.emitStateUpdate();
     }
 
     public togglePause(): boolean {
@@ -1069,6 +1147,11 @@ export class GameEngine {
                         continue;
                     }
 
+                    if (this.debugGodModeInvincible) {
+                        this.destroyProjectile(projectileIndex);
+                        break;
+                    }
+
                     const shouldDestroy = projectile.handleCollisionWith(
                         player,
                         player.contactDamage,
@@ -1167,6 +1250,10 @@ export class GameEngine {
 
     private tryApplyBurstCollisionDamage(target: Entity, attacker: Entity, currentTime: number, onDamageTaken: () => void = () => {}): void {
         if (!target.canReceiveCollisionDamageFrom(attacker.id, currentTime, this.collisionMicroCooldownMs)) {
+            return;
+        }
+
+        if (this.debugGodModeInvincible && target instanceof Player) {
             return;
         }
 
