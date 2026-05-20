@@ -1,7 +1,7 @@
 import type { AnomalyAbility } from './AnomalyAbility';
 import type { Anomaly } from '../Anomaly';
-import type { Player } from '../../player/Player';
-import { emitGameEvent, GameEvents } from '../../../../shared/EventBus';
+import type { Player } from '../../../player/Player';
+import { emitGameEvent, GameEvents } from '../../../../../shared/EventBus';
 
 export class TeleportAbility implements AnomalyAbility {
     public readonly name = 'Teleport';

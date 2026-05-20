@@ -1,6 +1,6 @@
-import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
-import type { EnemyType, EntityData, EntityStats } from '../../../shared/Types';
-import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../shared/CombatMath';
+import { HostileEntity, type EnemyUpdateContext } from '../HostileEntity';
+import type { EnemyType, EntityData, EntityStats } from '../../../../shared/Types';
+import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../../shared/CombatMath';
 
 export class AnomalyDecoy extends HostileEntity {
     public readonly enemyType: EnemyType = 'ANOMALY_DECOY';

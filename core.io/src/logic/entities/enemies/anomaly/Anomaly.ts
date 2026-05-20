@@ -1,11 +1,11 @@
-import { HostileEntity, type EnemyUpdateContext, type PendingEnemySpawn } from './HostileEntity';
-import type { EntityData, EntityStats, EnemyType } from '../../../shared/Types';
-import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../shared/CombatMath';
-import type { AnomalyAbility } from './anomaly_abilities/AnomalyAbility';
-import { TeleportAbility } from './anomaly_abilities/TeleportAbility';
-import { DashAbility } from './anomaly_abilities/DashAbility';
-import { SwarmAbility } from './anomaly_abilities/SwarmAbility';
-import { InversionAbility } from './anomaly_abilities/InversionAbility';
+import { HostileEntity, type EnemyUpdateContext, type PendingEnemySpawn } from '../HostileEntity';
+import type { EntityData, EntityStats, EnemyType } from '../../../../shared/Types';
+import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../../shared/CombatMath';
+import type { AnomalyAbility } from './abilities/AnomalyAbility';
+import { TeleportAbility } from './abilities/TeleportAbility';
+import { DashAbility } from './abilities/DashAbility';
+import { SwarmAbility } from './abilities/SwarmAbility';
+import { InversionAbility } from './abilities/InversionAbility';
 
 type AbilityEntry = { ctor: new () => AnomalyAbility; weight: number };
 

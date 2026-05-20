@@ -1,6 +1,6 @@
-import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
-import type { EnemyType, EntityData, EntityStats } from '../../../shared/Types';
-import { calculateCooldown } from '../../../shared/CombatMath';
+import { HostileEntity, type EnemyUpdateContext } from '../../enemies/HostileEntity';
+import type { EnemyType, EntityData, EntityStats } from '../../../../shared/Types';
+import { calculateCooldown } from '../../../../shared/CombatMath';
 
 type BossPhase = 1 | 2 | 3;
 

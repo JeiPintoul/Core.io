@@ -1,6 +1,6 @@
 import type { Anomaly } from '../Anomaly';
-import type { Player } from '../../player/Player';
-import type { EnemyType } from '../../../../shared/Types';
+import type { Player } from '../../../player/Player';
+import type { EnemyType } from '../../../../../shared/Types';
 
 export interface AnomalyAbilityResult {
     readonly skipBaseBehavior?: boolean;

@@ -1,7 +1,7 @@
 import type { AnomalyAbility, AnomalyAbilityResult } from './AnomalyAbility';
 import type { Anomaly } from '../Anomaly';
-import type { Player } from '../../player/Player';
-import type { EnemyType } from '../../../../shared/Types';
+import type { Player } from '../../../player/Player';
+import type { EnemyType } from '../../../../../shared/Types';
 
 export class SwarmAbility implements AnomalyAbility {
     public readonly name = 'Swarm';

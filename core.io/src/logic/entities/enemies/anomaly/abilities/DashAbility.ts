@@ -1,7 +1,7 @@
 import type { AnomalyAbility } from './AnomalyAbility';
 import type { Anomaly } from '../Anomaly';
-import type { Player } from '../../player/Player';
-import { emitGameEvent, GameEvents } from '../../../../shared/EventBus';
+import type { Player } from '../../../player/Player';
+import { emitGameEvent, GameEvents } from '../../../../../shared/EventBus';
 
 const DASH_VISUAL_DURATION_MS = 600;
 
