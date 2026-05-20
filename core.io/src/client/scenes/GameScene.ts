@@ -165,43 +165,44 @@ export class GameScene extends Phaser.Scene {
             })
         );
 
-        this.subscriptions.push(
-            onGameEvent(GameEvents.BOSS_FIGHT_START, (payload) => {
-                this.cameras.main.fadeOut(500, 255, 255, 255);
-                this.cameras.main.once(
-                    Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
-                    () => {
-                        this.gameRenderer.drawBossWorld(
-                            payload.bossArenaX,
-                            payload.bossArenaY,
-                            payload.bossArenaWidth,
-                            payload.bossArenaHeight
-                        );
-                        this.cameras.main.setBounds(
-                            payload.bossArenaX - 400,
-                            payload.bossArenaY - 400,
-                            payload.bossArenaWidth + 800,
-                            payload.bossArenaHeight + 800
-                        );
-                        this.cameras.main.fadeIn(500, 255, 255, 255);
-                    }
-                );
-            })
-        );
+        const focusEncounterArena = (payload: { bossArenaX: number; bossArenaY: number; bossArenaWidth: number; bossArenaHeight: number }) => {
+            this.cameras.main.fadeOut(500, 255, 255, 255);
+            this.cameras.main.once(
+                Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+                () => {
+                    this.gameRenderer.drawBossWorld(
+                        payload.bossArenaX,
+                        payload.bossArenaY,
+                        payload.bossArenaWidth,
+                        payload.bossArenaHeight
+                    );
+                    this.cameras.main.setBounds(
+                        payload.bossArenaX - 400,
+                        payload.bossArenaY - 400,
+                        payload.bossArenaWidth + 800,
+                        payload.bossArenaHeight + 800
+                    );
+                    this.cameras.main.fadeIn(500, 255, 255, 255);
+                }
+            );
+        };
 
-        this.subscriptions.push(
-            onGameEvent(GameEvents.BOSS_DEFEATED, () => {
-                this.cameras.main.fadeOut(500, 255, 255, 255);
-                this.cameras.main.once(
-                    Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
-                    () => {
-                        this.gameRenderer.drawStaticWorld(ARENA.width, ARENA.height);
-                        this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
-                        this.cameras.main.fadeIn(500, 255, 255, 255);
-                    }
-                );
-            })
-        );
+        const restoreMainArena = () => {
+            this.cameras.main.fadeOut(500, 255, 255, 255);
+            this.cameras.main.once(
+                Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
+                () => {
+                    this.gameRenderer.drawStaticWorld(ARENA.width, ARENA.height);
+                    this.cameras.main.setBounds(-400, -400, ARENA.width + 800, ARENA.height + 800);
+                    this.cameras.main.fadeIn(500, 255, 255, 255);
+                }
+            );
+        };
+
+        this.subscriptions.push(onGameEvent(GameEvents.BOSS_FIGHT_START, focusEncounterArena));
+        this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, focusEncounterArena));
+        this.subscriptions.push(onGameEvent(GameEvents.BOSS_DEFEATED, restoreMainArena));
+        this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_DEFEATED, restoreMainArena));
 
         this.subscriptions.push(
             onGameEvent(GameEvents.ARENA_RESIZED, ({ width, height }) => {

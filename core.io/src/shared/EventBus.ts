@@ -34,6 +34,8 @@ export const GameEvents = {
     AUDIO_RESTART_REQUESTED: 'audio_restart_requested',
     BOSS_FIGHT_START: 'boss_fight_start',
     BOSS_DEFEATED: 'boss_defeated',
+    ANOMALY_ENCOUNTER_START: 'anomaly_encounter_start',
+    ANOMALY_DEFEATED: 'anomaly_defeated',
     ARENA_RESIZED: 'arena_resized',
     ANOMALY_TELEPORT: 'anomaly_teleport',
     ANOMALY_DASH: 'anomaly_dash',

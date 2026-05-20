@@ -4,6 +4,28 @@ import { calculateCooldown } from '../../../../shared/CombatMath';
 
 type BossPhase = 1 | 2 | 3;
 
+export interface BossCoopScaling {
+    healthMultiplier: number;
+    healthRegenMultiplier: number;
+    bodyDamageMultiplier: number;
+    bulletSpeedMultiplier: number;
+    bulletPenetrationMultiplier: number;
+    bulletDamageMultiplier: number;
+    movementSpeedMultiplier: number;
+    reloadBonus: number;
+}
+
+const NO_COOP_SCALING: BossCoopScaling = {
+    healthMultiplier: 1,
+    healthRegenMultiplier: 1,
+    bodyDamageMultiplier: 1,
+    bulletSpeedMultiplier: 1,
+    bulletPenetrationMultiplier: 1,
+    bulletDamageMultiplier: 1,
+    movementSpeedMultiplier: 1,
+    reloadBonus: 0,
+};
+
 export class DreadnoughtBoss extends HostileEntity {
     public readonly enemyType: EnemyType = 'DREADNOUGHT';
     public readonly stats: EntityStats;
@@ -23,19 +45,19 @@ export class DreadnoughtBoss extends HostileEntity {
     private lastDashAtMs = -Infinity;
     private strafeDirection: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
 
-    constructor(id: string, x: number, y: number, bossCount: number) {
+    constructor(id: string, x: number, y: number, bossCount: number, coopScaling: BossCoopScaling = NO_COOP_SCALING) {
         const encounterCount = Math.max(1, bossCount);
         const encounterScale = 1 + (encounterCount - 1) * 0.14;
 
         const stats: EntityStats = {
-            maxHealth: 1800 * encounterScale,
-            healthRegen: 2 + (encounterCount - 1) * 0.35,
-            bodyDamage: 22 * encounterScale,
-            bulletSpeed: 380,
-            bulletPenetration: 2.2 + (encounterCount - 1) * 0.12,
-            bulletDamage: 20 * encounterScale,
-            reloadPoints: 2 + (encounterCount - 1) * 0.25,
-            movementSpeed: 100
+            maxHealth: 1800 * encounterScale * coopScaling.healthMultiplier,
+            healthRegen: (2 + (encounterCount - 1) * 0.35) * coopScaling.healthRegenMultiplier,
+            bodyDamage: 22 * encounterScale * coopScaling.bodyDamageMultiplier,
+            bulletSpeed: 380 * coopScaling.bulletSpeedMultiplier,
+            bulletPenetration: (2.2 + (encounterCount - 1) * 0.12) * coopScaling.bulletPenetrationMultiplier,
+            bulletDamage: 20 * encounterScale * coopScaling.bulletDamageMultiplier,
+            reloadPoints: 2 + (encounterCount - 1) * 0.25 + coopScaling.reloadBonus,
+            movementSpeed: 100 * coopScaling.movementSpeedMultiplier
         };
 
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed, 52);

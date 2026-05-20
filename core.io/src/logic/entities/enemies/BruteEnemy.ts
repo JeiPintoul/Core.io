@@ -1,37 +1,51 @@
 import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
 import type { EnemyType, EntityData, EntityStats } from '../../../shared/Types';
-import { calculateCooldown } from '../../../shared/CombatMath';
+import type { Player } from '../player/Player';
 
+type MagnetarPhase = 'CHARGING' | 'RELEASING';
+
+/**
+ * Gravity-well bruiser. Cycles between two phases:
+ *   CHARGING  - slowly drifts in and applies a continuous inward pull on the targeted
+ *               player (quadratic falloff inside `pullRadius`).
+ *   RELEASING - locks in place and fires a single outward impulse, opening a brief
+ *               burst window for the player to retaliate.
+ * Carries no bullets; its threat is purely positional + heavy contact damage.
+ */
 export class BruteEnemy extends HostileEntity {
     public readonly enemyType: EnemyType = 'BRUTE';
     public readonly stats: EntityStats;
     public aimAngle = 0;
     public damage: number;
+    public phase: MagnetarPhase = 'CHARGING';
 
-    static readonly BASE_XP_DROP = 68;
+    static readonly BASE_XP_DROP = 90;
 
     static readonly BASE_STATS: EntityStats = {
-        maxHealth: 124,
-        healthRegen: 0.15,
-        bodyDamage: 14,
+        maxHealth: 220,
+        healthRegen: 0.4,
+        bodyDamage: 18,
         bulletSpeed: 0,
         bulletPenetration: 0,
         bulletDamage: 0,
         reloadPoints: 0,
-        movementSpeed: 76
+        movementSpeed: 52
     };
 
-    private readonly preferredDistance = 190;
-    private readonly chargeTriggerMin = 260;
-    private readonly chargeTriggerMax = 720;
-    private readonly chargeDurationMs = 850;
-    private readonly chargeSpeed = 370;
-    private readonly baseChargeCooldownSeconds = 5.8;
+    private readonly pullRadius = 760;
+    private readonly pullStrengthAtCenter = 520;
+    // Release shockwave shares the pull radius — anyone caught in the well's reach
+    // gets blasted, with knockback + damage scaling by proximity to the core.
+    private readonly releaseImpulse = 1100;
+    private readonly chargeDurationMs = 2400;
+    private readonly releaseDurationMs = 520;
+    private readonly approachDistance = 220;
+    private readonly releaseDamageMax: number;
+    private readonly releaseDamageMin: number;
 
-    private chargeEndsAtMs = 0;
-    private lastChargeAtMs = -Infinity;
-    private chargeDirectionX = 0;
-    private chargeDirectionY = 0;
+    private phaseStartedAtMs = 0;
+    private phaseEndsAtMs = 0;
+    private releaseFiredThisPhase = false;
 
     constructor(id: string, x: number, y: number, multiplier = 1) {
         const stats: EntityStats = {
@@ -45,50 +59,86 @@ export class BruteEnemy extends HostileEntity {
             movementSpeed: BruteEnemy.BASE_STATS.movementSpeed * multiplier
         };
 
-        super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed, 30);
+        super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed, 36);
         this.stats = stats;
         this.damage = stats.bodyDamage;
         this.xpDrop = Math.round(BruteEnemy.BASE_XP_DROP * multiplier);
+        this.releaseDamageMax = 16 * multiplier;
+        this.releaseDamageMin = 4 * multiplier;
     }
 
     public override toData(): EntityData {
-        return { ...super.toData(), aimAngle: this.aimAngle };
+        const total = this.phase === 'CHARGING' ? this.chargeDurationMs : this.releaseDurationMs;
+        const elapsed = this.phaseEndsAtMs - this.phaseStartedAtMs > 0
+            ? Math.min(1, Math.max(0, 1 - ((this.phaseEndsAtMs - performance.now()) / total)))
+            : 0;
+        return {
+            ...super.toData(),
+            aimAngle: this.aimAngle,
+            magnetarPhase: this.phase,
+            magnetarPhaseProgress: elapsed,
+        };
     }
 
     public tick(context: EnemyUpdateContext): void {
-        const { playerX, playerY, dt, currentTime } = context;
-        const dx = playerX - this.x;
-        const dy = playerY - this.y;
+        const { player, dt, currentTime } = context;
+
+        const dx = player.x - this.x;
+        const dy = player.y - this.y;
         const distance = Math.hypot(dx, dy);
+        if (distance > 0.0001) this.aimAngle = Math.atan2(dy, dx);
 
-        if (distance > 0.0001) {
-            this.aimAngle = Math.atan2(dy, dx);
+        if (this.phaseEndsAtMs === 0) this.enterPhase('CHARGING', currentTime);
+        if (currentTime >= this.phaseEndsAtMs) {
+            this.enterPhase(this.phase === 'CHARGING' ? 'RELEASING' : 'CHARGING', currentTime);
         }
 
-        if (this.chargeEndsAtMs > currentTime) {
-            this.x += this.chargeDirectionX * this.chargeSpeed * dt;
-            this.y += this.chargeDirectionY * this.chargeSpeed * dt;
-            return;
+        if (this.phase === 'CHARGING') {
+            this.tickCharging(player, dx, dy, distance, dt);
+        } else {
+            this.tickReleasing(player, dx, dy, distance);
+        }
+    }
+
+    private enterPhase(phase: MagnetarPhase, currentTimeMs: number): void {
+        this.phase = phase;
+        this.phaseStartedAtMs = currentTimeMs;
+        this.phaseEndsAtMs = currentTimeMs + (phase === 'CHARGING' ? this.chargeDurationMs : this.releaseDurationMs);
+        this.releaseFiredThisPhase = false;
+    }
+
+    private tickCharging(player: Player, dx: number, dy: number, distance: number, dt: number): void {
+        if (distance > this.approachDistance && distance > 0.0001) {
+            this.x += (dx / distance) * this.speed * dt;
+            this.y += (dy / distance) * this.speed * dt;
         }
 
-        const chargeCooldownMs = calculateCooldown(this.baseChargeCooldownSeconds, this.stats.reloadPoints) * 1000;
-        const canCharge = currentTime - this.lastChargeAtMs >= chargeCooldownMs;
-        const inChargeRange = distance >= this.chargeTriggerMin && distance <= this.chargeTriggerMax;
+        if (distance >= this.pullRadius || distance < 0.0001) return;
 
-        if (canCharge && inChargeRange && distance > 0.0001) {
-            this.lastChargeAtMs = currentTime;
-            this.chargeEndsAtMs = currentTime + this.chargeDurationMs;
-            this.chargeDirectionX = dx / distance;
-            this.chargeDirectionY = dy / distance;
-            return;
-        }
+        // Quadratic falloff: punishing at the core, escapable from the rim.
+        const falloff = 1 - (distance / this.pullRadius);
+        const pull = this.pullStrengthAtCenter * falloff * falloff * dt;
+        const inwardX = -dx / distance;
+        const inwardY = -dy / distance;
+        player.applyImpulse(inwardX * pull, inwardY * pull);
+    }
 
-        if (distance <= 0.0001) {
-            return;
-        }
+    private tickReleasing(player: Player, dx: number, dy: number, distance: number): void {
+        // Single outward burst + shockwave damage at phase entry; the magnetar then
+        // stands still until the phase ends, giving the player a clean window to shoot it.
+        if (this.releaseFiredThisPhase) return;
+        this.releaseFiredThisPhase = true;
 
-        const moveSign = distance < this.preferredDistance * 0.58 ? -0.65 : 1;
-        this.x += (dx / distance) * this.speed * dt * moveSign;
-        this.y += (dy / distance) * this.speed * dt * moveSign;
+        if (distance >= this.pullRadius || distance < 0.0001) return;
+
+        const falloff = 1 - (distance / this.pullRadius);
+        const outwardX = dx / distance;
+        const outwardY = dy / distance;
+
+        const blast = this.releaseImpulse * (0.5 + 0.5 * falloff);
+        player.applyImpulse(outwardX * blast, outwardY * blast);
+
+        const damage = this.releaseDamageMin + (this.releaseDamageMax - this.releaseDamageMin) * falloff;
+        if (damage > 0) player.takeDamage(damage);
     }
 }

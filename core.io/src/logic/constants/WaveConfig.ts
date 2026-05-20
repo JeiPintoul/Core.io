@@ -1,6 +1,6 @@
 import type { EnemyType, WaveMilestone, WaveType } from '../../shared/Types';
 
-export type BossKind = 'ANOMALY' | 'DREADNOUGHT';
+export type BossKind = 'DREADNOUGHT';
 
 export interface BossWaveRule {
     readonly wave: number;
@@ -27,9 +27,9 @@ export const WAVE_MILESTONES: WaveMilestone[] = [
     {
         startWave: 1,
         enemyWeights: { KAMIKAZE: 100 },
-        maxActiveEnemies: 8,
+        maxActiveEnemies: 10,
         maxActiveEnemiesSurvive: 6,
-        totalEnemiesToSpawn: 16,
+        totalEnemiesToSpawn: 17,
         sizeMultiplier: 0.07,
         surviveDurationSeconds: 36
     },

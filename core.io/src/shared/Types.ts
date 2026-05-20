@@ -129,6 +129,8 @@ export interface EntityData {
     enemyType?: EnemyType;
     aimAngle?: number;
     sentinelTriangles?: SentinelTriangleData[];
+    magnetarPhase?: 'CHARGING' | 'RELEASING';
+    magnetarPhaseProgress?: number;
 }
 
 export interface ProjectileData {
@@ -171,6 +173,7 @@ export interface GameState {
     isPaused: boolean;
     objective: ObjectiveState | null;
     isBossFight?: boolean;
+    isAnomalyEncounter?: boolean;
     arenaOffset?: { x: number; y: number };
     isColorSelection: boolean;
     autoSpin: boolean;
@@ -317,6 +320,8 @@ export interface GameEventPayloads {
     audio_restart_requested: undefined;
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
+    anomaly_encounter_start: BossFightStartPayload;
+    anomaly_defeated: undefined;
     arena_resized: { width: number; height: number };
     anomaly_teleport: AnomalyTeleportPayload;
     anomaly_dash: AnomalyDashPayload;

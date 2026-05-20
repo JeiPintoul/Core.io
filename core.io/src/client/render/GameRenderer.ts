@@ -331,7 +331,7 @@ export class GameRenderer {
         const shouldMaskAnomalyHealth = state.enemies.some((enemy) => enemy.enemyType === 'ANOMALY_DECOY');
 
         for (const enemy of state.enemies) {
-            const { x, y, radius, health, stats, isDead, enemyType, aimAngle, sentinelTriangles } = enemy;
+            const { x, y, radius, health, stats, isDead, enemyType, aimAngle, sentinelTriangles, magnetarPhase, magnetarPhaseProgress } = enemy;
 
             if (isDead) {
                 continue;
@@ -363,6 +363,8 @@ export class GameRenderer {
                 this.drawRaiderBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds);
             } else if (enemyType === 'DREADNOUGHT') {
                 this.drawDreadnoughtBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds);
+            } else if (enemyType === 'BRUTE') {
+                this.drawMagnetarBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds, magnetarPhase, magnetarPhaseProgress ?? 0);
             } else {
                 this.drawCircle(x, y, radius, bodyColor, VISUAL.STROKE.enemy);
             }
@@ -505,6 +507,105 @@ export class GameRenderer {
         this.gfxGame.fillCircle(x, y, radius * 0.28);
         this.gfxGame.lineStyle(1.4, 0xffd7ff, 0.65);
         this.gfxGame.strokeCircle(x, y, radius * 0.28);
+    }
+
+    /**
+     * Magnetar bruiser. Hex hull with two horseshoe magnet poles (red N / blue S)
+     * perpendicular to its aim, animated coil rotor, and a glowing electromagnetic core.
+     * CHARGING  - inward pulsing ring grows tighter and brighter as it reaches release.
+     * RELEASING - bright shockwave ring expands outward from the core.
+     */
+    private drawMagnetarBody(
+        x: number,
+        y: number,
+        radius: number,
+        color: number,
+        aimAngle: number,
+        nowSeconds: number,
+        phase: 'CHARGING' | 'RELEASING' | undefined,
+        phaseProgress: number
+    ): void {
+        const outline = darkenColor(color, 50);
+        const hullCore = darkenColor(color, 22);
+        const coilSpin = nowSeconds * (phase === 'RELEASING' ? 6.5 : 1.4);
+        const polePerp = aimAngle + Math.PI / 2;
+
+        // Hex hull + inner plating.
+        this.drawPolygon(x, y, radius * 1.08, 6, aimAngle, hullCore, outline, VISUAL.STROKE.enemy, 1);
+        this.drawPolygon(x, y, radius * 0.78, 6, -aimAngle, color, outline, 2, 0.6);
+
+        // Rotating coil arcs around the core.
+        this.gfxGame.lineStyle(2.2, 0xb6a2ff, 0.55);
+        this.gfxGame.beginPath();
+        this.gfxGame.arc(x, y, radius * 0.62, coilSpin, coilSpin + Math.PI * 0.85);
+        this.gfxGame.strokePath();
+        this.gfxGame.beginPath();
+        this.gfxGame.arc(x, y, radius * 0.62, coilSpin + Math.PI, coilSpin + Math.PI * 1.85);
+        this.gfxGame.strokePath();
+
+        // Magnetic pole arms (horseshoe stubs) on either side perpendicular to aim.
+        const poleOffset = radius * 0.96;
+        const poleRadius = radius * 0.36;
+        const northX = x + Math.cos(polePerp) * poleOffset;
+        const northY = y + Math.sin(polePerp) * poleOffset;
+        const southX = x - Math.cos(polePerp) * poleOffset;
+        const southY = y - Math.sin(polePerp) * poleOffset;
+        this.drawPolePad(northX, northY, poleRadius, 0xe34d4d, polePerp);
+        this.drawPolePad(southX, southY, poleRadius, 0xe34d4d, polePerp + Math.PI);
+
+        // Core orb: cyan while charging, white-hot during release.
+        const coreColor = phase === 'RELEASING' ? 0xfff7d0 : 0x9be8ff;
+        const corePulse = 1 + (phase === 'CHARGING' ? Math.sin(nowSeconds * 8) * 0.08 * phaseProgress : 0);
+        this.gfxGame.fillStyle(0x14102a, 0.95);
+        this.gfxGame.fillCircle(x, y, radius * 0.32);
+        this.gfxGame.fillStyle(coreColor, 0.9);
+        this.gfxGame.fillCircle(x, y, radius * 0.2 * corePulse);
+
+        this.drawMagnetarFieldFx(x, y, radius, nowSeconds, phase, phaseProgress);
+    }
+
+    private drawPolePad(x: number, y: number, radius: number, color: number, facing: number): void {
+        const outline = darkenColor(color, 45);
+        this.gfxGame.lineStyle(2, outline, 1);
+        this.gfxGame.fillStyle(color, 0.92);
+        this.gfxGame.beginPath();
+        this.gfxGame.arc(x, y, radius, facing - Math.PI / 2, facing + Math.PI / 2);
+        this.gfxGame.closePath();
+        this.gfxGame.fillPath();
+        this.gfxGame.strokePath();
+    }
+
+    private drawMagnetarFieldFx(
+        x: number,
+        y: number,
+        radius: number,
+        nowSeconds: number,
+        phase: 'CHARGING' | 'RELEASING' | undefined,
+        progress: number
+    ): void {
+        // CHARGING: 3 inward-spiraling rings, denser/brighter as we approach release.
+        if (phase === 'CHARGING' || phase === undefined) {
+            const intensity = 0.18 + progress * 0.5;
+            for (let i = 0; i < 3; i++) {
+                const phase01 = (nowSeconds * 0.55 + i / 3) % 1;
+                const ringRadius = radius + 110 - phase01 * 110;
+                const alpha = (1 - phase01) * intensity;
+                if (alpha <= 0.02) continue;
+                this.gfxGame.lineStyle(1.5, 0x9be8ff, alpha);
+                this.gfxGame.strokeCircle(x, y, ringRadius);
+            }
+            return;
+        }
+
+        // RELEASING: single bright shockwave expanding outward to the full pull radius
+        // (must visually match gameplay reach in BruteEnemy.pullRadius = 760).
+        const maxReach = 760;
+        const shockRadius = radius + progress * (maxReach - radius);
+        const alpha = (1 - progress) * 0.85;
+        this.gfxGame.lineStyle(3.5, 0xfff7d0, alpha);
+        this.gfxGame.strokeCircle(x, y, shockRadius);
+        this.gfxGame.lineStyle(1.8, 0xffcf6b, alpha * 0.6);
+        this.gfxGame.strokeCircle(x, y, shockRadius * 1.04);
     }
 
     private drawPolygon(

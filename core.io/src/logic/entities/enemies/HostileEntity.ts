@@ -1,5 +1,5 @@
 import { Entity } from '../Entity';
-import type { EnemyType, EntityData, EntityStats, TriangleCollidable } from '../../../shared/Types';
+import type { EnemyType, EntityData, EntityStats, PlayerId, TriangleCollidable } from '../../../shared/Types';
 import type { Player } from '../player/Player';
 
 export interface PendingEnemySpawn {
@@ -10,6 +10,9 @@ export interface PendingEnemySpawn {
     orbitSlot?: number;
     orbitTotal?: number;
     orbitRadius?: number;
+    ownerEnemyId?: string;
+    assignedPlayerId?: PlayerId;
+    mirrorStats?: EntityStats;
 }
 
 export interface EnemyUpdateContext {

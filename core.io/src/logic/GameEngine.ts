@@ -22,9 +22,9 @@ import { RangedEnemy } from './entities/enemies/RangedEnemy';
 import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
 import { SkirmisherEnemy } from './entities/enemies/SkirmisherEnemy';
 import { BruteEnemy } from './entities/enemies/BruteEnemy';
-import { Anomaly } from './entities/enemies/anomaly/Anomaly';
+import { Anomaly, type AnomalyAbilityCtor } from './entities/enemies/anomaly/Anomaly';
 import { AnomalyDecoy } from './entities/enemies/anomaly/AnomalyDecoy';
-import { DreadnoughtBoss } from './entities/boss/dreadnought/DreadnoughtBoss';
+import { DreadnoughtBoss, type BossCoopScaling } from './entities/boss/dreadnought/DreadnoughtBoss';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../shared/CombatMath';
 import { UpgradeManager } from './UpgradeManager';
@@ -58,6 +58,7 @@ enum EngineState {
     UPGRADE_PHASE = 'UPGRADE_PHASE',
     WAVE_STARTING_ANIMATION = 'WAVE_STARTING_ANIMATION',
     BOSS_FIGHT = 'BOSS_FIGHT',
+    ANOMALY_ENCOUNTER = 'ANOMALY_ENCOUNTER',
 }
 
 export class GameEngine {
@@ -101,9 +102,11 @@ export class GameEngine {
     private readonly processedEnemyDeathIds = new Set<string>();
 
     private isBossFightActive = false;
+    private isAnomalyEncounterActive = false;
     private activeBossWaveRule: BossWaveRule | null = null;
     private currentArena: { x: number; y: number; width: number; height: number };
-    private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+    // Shared compact arena used by both boss fights and anomaly encounters.
+    private readonly ENCOUNTER_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
     private debugGodModeInvincible = false;
     private debugGodModeEnabled = false;
 
@@ -437,6 +440,12 @@ export class GameEngine {
             return;
         }
 
+        if (this.engineState === EngineState.ANOMALY_ENCOUNTER) {
+            this.enemies = [];
+            this.endAnomalyEncounter(now);
+            return;
+        }
+
         this.enemies = [];
         this.spawnQueue = [];
         this.enemiesKilledThisWave = this.getCurrentWaveTotalToSpawn();
@@ -450,11 +459,22 @@ export class GameEngine {
     }
 
     public debugSpawnBoss(): void {
-        if (this.isBossFightActive) {
+        if (this.isBossFightActive || this.isAnomalyEncounterActive) {
             return;
         }
 
-        this.enterBossFight(this.rollBossKind(), performance.now());
+        this.enterBossFight('DREADNOUGHT', performance.now());
+    }
+
+    public debugSpawnAnomaly(): void {
+        if (this.isBossFightActive || this.isAnomalyEncounterActive) {
+            return;
+        }
+
+        this.anomalySpawnCount += 1;
+        this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
+        this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
+        this.enterAnomalyEncounter(performance.now());
     }
 
     public debugLevelUpPlayer(): void {
@@ -580,6 +600,7 @@ export class GameEngine {
         this.clearUpgradeSelectionState();
 
         this.isBossFightActive = false;
+        this.isAnomalyEncounterActive = false;
         this.activeBossWaveRule = null;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.anomalySpawnCount = 0;
@@ -735,6 +756,7 @@ export class GameEngine {
             arena: this.arenaSize,
             arenaOffset: { x: this.currentArena.x, y: this.currentArena.y },
             isBossFight: this.isBossFightActive,
+            isAnomalyEncounter: this.isAnomalyEncounterActive,
             currentWave: this.currentWave,
             waveType: this.currentWaveType,
             remainingToKill: this.getRemainingToKill(),
@@ -751,7 +773,7 @@ export class GameEngine {
     }
 
     private updatePlayerMovement(player: Player, input: InputState, dt: number): void {
-        const isInverted = this.isBossFightActive && (this.getActiveAnomaly()?.isInverted ?? false);
+        const isInverted = this.isAnomalyEncounterActive && (this.getActiveAnomalyFor(player)?.isInverted ?? false);
         player.update(input, dt, isInverted);
         player.updatePhysics(dt);
         this.clampToArena(player);
@@ -779,7 +801,7 @@ export class GameEngine {
         const fallbackTarget = this.getNearestAlivePlayer(this.player.x, this.player.y) ?? this.getPlayers()[0] ?? this.player;
 
         for (const enemy of this.enemies) {
-            const targetPlayer = this.getNearestAlivePlayer(enemy.x, enemy.y) ?? fallbackTarget;
+            const targetPlayer = this.resolveEnemyTarget(enemy, fallbackTarget);
             const context: EnemyUpdateContext = {
                 playerX: targetPlayer.x,
                 playerY: targetPlayer.y,
@@ -799,18 +821,125 @@ export class GameEngine {
                     spawn.multiplier ?? 0.25,
                     spawn.orbitSlot,
                     spawn.orbitTotal,
-                    spawn.orbitRadius
+                    spawn.orbitRadius,
+                    spawn.ownerEnemyId,
+                    spawn.assignedPlayerId,
+                    spawn.mirrorStats
                 );
             }
 
             enemy.updatePhysics(dt);
             this.clampToArena(enemy);
         }
+
+        this.applyAnomalyCleanup();
     }
 
-    private getActiveAnomaly(): Anomaly | null {
+    private resolveEnemyTarget(enemy: HostileEntity, fallback: Player): Player {
+        // Anomalies and their decoys lock onto their assigned player so coop groups
+        // don't jitter based on who is currently closest.
+        const assignedId =
+            enemy instanceof Anomaly ? enemy.assignedPlayerId :
+            enemy instanceof AnomalyDecoy ? enemy.assignedPlayerId : null;
+
+        if (assignedId) {
+            const assigned = this.getPlayerById(assignedId);
+            if (assigned && assigned.health > 0) return assigned;
+        }
+
+        return this.getNearestAlivePlayer(enemy.x, enemy.y) ?? fallback;
+    }
+
+    /**
+     * Handles per-anomaly cleanup that can't be expressed via the standard
+     * "filter dead enemies" pass: reveal-driven fake culling, owner-scoped
+     * decoy purges, and orphaned decoys whose anomaly already despawned.
+     */
+    private applyAnomalyCleanup(): void {
+        this.reassignOrphanedAnomalies();
+
+        const realRevealed = this.enemies.some(
+            (e) => e instanceof Anomaly && !e.isFakeCopy && e.hasBeenRevealed
+        );
+
+        const ownersToPurgeDecoys = new Set<string>();
         for (const e of this.enemies) {
-            if (e instanceof Anomaly) return e;
+            if (e instanceof Anomaly && e.clearOwnedDecoysRequested) {
+                e.clearOwnedDecoysRequested = false;
+                ownersToPurgeDecoys.add(e.id);
+            }
+        }
+
+        if (!realRevealed && ownersToPurgeDecoys.size === 0) return;
+
+        const aliveAnomalyIds = new Set<string>();
+        for (const e of this.enemies) {
+            if (e instanceof Anomaly && (!realRevealed || !e.isFakeCopy)) {
+                aliveAnomalyIds.add(e.id);
+            }
+        }
+
+        this.enemies = this.enemies.filter((e) => {
+            if (e instanceof Anomaly) {
+                return !realRevealed || !e.isFakeCopy;
+            }
+            if (e instanceof AnomalyDecoy) {
+                const owner = e.ownerAnomalyId;
+                if (owner && ownersToPurgeDecoys.has(owner)) return false;
+                if (owner && !aliveAnomalyIds.has(owner)) return false;
+            }
+            return true;
+        });
+    }
+
+    /**
+     * When the player a clone is assigned to dies, the clone (and its decoys) would
+     * otherwise drift onto the corpse forever. Fakes are dropped outright; the real
+     * anomaly migrates to a surviving player and that player's fake is collapsed so
+     * we never end up with two anomalies on the same target.
+     */
+    private reassignOrphanedAnomalies(): void {
+        const alivePlayers = this.getPlayers().filter((p) => p.health > 0);
+        const alivePlayerIds = new Set(alivePlayers.map((p) => p.id));
+        const droppedAnomalyIds = new Set<string>();
+
+        for (const e of this.enemies) {
+            if (!(e instanceof Anomaly)) continue;
+            if (!e.assignedPlayerId || alivePlayerIds.has(e.assignedPlayerId)) continue;
+
+            if (e.isFakeCopy) {
+                droppedAnomalyIds.add(e.id);
+                continue;
+            }
+
+            const heir = alivePlayers[0];
+            if (!heir) continue; // no survivors → game-over path handles cleanup
+
+            e.assignedPlayerId = heir.id as PlayerId;
+            for (const other of this.enemies) {
+                if (other === e) continue;
+                if (other instanceof Anomaly && other.isFakeCopy && other.assignedPlayerId === heir.id) {
+                    droppedAnomalyIds.add(other.id);
+                }
+            }
+        }
+
+        if (droppedAnomalyIds.size === 0) return;
+        this.enemies = this.enemies.filter((e) => {
+            if (droppedAnomalyIds.has(e.id)) return false;
+            if (e instanceof AnomalyDecoy && e.ownerAnomalyId && droppedAnomalyIds.has(e.ownerAnomalyId)) return false;
+            return true;
+        });
+    }
+
+    private getActiveAnomalyFor(player: Player): Anomaly | null {
+        for (const e of this.enemies) {
+            if (!(e instanceof Anomaly)) continue;
+            if (e.assignedPlayerId === player.id) return e;
+        }
+        // Single-player / unassigned fallback: any anomaly.
+        for (const e of this.enemies) {
+            if (e instanceof Anomaly && !e.isFakeCopy) return e;
         }
         return null;
     }
@@ -908,9 +1037,24 @@ export class GameEngine {
         this.spawnEnemyAt(enemyType, spawnPoint.x, spawnPoint.y, multiplier);
     }
 
-    private spawnEnemyAt(enemyType: EnemyType, x: number, y: number, multiplier: number, orbitSlot = 0, orbitTotal = 1, orbitRadius = 0): void {
+    private spawnEnemyAt(
+        enemyType: EnemyType,
+        x: number,
+        y: number,
+        multiplier: number,
+        orbitSlot = 0,
+        orbitTotal = 1,
+        orbitRadius = 0,
+        ownerEnemyId?: string,
+        assignedPlayerId?: PlayerId,
+        mirrorStats?: EntityStats
+    ): void {
         const enemyId = `enemy_${this.enemyIdCounter++}`;
-        this.enemies.push(this.createEnemyInstance(enemyType, enemyId, x, y, multiplier, orbitSlot, orbitTotal, orbitRadius));
+        this.enemies.push(this.createEnemyInstance(
+            enemyType, enemyId, x, y, multiplier,
+            orbitSlot, orbitTotal, orbitRadius,
+            ownerEnemyId, assignedPlayerId, mirrorStats
+        ));
     }
 
     private createEnemyInstance(
@@ -921,7 +1065,10 @@ export class GameEngine {
         multiplier: number,
         orbitSlot: number,
         orbitTotal: number,
-        orbitRadius: number
+        orbitRadius: number,
+        ownerEnemyId?: string,
+        assignedPlayerId?: PlayerId,
+        mirrorStats?: EntityStats
     ): HostileEntity {
         switch (enemyType) {
             case 'KAMIKAZE':
@@ -935,7 +1082,7 @@ export class GameEngine {
             case 'BRUTE':
                 return new BruteEnemy(id, x, y, multiplier);
             case 'ANOMALY_DECOY':
-                return new AnomalyDecoy(id, x, y, orbitSlot, orbitTotal, orbitRadius);
+                return new AnomalyDecoy(id, x, y, orbitSlot, orbitTotal, orbitRadius, ownerEnemyId ?? null, assignedPlayerId ?? null, mirrorStats ?? null);
             case 'ANOMALY':
                 return new Anomaly(id, x, y, this.buildAnomalyReferenceStats(), Math.max(1, Math.round(multiplier)));
             case 'DREADNOUGHT':
@@ -1313,9 +1460,18 @@ export class GameEngine {
     private advanceWaveState(currentTime: number): void {
         switch (this.engineState) {
             case EngineState.BOSS_FIGHT: {
-                const bossAlive = this.enemies.some((enemy) => enemy.enemyType === 'ANOMALY' || enemy.enemyType === 'DREADNOUGHT');
+                const bossAlive = this.enemies.some((enemy) => enemy.enemyType === 'DREADNOUGHT');
                 if (!bossAlive) {
                     this.endBossFight(currentTime);
+                }
+                return;
+            }
+            case EngineState.ANOMALY_ENCOUNTER: {
+                const realAnomalyAlive = this.enemies.some(
+                    (enemy) => enemy instanceof Anomaly && !enemy.isFakeCopy
+                );
+                if (!realAnomalyAlive) {
+                    this.endAnomalyEncounter(currentTime);
                 }
                 return;
             }
@@ -1396,12 +1552,6 @@ export class GameEngine {
         });
     }
 
-    private rollBossKind(): BossKind {
-        const nextKind: BossKind = this.bossEncounterCount % 2 === 0 ? 'ANOMALY' : 'DREADNOUGHT';
-        this.bossEncounterCount += 1;
-        return nextKind;
-    }
-
     private tryStartAnomalyEncounter(currentTime: number, wave: number): boolean {
         if (wave < ANOMALY_START_WAVE || this.anomalyCooldownWaves > 0) {
             return false;
@@ -1415,7 +1565,7 @@ export class GameEngine {
         this.anomalyCurrentChance = ANOMALY_BASE_CHANCE;
         this.anomalyCooldownWaves = ANOMALY_COOLDOWN_WAVES;
         this.anomalySpawnCount += 1;
-        this.enterBossFight(this.rollBossKind(), currentTime);
+        this.enterAnomalyEncounter(currentTime);
         return true;
     }
 
@@ -1445,6 +1595,56 @@ export class GameEngine {
         this.enterBossFight(rule.bossKind, currentTime);
     }
 
+    /**
+     * In coop, the anomaly splits into one real copy + N-1 fakes, each glued to a
+     * specific player. Fakes are 1-HP look-alikes; hitting the real one for the
+     * first time collapses the illusion (handled in applyAnomalyCleanup).
+     * Single-player keeps the classic single-anomaly behavior.
+     */
+    private spawnAnomalyGroup(spawnX: number, spawnY: number): HostileEntity[] {
+        const players = this.getPlayers().filter((p) => p.health > 0);
+        const refStats = this.buildAnomalyReferenceStats();
+        const spawnCount = this.anomalySpawnCount;
+        const wave = this.currentWave;
+
+        if (players.length <= 1) {
+            const anomaly = new Anomaly('anomaly_boss', spawnX, spawnY, refStats, spawnCount, wave);
+            anomaly.assignedPlayerId = (players[0]?.id ?? this.player.id) as PlayerId;
+            return [anomaly];
+        }
+
+        const sharedAbilityCtors: AnomalyAbilityCtor[] = Anomaly.selectAbilityConstructors(spawnCount);
+        const realIndex = Math.floor(Math.random() * players.length);
+        const ringRadius = 110;
+
+        return players.map((player, i) => {
+            const angle = (i / players.length) * Math.PI * 2;
+            const x = spawnX + Math.cos(angle) * ringRadius;
+            const y = spawnY + Math.sin(angle) * ringRadius;
+            const isFake = i !== realIndex;
+            const id = isFake ? `anomaly_boss_fake_${i}` : 'anomaly_boss';
+            return new Anomaly(id, x, y, refStats, spawnCount, wave, {
+                isFakeCopy: isFake,
+                assignedPlayerId: player.id as PlayerId,
+                abilityCtors: sharedAbilityCtors
+            });
+        });
+    }
+
+    private buildBossCoopScaling(): BossCoopScaling {
+        const profile = this.getDifficultyProfile();
+        return {
+            healthMultiplier: profile.bossMaxHealthScale,
+            healthRegenMultiplier: profile.bossHealthRegenScale,
+            bodyDamageMultiplier: profile.bossBodyDamageScale,
+            bulletSpeedMultiplier: profile.bossBulletSpeedScale,
+            bulletPenetrationMultiplier: profile.bossBulletPenetrationScale,
+            bulletDamageMultiplier: profile.bossBulletDamageScale,
+            movementSpeedMultiplier: profile.bossMovementSpeedScale,
+            reloadBonus: profile.bossReloadBonus,
+        };
+    }
+
     private buildAnomalyReferenceStats(): EntityStats {
         const base = this.player.currentStats;
         const profile = this.getDifficultyProfile();
@@ -1464,43 +1664,27 @@ export class GameEngine {
         };
     }
 
-    private enterBossFight(kind: BossKind, currentTime: number): void {
-        this.isBossFightActive = true;
-        this.currentWaveType = 'BOSS';
-        this.totalAnomaliesMetInRun += 1;
-        this.currentArena = { ...this.BOSS_ARENA };
+    /**
+     * Shared encounter setup: switches the arena to the compact ENCOUNTER_ARENA,
+     * clears the run state that doesn't carry across the fight, and recenters the
+     * party. Returns the spawn anchor for whatever the encounter wants to drop in.
+     */
+    private setupEncounterArena(): { spawnX: number; spawnY: number } {
+        this.currentArena = { ...this.ENCOUNTER_ARENA };
         this.spawnQueue = [];
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
         this.clearUpgradeSelectionState();
         this.reviveDefeatedPlayers();
 
-        const centerX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
-        const centerY = this.BOSS_ARENA.y + this.BOSS_ARENA.height / 2;
+        const centerX = this.ENCOUNTER_ARENA.x + this.ENCOUNTER_ARENA.width / 2;
+        const centerY = this.ENCOUNTER_ARENA.y + this.ENCOUNTER_ARENA.height / 2;
         this.positionPlayers(centerX, centerY);
 
-        const spawnX = this.BOSS_ARENA.x + this.BOSS_ARENA.width / 2;
-        const spawnY = this.BOSS_ARENA.y + 220;
-        const boss = kind === 'ANOMALY'
-            ? new Anomaly('anomaly_boss', spawnX, spawnY, this.buildAnomalyReferenceStats(), this.anomalySpawnCount)
-            : new DreadnoughtBoss('dreadnought_boss', spawnX, spawnY, this.bossEncounterCount);
-
-        this.enemies = [boss];
-        this.engineState = EngineState.BOSS_FIGHT;
-        this.missionManager.startBossMission(currentTime, kind);
-
-        emitGameEvent(GameEvents.BOSS_FIGHT_START, {
-            bossArenaX: this.BOSS_ARENA.x,
-            bossArenaY: this.BOSS_ARENA.y,
-            bossArenaWidth: this.BOSS_ARENA.width,
-            bossArenaHeight: this.BOSS_ARENA.height
-        });
+        return { spawnX: centerX, spawnY: this.ENCOUNTER_ARENA.y + 220 };
     }
 
-    private endBossFight(currentTime: number): void {
-        const bossWaveRule = this.activeBossWaveRule;
-        this.isBossFightActive = false;
-        this.activeBossWaveRule = null;
+    private restoreMainArena(): void {
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.enemies = [];
         this.spawnQueue = [];
@@ -1508,6 +1692,38 @@ export class GameEngine {
         const centerX = this.arenaSize.width / 2;
         const centerY = this.arenaSize.height / 2;
         this.positionPlayers(centerX, centerY);
+    }
+
+    private buildEncounterArenaPayload() {
+        return {
+            bossArenaX: this.ENCOUNTER_ARENA.x,
+            bossArenaY: this.ENCOUNTER_ARENA.y,
+            bossArenaWidth: this.ENCOUNTER_ARENA.width,
+            bossArenaHeight: this.ENCOUNTER_ARENA.height
+        };
+    }
+
+    private enterBossFight(_kind: BossKind, currentTime: number): void {
+        this.isBossFightActive = true;
+        this.currentWaveType = 'BOSS';
+        this.bossEncounterCount += 1;
+        const { spawnX, spawnY } = this.setupEncounterArena();
+
+        this.enemies = [new DreadnoughtBoss(
+            'dreadnought_boss', spawnX, spawnY,
+            this.bossEncounterCount, this.buildBossCoopScaling()
+        )];
+        this.engineState = EngineState.BOSS_FIGHT;
+        this.missionManager.startBossMission(currentTime);
+
+        emitGameEvent(GameEvents.BOSS_FIGHT_START, this.buildEncounterArenaPayload());
+    }
+
+    private endBossFight(currentTime: number): void {
+        const bossWaveRule = this.activeBossWaveRule;
+        this.isBossFightActive = false;
+        this.activeBossWaveRule = null;
+        this.restoreMainArena();
 
         this.missionManager.onBossDefeated();
         emitGameEvent(GameEvents.BOSS_DEFEATED, undefined);
@@ -1522,6 +1738,34 @@ export class GameEngine {
 
             emitGameEvent(GameEvents.WAVE_CLEARED, { waveCleared, nextWave });
         }
+
+        this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
+        this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
+    }
+
+    /**
+     * Anomalies are independent encounters — they share the arena/setup helpers with
+     * bosses but live on their own state, event channel and mission, and do not
+     * advance bossEncounterCount or change the wave type.
+     */
+    private enterAnomalyEncounter(currentTime: number): void {
+        this.isAnomalyEncounterActive = true;
+        this.totalAnomaliesMetInRun += 1;
+        const { spawnX, spawnY } = this.setupEncounterArena();
+
+        this.enemies = this.spawnAnomalyGroup(spawnX, spawnY);
+        this.engineState = EngineState.ANOMALY_ENCOUNTER;
+        this.missionManager.startAnomalyMission(currentTime);
+
+        emitGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, this.buildEncounterArenaPayload());
+    }
+
+    private endAnomalyEncounter(currentTime: number): void {
+        this.isAnomalyEncounterActive = false;
+        this.restoreMainArena();
+
+        this.missionManager.onAnomalyDefeated();
+        emitGameEvent(GameEvents.ANOMALY_DEFEATED, undefined);
 
         this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
         this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
@@ -1762,8 +2006,12 @@ export class GameEngine {
     }
 
     private getRemainingToKill(): number {
-        if (this.currentWaveType === 'BOSS') {
-            return this.enemies.some((enemy) => enemy.enemyType === 'ANOMALY' || enemy.enemyType === 'DREADNOUGHT') ? 1 : 0;
+        if (this.engineState === EngineState.BOSS_FIGHT) {
+            return this.enemies.some((enemy) => enemy.enemyType === 'DREADNOUGHT') ? 1 : 0;
+        }
+
+        if (this.engineState === EngineState.ANOMALY_ENCOUNTER) {
+            return this.enemies.some((enemy) => enemy instanceof Anomaly && !enemy.isFakeCopy) ? 1 : 0;
         }
 
         if (this.currentWaveType === 'SURVIVE') return 0;

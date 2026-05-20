@@ -1,5 +1,5 @@
 import { HostileEntity, type EnemyUpdateContext, type PendingEnemySpawn } from '../HostileEntity';
-import type { EntityData, EntityStats, EnemyType } from '../../../../shared/Types';
+import type { EntityData, EntityStats, EnemyType, PlayerId } from '../../../../shared/Types';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../../../../shared/CombatMath';
 import type { AnomalyAbility } from './abilities/AnomalyAbility';
 import { TeleportAbility } from './abilities/TeleportAbility';
@@ -7,7 +7,8 @@ import { DashAbility } from './abilities/DashAbility';
 import { SwarmAbility } from './abilities/SwarmAbility';
 import { InversionAbility } from './abilities/InversionAbility';
 
-type AbilityEntry = { ctor: new () => AnomalyAbility; weight: number };
+export type AnomalyAbilityCtor = new () => AnomalyAbility;
+type AbilityEntry = { ctor: AnomalyAbilityCtor; weight: number };
 
 const ABILITY_POOL: AbilityEntry[] = [
     { ctor: TeleportAbility, weight: 100 },
@@ -16,35 +17,63 @@ const ABILITY_POOL: AbilityEntry[] = [
     { ctor: InversionAbility, weight: 100 },
 ];
 
+export interface AnomalyOptions {
+    isFakeCopy?: boolean;
+    assignedPlayerId?: PlayerId | null;
+    abilityCtors?: AnomalyAbilityCtor[];
+}
+
 export class Anomaly extends HostileEntity {
     public readonly enemyType: EnemyType = 'ANOMALY';
     public readonly stats: EntityStats;
     public aimAngle = 0;
     public damage: number;
+    public damageBoostMultiplier = 1;
     public readonly spawnCount: number;
     public readonly spawnWave: number;
     public isInverted = false;
     public readonly pendingSpawns: PendingEnemySpawn[] = [];
     public readonly activeAbilities: AnomalyAbility[];
+    public readonly isFakeCopy: boolean;
+    public assignedPlayerId: PlayerId | null;
+    public hasBeenRevealed = false;
+    public clearOwnedDecoysRequested = false;
 
     static readonly BASE_XP_DROP = 300;
 
     private readonly preferredDistance = 380;
     private lastShotAtMs = 0;
 
-    constructor(id: string, x: number, y: number, playerStats: EntityStats, spawnCount: number, spawnWave = 5) {
-        super(id, x, y, playerStats.maxHealth, playerStats.maxHealth, playerStats.movementSpeed);
+    constructor(
+        id: string,
+        x: number,
+        y: number,
+        playerStats: EntityStats,
+        spawnCount: number,
+        spawnWave = 5,
+        options: AnomalyOptions = {}
+    ) {
+        const isFake = options.isFakeCopy ?? false;
+        const effectiveMaxHealth = isFake ? 1 : playerStats.maxHealth;
+        super(id, x, y, effectiveMaxHealth, effectiveMaxHealth, playerStats.movementSpeed);
+
         this.stats = {
             ...playerStats,
-            healthRegen: playerStats.healthRegen * 0.65,
+            maxHealth: effectiveMaxHealth,
+            healthRegen: isFake ? 0 : playerStats.healthRegen * 0.65,
             bulletPenetration: playerStats.bulletPenetration * 0.85,
             reloadPoints: Math.max(0, playerStats.reloadPoints - 3)
         };
         this.damage = playerStats.bodyDamage;
-        this.xpDrop = Anomaly.BASE_XP_DROP;
+        this.xpDrop = isFake ? 0 : Anomaly.BASE_XP_DROP;
         this.spawnCount = spawnCount;
         this.spawnWave = spawnWave;
-        this.activeAbilities = Anomaly.selectAbilities(spawnCount);
+        this.isFakeCopy = isFake;
+        this.assignedPlayerId = options.assignedPlayerId ?? null;
+
+        const ctors = options.abilityCtors ?? Anomaly.selectAbilityConstructors(spawnCount);
+        this.activeAbilities = ctors.map((Ctor) => new Ctor());
+
         this.setBarrels([{
             id: 'anomaly_front_barrel',
             offsetX: 34,
@@ -57,6 +86,10 @@ export class Anomaly extends HostileEntity {
         }]);
     }
 
+    public override get contactDamage(): number {
+        return this.damage * this.damageBoostMultiplier;
+    }
+
     public override toData(): EntityData {
         return { ...super.toData(), aimAngle: this.aimAngle };
     }
@@ -65,15 +98,28 @@ export class Anomaly extends HostileEntity {
         return this.pendingSpawns.splice(0);
     }
 
+    public notifyRepositioned(): void {
+        for (const ability of this.activeAbilities) {
+            ability.onOwnerRepositioned?.();
+        }
+    }
+
+    public isPhysicsSuppressed(): boolean {
+        return this.activeAbilities.some((ability) => ability.suppressesPhysics?.() ?? false);
+    }
+
     public tick(context: EnemyUpdateContext): void {
         const { playerX, playerY, player, dt, currentTime, onShoot } = context;
         this.isInverted = false;
+        this.damageBoostMultiplier = 1;
+
+        // Run every ability each tick. skipBaseBehavior accumulates but never short-circuits the loop,
+        // so abilities (e.g. Inversion, Dash) keep working even while Swarm holds position.
         let skipBaseBehavior = false;
         const abilitiesByPriority = [...this.activeAbilities].sort((a, b) => (b.priority ?? 0) - (a.priority ?? 0));
         for (const ability of abilitiesByPriority) {
             const result = ability.execute(this, player, dt, currentTime);
             skipBaseBehavior ||= result?.skipBaseBehavior ?? false;
-            if (skipBaseBehavior) break;
         }
 
         if (skipBaseBehavior) {
@@ -103,7 +149,7 @@ export class Anomaly extends HostileEntity {
     }
 
     public override updatePhysics(dt: number): void {
-        if (this.activeAbilities.some((ability) => ability.suppressesPhysics?.() ?? false)) {
+        if (this.isPhysicsSuppressed()) {
             this.knockbackVelocity = { x: 0, y: 0 };
             return;
         }
@@ -112,7 +158,13 @@ export class Anomaly extends HostileEntity {
     }
 
     public override onProjectileHit(currentTimeMs: number): EnemyType[] {
-        return this.activeAbilities.flatMap((ability) => ability.onOwnerHit?.(currentTimeMs) ?? []);
+        if (!this.isFakeCopy) {
+            this.hasBeenRevealed = true;
+        }
+        for (const ability of this.activeAbilities) {
+            ability.onOwnerHit?.(this, currentTimeMs);
+        }
+        return [];
     }
 
     private tryShoot(currentTimeMs: number, onShoot: (aimAngle: number) => void): void {
@@ -123,17 +175,12 @@ export class Anomaly extends HostileEntity {
         onShoot(this.aimAngle);
     }
 
-    private static selectAbilities(count: number): AnomalyAbility[] {
-        if (count <= 0) {
-            return [];
-        }
+    public static selectAbilityConstructors(count: number): AnomalyAbilityCtor[] {
+        if (count <= 0) return [];
+        if (count === 1) return [DashAbility];
 
-        if (count === 1) {
-            return [new DashAbility()];
-        }
-
-        const selected: AnomalyAbility[] = [];
-        const selectedCtors = new Set<new () => AnomalyAbility>();
+        const selected: AnomalyAbilityCtor[] = [];
+        const selectedCtors = new Set<AnomalyAbilityCtor>();
         const available = ABILITY_POOL.map(e => ({ ...e }));
         const n = Math.min(count, ABILITY_POOL.length);
 
@@ -144,7 +191,7 @@ export class Anomaly extends HostileEntity {
             for (let j = 0; j < available.length; j++) {
                 roll -= available[j].weight;
                 if (roll <= 0) {
-                    selected.push(new available[j].ctor());
+                    selected.push(available[j].ctor);
                     selectedCtors.add(available[j].ctor);
                     available.splice(j, 1);
                     break;
