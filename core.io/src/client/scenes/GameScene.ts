@@ -141,6 +141,10 @@ export class GameScene extends Phaser.Scene {
 
         this.subscriptions.push(
             onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, radius }) => {
+                if (xpDropped <= 0) {
+                    return;
+                }
+
                 this.gameRenderer.playFloatingText(x, y - radius - 30, `+${xpDropped} XP`, '#44ff44');
             })
         );

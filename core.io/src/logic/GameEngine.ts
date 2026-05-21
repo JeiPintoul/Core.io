@@ -808,7 +808,8 @@ export class GameEngine {
                 player: targetPlayer,
                 dt,
                 currentTime,
-                onShoot: (aimAngle) => this.spawnProjectiles(enemy, 'enemy', aimAngle, enemy.stats)
+                onShoot: (aimAngle) => this.spawnProjectiles(enemy, 'enemy', aimAngle, enemy.stats),
+                countEnemiesByType: (enemyType, ownerEnemyId) => this.countEnemiesByType(enemyType, ownerEnemyId)
             };
 
             enemy.tick(context);
@@ -824,7 +825,8 @@ export class GameEngine {
                     spawn.orbitRadius,
                     spawn.ownerEnemyId,
                     spawn.assignedPlayerId,
-                    spawn.mirrorStats
+                    spawn.mirrorStats,
+                    spawn.xpDrop
                 );
             }
 
@@ -1047,14 +1049,27 @@ export class GameEngine {
         orbitRadius = 0,
         ownerEnemyId?: string,
         assignedPlayerId?: PlayerId,
-        mirrorStats?: EntityStats
+        mirrorStats?: EntityStats,
+        xpDrop?: number
     ): void {
         const enemyId = `enemy_${this.enemyIdCounter++}`;
-        this.enemies.push(this.createEnemyInstance(
+        const enemy = this.createEnemyInstance(
             enemyType, enemyId, x, y, multiplier,
             orbitSlot, orbitTotal, orbitRadius,
             ownerEnemyId, assignedPlayerId, mirrorStats
-        ));
+        );
+        if (xpDrop !== undefined) {
+            enemy.xpDrop = xpDrop;
+        }
+        enemy.ownerEnemyId = ownerEnemyId ?? null;
+        this.enemies.push(enemy);
+    }
+
+    private countEnemiesByType(enemyType: EnemyType, ownerEnemyId?: string): number {
+        return this.enemies.filter(enemy =>
+            enemy.enemyType === enemyType &&
+            (!ownerEnemyId || enemy.ownerEnemyId === ownerEnemyId)
+        ).length;
     }
 
     private createEnemyInstance(
@@ -1635,13 +1650,13 @@ export class GameEngine {
         const profile = this.getDifficultyProfile();
         return {
             healthMultiplier: profile.bossMaxHealthScale,
-            healthRegenMultiplier: profile.bossHealthRegenScale,
             bodyDamageMultiplier: profile.bossBodyDamageScale,
             bulletSpeedMultiplier: profile.bossBulletSpeedScale,
             bulletPenetrationMultiplier: profile.bossBulletPenetrationScale,
             bulletDamageMultiplier: profile.bossBulletDamageScale,
             movementSpeedMultiplier: profile.bossMovementSpeedScale,
             reloadBonus: profile.bossReloadBonus,
+            extraPlayers: Math.max(0, this.getPlayers().length - 1),
         };
     }
 

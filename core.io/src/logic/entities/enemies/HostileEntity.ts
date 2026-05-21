@@ -7,6 +7,7 @@ export interface PendingEnemySpawn {
     x: number;
     y: number;
     multiplier?: number;
+    xpDrop?: number;
     orbitSlot?: number;
     orbitTotal?: number;
     orbitRadius?: number;
@@ -22,12 +23,14 @@ export interface EnemyUpdateContext {
     readonly dt: number;
     readonly currentTime: number;
     readonly onShoot: (aimAngle: number) => void;
+    readonly countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number;
 }
 
 export abstract class HostileEntity extends Entity {
     public abstract readonly enemyType: EnemyType;
     public abstract readonly stats: EntityStats;
     public abstract damage: number;
+    public ownerEnemyId: string | null = null;
 
     public override get contactDamage(): number {
         return this.damage;
