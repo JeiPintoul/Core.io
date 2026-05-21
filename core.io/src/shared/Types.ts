@@ -60,6 +60,7 @@ export interface UpgradeCardData {
     description: string;
     rarity: CardRarity;
     modifiers: StatModifiers;
+    paintColor: string;
 }
 
 export interface UpgradeRollOption {
