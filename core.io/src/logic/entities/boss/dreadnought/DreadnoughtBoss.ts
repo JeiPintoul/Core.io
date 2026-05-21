@@ -50,10 +50,14 @@ export class DreadnoughtBoss extends HostileEntity {
     private readonly strafeSpeedFactor = 0.6;
     private readonly summonRadius = 170;
     private readonly minionLimits: Record<EnemyType, number>;
+    private readonly summonWindupMs = 650;
+    private readonly minionSpawnGraceMs = 650;
 
     private currentPhase: BossPhase = 1;
     private lastShotAtMs = 0;
     private lastSummonAtMs = -Infinity;
+    private summonStartedAtMs = -Infinity;
+    private summonPendingCount = 0;
     private lastDashAtMs = -Infinity;
     private strafeDirection: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
 
@@ -81,7 +85,11 @@ export class DreadnoughtBoss extends HostileEntity {
     }
 
     public override toData(): EntityData {
-        return { ...super.toData(), aimAngle: this.aimAngle };
+        return {
+            ...super.toData(),
+            aimAngle: this.aimAngle,
+            dreadnoughtSummonProgress: this.getSummonProgress(performance.now())
+        };
     }
 
     public override drainPendingSpawns(): PendingEnemySpawn[] {
@@ -106,7 +114,7 @@ export class DreadnoughtBoss extends HostileEntity {
         }
 
         this.tryShoot(distance, currentTime, onShoot);
-        this.trySummon(currentTime, context.countEnemiesByType);
+        this.updateSummon(currentTime, context.countEnemiesByType);
     }
 
     private updateMovement(dx: number, dy: number, distance: number, dt: number, currentTime: number): void {
@@ -163,7 +171,15 @@ export class DreadnoughtBoss extends HostileEntity {
         onShoot(this.aimAngle);
     }
 
-    private trySummon(currentTime: number, countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): void {
+    private updateSummon(currentTime: number, countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): void {
+        if (this.summonPendingCount > 0) {
+            if (currentTime - this.summonStartedAtMs >= this.summonWindupMs) {
+                this.queueSummons(this.summonPendingCount, countEnemiesByType);
+                this.summonPendingCount = 0;
+            }
+            return;
+        }
+
         const summonCooldownByPhase: Record<BossPhase, number> = {
             1: 15000,
             2: 8200,
@@ -187,6 +203,11 @@ export class DreadnoughtBoss extends HostileEntity {
             return;
         }
 
+        this.summonStartedAtMs = currentTime;
+        this.summonPendingCount = count;
+    }
+
+    private queueSummons(count: number, countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): void {
         let spawned = 0;
         let attempts = 0;
         while (spawned < count && attempts < count * 4) {
@@ -205,10 +226,19 @@ export class DreadnoughtBoss extends HostileEntity {
                 y: this.y + Math.sin(angle) * this.summonRadius,
                 multiplier: minionMultiplier,
                 ownerEnemyId: this.id,
-                xpDrop: 0
+                xpDrop: 0,
+                spawnGraceMs: this.minionSpawnGraceMs
             });
             spawned += 1;
         }
+    }
+
+    private getSummonProgress(currentTimeMs: number): number {
+        if (this.summonPendingCount <= 0) {
+            return 0;
+        }
+
+        return Math.min(1, Math.max(0, (currentTimeMs - this.summonStartedAtMs) / this.summonWindupMs));
     }
 
     private rollAvailableSummonType(countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): EnemyType | null {

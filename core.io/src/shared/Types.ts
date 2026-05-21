@@ -132,6 +132,9 @@ export interface EntityData {
     sentinelTriangles?: SentinelTriangleData[];
     magnetarPhase?: 'CHARGING' | 'RELEASING';
     magnetarPhaseProgress?: number;
+    ownerEnemyId?: string | null;
+    spawnedAtMs?: number;
+    dreadnoughtSummonProgress?: number;
 }
 
 export interface ProjectileData {
@@ -179,6 +182,7 @@ export interface GameState {
     isColorSelection: boolean;
     autoSpin: boolean;
     isCoop: boolean;
+    bossExitPortal?: { x: number; y: number; radius: number } | null;
 }
 
 export interface InputState {
@@ -321,6 +325,7 @@ export interface GameEventPayloads {
     audio_restart_requested: undefined;
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
+    boss_exit_portal_used: undefined;
     anomaly_encounter_start: BossFightStartPayload;
     anomaly_defeated: undefined;
     arena_resized: { width: number; height: number };

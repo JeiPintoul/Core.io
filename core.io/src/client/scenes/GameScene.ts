@@ -205,7 +205,7 @@ export class GameScene extends Phaser.Scene {
 
         this.subscriptions.push(onGameEvent(GameEvents.BOSS_FIGHT_START, focusEncounterArena));
         this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, focusEncounterArena));
-        this.subscriptions.push(onGameEvent(GameEvents.BOSS_DEFEATED, restoreMainArena));
+        this.subscriptions.push(onGameEvent(GameEvents.BOSS_EXIT_PORTAL_USED, restoreMainArena));
         this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_DEFEATED, restoreMainArena));
 
         this.subscriptions.push(

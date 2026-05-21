@@ -14,6 +14,7 @@ export interface PendingEnemySpawn {
     ownerEnemyId?: string;
     assignedPlayerId?: PlayerId;
     mirrorStats?: EntityStats;
+    spawnGraceMs?: number;
 }
 
 export interface EnemyUpdateContext {
@@ -31,6 +32,8 @@ export abstract class HostileEntity extends Entity {
     public abstract readonly stats: EntityStats;
     public abstract damage: number;
     public ownerEnemyId: string | null = null;
+    public spawnedAtMs = 0;
+    public spawnCollisionGraceEndsAtMs = 0;
 
     public override get contactDamage(): number {
         return this.damage;
@@ -77,6 +80,8 @@ export abstract class HostileEntity extends Entity {
             radius: this.radius,
             stats: this.stats,
             enemyType: this.enemyType,
+            ownerEnemyId: this.ownerEnemyId,
+            spawnedAtMs: this.spawnedAtMs,
         };
     }
 }

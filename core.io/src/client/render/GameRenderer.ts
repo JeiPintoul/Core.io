@@ -14,6 +14,7 @@ interface EntityRenderSnapshot {
     outlineColor: number;
     strokeWidth: number;
     lastSeenAt: number;
+    enemyType?: EnemyType;
 }
 
 export class GameRenderer {
@@ -73,10 +74,11 @@ export class GameRenderer {
         }
 
         this.drawProjectiles(state, playerColorById);
+        this.drawPortal(state);
         this.drawEnemies(state, activeEntityIds);
         this.drawPlayers(players, activeEntityIds);
         this.updatePlayerNames(players);
-        this.minimapRenderer.draw(players);
+        this.minimapRenderer.draw(players, state.bossExitPortal ?? null);
         this.pruneEnemyBarrelRetraction(activeEntityIds);
 
         this.healthBarRenderer.pruneWorldHealthBars(activeEntityIds);
@@ -97,6 +99,11 @@ export class GameRenderer {
 
         this.entitySnapshots.delete(entityId);
         this.hidePlayerName(entityId);
+
+        if (snapshot.enemyType === 'DREADNOUGHT') {
+            this.particleManager.playBossDefeated(snapshot.x, snapshot.y, snapshot.radius, snapshot.fillColor);
+            return;
+        }
 
         this.particleManager.playEntityDeathGhost(
             snapshot.x, snapshot.y, snapshot.radius,
@@ -146,7 +153,8 @@ export class GameRenderer {
         y: number,
         radius: number,
         fillColor: number,
-        strokeWidth: number
+        strokeWidth: number,
+        enemyType?: EnemyType
     ): void {
         const outlineColor = darkenColor(fillColor, 40);
 
@@ -157,7 +165,8 @@ export class GameRenderer {
             fillColor,
             outlineColor,
             strokeWidth,
-            lastSeenAt: this.scene.time.now
+            lastSeenAt: this.scene.time.now,
+            enemyType
         });
     }
 
@@ -331,7 +340,11 @@ export class GameRenderer {
         const shouldMaskAnomalyHealth = state.enemies.some((enemy) => enemy.enemyType === 'ANOMALY_DECOY');
 
         for (const enemy of state.enemies) {
-            const { x, y, radius, health, stats, isDead, enemyType, aimAngle, sentinelTriangles, magnetarPhase, magnetarPhaseProgress } = enemy;
+            const {
+                x, y, radius, health, stats, isDead, enemyType, aimAngle,
+                sentinelTriangles, magnetarPhase, magnetarPhaseProgress,
+                ownerEnemyId, spawnedAtMs, dreadnoughtSummonProgress
+            } = enemy;
 
             if (isDead) {
                 continue;
@@ -358,15 +371,21 @@ export class GameRenderer {
             }
 
             const bodyColor = this.getEnemyBodyColor(enemyType);
+            const spawnScale = this.getSpawnScale(ownerEnemyId, spawnedAtMs, nowSeconds);
+            const drawRadius = radius * spawnScale;
+
+            if (spawnScale < 1) {
+                this.drawSpawnAppearFx(x, y, radius, spawnScale, bodyColor);
+            }
 
             if (enemyType === 'KAMIKAZE') {
-                this.drawRaiderBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds);
+                this.drawRaiderBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds);
             } else if (enemyType === 'DREADNOUGHT') {
-                this.drawDreadnoughtBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds);
+                this.drawDreadnoughtBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds, dreadnoughtSummonProgress ?? 0);
             } else if (enemyType === 'BRUTE') {
-                this.drawMagnetarBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds, magnetarPhase, magnetarPhaseProgress ?? 0);
+                this.drawMagnetarBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds, magnetarPhase, magnetarPhaseProgress ?? 0);
             } else {
-                this.drawCircle(x, y, radius, bodyColor, VISUAL.STROKE.enemy);
+                this.drawCircle(x, y, drawRadius, bodyColor, VISUAL.STROKE.enemy);
             }
 
             this.rememberEntitySnapshot(
@@ -375,7 +394,8 @@ export class GameRenderer {
                 y,
                 radius,
                 bodyColor,
-                VISUAL.STROKE.enemy
+                VISUAL.STROKE.enemy,
+                enemyType
             );
 
             if (!this.shouldHideEnemyHealthBar(enemyType, shouldMaskAnomalyHealth)) {
@@ -412,6 +432,55 @@ export class GameRenderer {
 
     private shouldHideEnemyHealthBar(enemyType: EnemyType | undefined, shouldMaskAnomalyHealth: boolean): boolean {
         return shouldMaskAnomalyHealth && (enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY');
+    }
+
+    private getSpawnScale(ownerEnemyId: string | null | undefined, spawnedAtMs: number | undefined, nowSeconds: number): number {
+        if (!ownerEnemyId || !spawnedAtMs) {
+            return 1;
+        }
+
+        const elapsedMs = (nowSeconds * 1000) - spawnedAtMs;
+        if (elapsedMs >= 520) {
+            return 1;
+        }
+
+        const progress = Phaser.Math.Clamp(elapsedMs / 520, 0, 1);
+        return 0.2 + Phaser.Math.Easing.Back.Out(progress) * 0.8;
+    }
+
+    private drawSpawnAppearFx(x: number, y: number, radius: number, scale: number, color: number): void {
+        const progress = Phaser.Math.Clamp((scale - 0.2) / 0.8, 0, 1);
+        const alpha = 0.55 * (1 - progress);
+
+        this.gfxGame.lineStyle(2, 0xe7d6ff, alpha);
+        this.gfxGame.strokeCircle(x, y, radius * (1.25 + progress * 0.45));
+        this.gfxGame.fillStyle(color, alpha * 0.35);
+        this.gfxGame.fillCircle(x, y, radius * (0.8 + progress * 0.45));
+    }
+
+    private drawPortal(state: GameState): void {
+        const portal = state.bossExitPortal;
+        if (!portal) {
+            return;
+        }
+
+        const pulseTime = this.scene.time.now / 1000;
+        const pulse = 0.5 + Math.sin(pulseTime * 4.8) * 0.5;
+
+        this.gfxGame.fillStyle(0x7f5cff, 0.16 + pulse * 0.08);
+        this.gfxGame.fillCircle(portal.x, portal.y, portal.radius * (1.2 + pulse * 0.12));
+        this.gfxGame.lineStyle(3, 0xded0ff, 0.85);
+        this.gfxGame.strokeCircle(portal.x, portal.y, portal.radius);
+        this.gfxGame.lineStyle(1.6, 0x8ee8ff, 0.72);
+        this.gfxGame.strokeCircle(portal.x, portal.y, portal.radius * (0.68 + pulse * 0.08));
+
+        for (let i = 0; i < 3; i++) {
+            const angle = pulseTime * 1.8 + (i * Math.PI * 2) / 3;
+            const dotX = portal.x + Math.cos(angle) * portal.radius * 0.82;
+            const dotY = portal.y + Math.sin(angle) * portal.radius * 0.82;
+            this.gfxGame.fillStyle(0xf4efff, 0.75);
+            this.gfxGame.fillCircle(dotX, dotY, 4.2);
+        }
     }
 
     /**
@@ -485,12 +554,17 @@ export class GameRenderer {
         radius: number,
         color: number,
         aimAngle: number,
-        nowSeconds: number
+        nowSeconds: number,
+        summonProgress: number
     ): void {
         const outline = darkenColor(color, 46);
         const hullBase = darkenColor(color, 26);
         const rotA = nowSeconds * 0.42;
-        const rotB = -nowSeconds * 0.64;
+        const summonSpin = summonProgress <= 0.35
+            ? -summonProgress * 3.2
+            : -1.12 + ((summonProgress - 0.35) / 0.65) * 8.6;
+        const rotB = -nowSeconds * 0.64 + summonSpin;
+        const gearGlow = summonProgress > 0 ? 0.25 + summonProgress * 0.45 : 0;
 
         this.drawPolygon(x, y, radius + 22, 8, rotA, 0x2b203d, 0xdfc4ff, 2, 0.26);
         this.drawPolygon(x, y, radius + 12, 6, rotB, hullBase, 0xe6d3ff, 2, 0.55);
@@ -505,8 +579,13 @@ export class GameRenderer {
         this.drawTriangle(x, y, radius * 0.42, aimAngle + Math.PI / 2, 0xf7ecff, 2);
         this.gfxGame.fillStyle(0x130d20, 0.9);
         this.gfxGame.fillCircle(x, y, radius * 0.28);
-        this.gfxGame.lineStyle(1.4, 0xffd7ff, 0.65);
+        this.gfxGame.lineStyle(1.4 + summonProgress * 2.2, 0xffd7ff, Math.min(1, 0.65 + gearGlow));
         this.gfxGame.strokeCircle(x, y, radius * 0.28);
+
+        if (summonProgress > 0) {
+            this.gfxGame.lineStyle(2, 0xe9c7ff, 0.42 * (1 - Math.abs(0.72 - summonProgress)));
+            this.gfxGame.strokeCircle(x, y, radius * (1.28 + summonProgress * 0.28));
+        }
     }
 
     /**

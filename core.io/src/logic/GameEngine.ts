@@ -102,6 +102,8 @@ export class GameEngine {
     private readonly processedEnemyDeathIds = new Set<string>();
 
     private isBossFightActive = false;
+    private isBossExitPortalActive = false;
+    private readonly bossExitPortalRadius = 62;
     private isAnomalyEncounterActive = false;
     private activeBossWaveRule: BossWaveRule | null = null;
     private currentArena: { x: number; y: number; width: number; height: number };
@@ -440,6 +442,11 @@ export class GameEngine {
             return;
         }
 
+        if (this.isBossExitPortalActive) {
+            this.exitBossArena(now);
+            return;
+        }
+
         if (this.engineState === EngineState.ANOMALY_ENCOUNTER) {
             this.enemies = [];
             this.endAnomalyEncounter(now);
@@ -722,6 +729,7 @@ export class GameEngine {
 
         this.missionManager.update(currentTime);
         this.checkCollisions(currentTime);
+        this.tryUseBossExitPortal(currentTime);
         this.advanceWaveState(currentTime);
     }
 
@@ -767,6 +775,7 @@ export class GameEngine {
             isColorSelection: this.engineState === EngineState.COLOR_SELECTION,
             autoSpin: this.currentInputs.player_1.autoSpin,
             isCoop: playersData.length > 1,
+            bossExitPortal: this.isBossExitPortalActive ? this.getBossExitPortal() : null,
         };
 
         emitGameEvent(GameEvents.STATE_UPDATE, exportState);
@@ -826,7 +835,9 @@ export class GameEngine {
                     spawn.ownerEnemyId,
                     spawn.assignedPlayerId,
                     spawn.mirrorStats,
-                    spawn.xpDrop
+                    spawn.xpDrop,
+                    spawn.spawnGraceMs,
+                    currentTime
                 );
             }
 
@@ -1050,7 +1061,9 @@ export class GameEngine {
         ownerEnemyId?: string,
         assignedPlayerId?: PlayerId,
         mirrorStats?: EntityStats,
-        xpDrop?: number
+        xpDrop?: number,
+        spawnGraceMs = 0,
+        spawnedAtMs = this.lastTick
     ): void {
         const enemyId = `enemy_${this.enemyIdCounter++}`;
         const enemy = this.createEnemyInstance(
@@ -1062,6 +1075,8 @@ export class GameEngine {
             enemy.xpDrop = xpDrop;
         }
         enemy.ownerEnemyId = ownerEnemyId ?? null;
+        enemy.spawnedAtMs = spawnedAtMs;
+        enemy.spawnCollisionGraceEndsAtMs = spawnedAtMs + spawnGraceMs;
         this.enemies.push(enemy);
     }
 
@@ -1352,6 +1367,10 @@ export class GameEngine {
     }
 
     private resolveEntityCollision(entityA: Entity, entityB: Entity, applyDamage: boolean, currentTime: number, onEntityADamaged: () => void = () => {}): boolean {
+        if (this.isOwnerSpawnCollisionGraceActive(entityA, entityB, currentTime)) {
+            return false;
+        }
+
         const radiusA = entityA.radius;
         const radiusB = entityB.radius;
         const dx = entityB.x - entityA.x;
@@ -1378,6 +1397,18 @@ export class GameEngine {
         this.tryApplyBurstCollisionDamage(entityB, entityA, currentTime);
 
         return true;
+    }
+
+    private isOwnerSpawnCollisionGraceActive(entityA: Entity, entityB: Entity, currentTime: number): boolean {
+        if (entityA instanceof HostileEntity && entityA.ownerEnemyId === entityB.id && currentTime < entityA.spawnCollisionGraceEndsAtMs) {
+            return true;
+        }
+
+        if (entityB instanceof HostileEntity && entityB.ownerEnemyId === entityA.id && currentTime < entityB.spawnCollisionGraceEndsAtMs) {
+            return true;
+        }
+
+        return false;
     }
 
     private applyPositionalCorrection(
@@ -1503,6 +1534,10 @@ export class GameEngine {
                 }
                 return;
             case EngineState.UPGRADE_PHASE:
+                if (this.isBossExitPortalActive) {
+                    return;
+                }
+
                 if (this.activeUpgradePlayerId === null) {
                     this.startWaveStartingAnimation(currentTime);
                 }
@@ -1703,10 +1738,19 @@ export class GameEngine {
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.enemies = [];
         this.spawnQueue = [];
+        this.isBossExitPortalActive = false;
 
         const centerX = this.arenaSize.width / 2;
         const centerY = this.arenaSize.height / 2;
         this.positionPlayers(centerX, centerY);
+    }
+
+    private getBossExitPortal(): { x: number; y: number; radius: number } {
+        return {
+            x: this.ENCOUNTER_ARENA.x + this.ENCOUNTER_ARENA.width / 2,
+            y: this.ENCOUNTER_ARENA.y + this.ENCOUNTER_ARENA.height / 2,
+            radius: this.bossExitPortalRadius
+        };
     }
 
     private buildEncounterArenaPayload() {
@@ -1737,8 +1781,10 @@ export class GameEngine {
     private endBossFight(currentTime: number): void {
         const bossWaveRule = this.activeBossWaveRule;
         this.isBossFightActive = false;
+        this.isBossExitPortalActive = true;
         this.activeBossWaveRule = null;
-        this.restoreMainArena();
+        this.enemies = [];
+        this.spawnQueue = [];
 
         this.missionManager.onBossDefeated();
         emitGameEvent(GameEvents.BOSS_DEFEATED, undefined);
@@ -1754,8 +1800,7 @@ export class GameEngine {
             emitGameEvent(GameEvents.WAVE_CLEARED, { waveCleared, nextWave });
         }
 
-        this.engineState = EngineState.WAVE_CLEAR_ANIMATION;
-        this.waveClearAnimationEndsAtMs = currentTime + this.waveTransitionAnimationDurationMs;
+        this.enterUpgradePhase(currentTime);
     }
 
     /**
@@ -1804,6 +1849,10 @@ export class GameEngine {
         });
 
         if (playersWithPendingUpgrades.length === 0) {
+            if (this.isBossExitPortalActive) {
+                return;
+            }
+
             this.startWaveStartingAnimation(currentTime);
             return;
         }
@@ -1875,6 +1924,32 @@ export class GameEngine {
         const dx = ax - bx;
         const dy = ay - by;
         return Math.hypot(dx, dy) < (aRadius + bRadius);
+    }
+
+    private tryUseBossExitPortal(currentTime: number): void {
+        if (!this.isBossExitPortalActive || this.activeUpgradePlayerId !== null) {
+            return;
+        }
+
+        const portal = this.getBossExitPortal();
+        const playerEntered = this.getPlayers().some((player) =>
+            player.health > 0 &&
+            this.checkCircularCollision(player.x, player.y, player.radius, portal.x, portal.y, portal.radius)
+        );
+
+        if (playerEntered) {
+            this.exitBossArena(currentTime);
+        }
+    }
+
+    private exitBossArena(currentTime: number): void {
+        if (!this.isBossExitPortalActive) {
+            return;
+        }
+
+        this.restoreMainArena();
+        emitGameEvent(GameEvents.BOSS_EXIT_PORTAL_USED, undefined);
+        this.startWaveStartingAnimation(currentTime);
     }
 
     private handleUpgradeModalRequested(): void {
