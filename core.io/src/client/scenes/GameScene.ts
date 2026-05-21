@@ -127,8 +127,8 @@ export class GameScene extends Phaser.Scene {
         );
 
         this.subscriptions.push(
-            onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction, color }) => {
-                this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction, color);
+            onGameEvent(GameEvents.PROJECTILE_DESTROYED, ({ x, y, radius, faction, color, visualId }) => {
+                this.gameRenderer.playProjectileDeathAnimation(x, y, radius, faction, color, visualId);
             })
         );
 

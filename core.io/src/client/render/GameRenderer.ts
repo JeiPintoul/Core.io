@@ -1,9 +1,12 @@
 import Phaser from 'phaser';
 import type { EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
+import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
 import { COLORS, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
 import { MinimapRenderer } from './MinimapRenderer';
 import { ParticleManager } from './ParticleManager';
+import { EnemyVisualRenderer } from './entities/EnemyVisualRenderer';
+import { ProjectileVisualRenderer } from './projectiles/ProjectileVisualRenderer';
 import { darkenColor } from './RenderUtils';
 
 interface EntityRenderSnapshot {
@@ -21,6 +24,8 @@ export class GameRenderer {
     private healthBarRenderer: HealthBarRenderer;
     private minimapRenderer: MinimapRenderer;
     private particleManager: ParticleManager;
+    private enemyVisualRenderer: EnemyVisualRenderer;
+    private projectileVisualRenderer: ProjectileVisualRenderer;
     private readonly entitySnapshots = new Map<string, EntityRenderSnapshot>();
     private currentPlayerId: string | null = null;
     private isPlayerDeathAnimating = false;
@@ -30,20 +35,6 @@ export class GameRenderer {
     private readonly enemyBarrelRetractions = new Map<string, { value: number }>();
     private readonly enemyRecoilTweens = new Map<string, Phaser.Tweens.Tween>();
     private playerRecoilTween: Phaser.Tweens.Tween | null = null;
-
-    private readonly dreadnoughtProjectileCore = 0xf8e9ff;
-    private readonly dreadnoughtProjectileAura = 0xbb7bff;
-    private readonly dreadnoughtProjectileRing = 0x5d2ea1;
-    private readonly enemyColorByType: Record<EnemyType, number> = {
-        KAMIKAZE: COLORS.ENEMY,
-        RANGED: COLORS.ENEMY,
-        SENTINEL: COLORS.ENEMY,
-        SKIRMISHER: COLORS.ENEMY,
-        BRUTE: COLORS.ENEMY,
-        ANOMALY: 0xdde8ff,
-        ANOMALY_DECOY: 0xdde8ff,
-        DREADNOUGHT: 0xb184ff
-    };
 
     constructor(
         private scene: Phaser.Scene,
@@ -56,6 +47,8 @@ export class GameRenderer {
         this.healthBarRenderer = new HealthBarRenderer(scene, gfxGame);
         this.minimapRenderer = new MinimapRenderer(scene, camera, gfxHud);
         this.particleManager = new ParticleManager(scene);
+        this.enemyVisualRenderer = new EnemyVisualRenderer(gfxGame);
+        this.projectileVisualRenderer = new ProjectileVisualRenderer(gfxGame);
     }
 
     /**
@@ -100,21 +93,24 @@ export class GameRenderer {
         this.entitySnapshots.delete(entityId);
         this.hidePlayerName(entityId);
 
-        if (snapshot.enemyType === 'DREADNOUGHT') {
-            this.particleManager.playBossDefeated(snapshot.x, snapshot.y, snapshot.radius, snapshot.fillColor);
-            return;
-        }
-
-        this.particleManager.playEntityDeathGhost(
+        this.particleManager.playEntityDeath(
             snapshot.x, snapshot.y, snapshot.radius,
-            snapshot.fillColor, snapshot.outlineColor, snapshot.strokeWidth
+            snapshot.fillColor, snapshot.outlineColor, snapshot.strokeWidth,
+            snapshot.enemyType
         );
     }
 
-    public playProjectileDeathAnimation(x: number, y: number, radius: number, faction: ProjectileFaction, color?: number): void {
+    public playProjectileDeathAnimation(
+        x: number,
+        y: number,
+        radius: number,
+        faction: ProjectileFaction,
+        color?: number,
+        visualId?: ProjectileVisualId
+    ): void {
         const isPlayerProjectile = faction === 'player';
         const pulseColor = color ?? (isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY);
-        this.particleManager.playProjectileDeath(x, y, radius, pulseColor);
+        this.particleManager.playProjectileDeath(x, y, radius, pulseColor, visualId);
     }
 
     public playFloatingText(x: number, y: number, text: string, color: string): void {
@@ -342,8 +338,7 @@ export class GameRenderer {
         for (const enemy of state.enemies) {
             const {
                 x, y, radius, health, stats, isDead, enemyType, aimAngle,
-                sentinelTriangles, magnetarPhase, magnetarPhaseProgress,
-                ownerEnemyId, spawnedAtMs, dreadnoughtSummonProgress
+                sentinelTriangles, ownerEnemyId, spawnedAtMs
             } = enemy;
 
             if (isDead) {
@@ -363,30 +358,9 @@ export class GameRenderer {
                 this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
             }
 
-            if (enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY') {
-                this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
-                this.gfxGame.strokeCircle(x, y, radius + 8);
-                this.gfxGame.lineStyle(1, 0xaabbff, 0.15);
-                this.gfxGame.strokeCircle(x, y, radius + 16);
-            }
-
-            const bodyColor = this.getEnemyBodyColor(enemyType);
+            const bodyColor = this.enemyVisualRenderer.getBodyColor(enemyType);
             const spawnScale = this.getSpawnScale(ownerEnemyId, spawnedAtMs, nowSeconds);
-            const drawRadius = radius * spawnScale;
-
-            if (spawnScale < 1) {
-                this.drawSpawnAppearFx(x, y, radius, spawnScale, bodyColor);
-            }
-
-            if (enemyType === 'KAMIKAZE') {
-                this.drawRaiderBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds);
-            } else if (enemyType === 'DREADNOUGHT') {
-                this.drawDreadnoughtBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds, dreadnoughtSummonProgress ?? 0);
-            } else if (enemyType === 'BRUTE') {
-                this.drawMagnetarBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds, magnetarPhase, magnetarPhaseProgress ?? 0);
-            } else {
-                this.drawCircle(x, y, drawRadius, bodyColor, VISUAL.STROKE.enemy);
-            }
+            this.enemyVisualRenderer.draw(enemy, bodyColor, nowSeconds, spawnScale);
 
             this.rememberEntitySnapshot(
                 enemy.id,
@@ -448,16 +422,6 @@ export class GameRenderer {
         return 0.2 + Phaser.Math.Easing.Back.Out(progress) * 0.8;
     }
 
-    private drawSpawnAppearFx(x: number, y: number, radius: number, scale: number, color: number): void {
-        const progress = Phaser.Math.Clamp((scale - 0.2) / 0.8, 0, 1);
-        const alpha = 0.55 * (1 - progress);
-
-        this.gfxGame.lineStyle(2, 0xe7d6ff, alpha);
-        this.gfxGame.strokeCircle(x, y, radius * (1.25 + progress * 0.45));
-        this.gfxGame.fillStyle(color, alpha * 0.35);
-        this.gfxGame.fillCircle(x, y, radius * (0.8 + progress * 0.45));
-    }
-
     private drawPortal(state: GameState): void {
         const portal = state.bossExitPortal;
         if (!portal) {
@@ -495,239 +459,10 @@ export class GameRenderer {
             }
 
             const isPlayerProjectile = proj.faction === 'player';
-            const isDreadnoughtProjectile = proj.faction === 'enemy' && proj.ownerId === 'dreadnought_boss';
-
-            if (isDreadnoughtProjectile) {
-                this.drawDreadnoughtProjectile(proj.x, proj.y, proj.radius, pulseTime);
-                continue;
-            }
-
             const fallbackPlayerColor = playerColorById.get(proj.ownerId) ?? COLORS.PLAYER;
-            const fillColor = isPlayerProjectile ? (proj.color ?? fallbackPlayerColor) : COLORS.ENEMY;
-            this.drawCircle(proj.x, proj.y, proj.radius, fillColor, VISUAL.STROKE.bullet);
+            const fallbackColor = isPlayerProjectile ? fallbackPlayerColor : COLORS.ENEMY;
+            this.projectileVisualRenderer.draw(proj, fallbackColor, pulseTime);
         }
-    }
-
-    private drawDreadnoughtProjectile(x: number, y: number, radius: number, pulseTime: number): void {
-        const pulse = 0.5 + (Math.sin((x + y) * 0.02 + pulseTime * 11) * 0.5);
-        const auraRadius = radius * (1.95 + pulse * 0.42);
-        const ringRadius = radius * (1.28 + pulse * 0.2);
-
-        this.gfxGame.fillStyle(this.dreadnoughtProjectileAura, 0.24 + pulse * 0.16);
-        this.gfxGame.fillCircle(x, y, auraRadius);
-
-        this.gfxGame.lineStyle(2, this.dreadnoughtProjectileRing, 0.88);
-        this.gfxGame.strokeCircle(x, y, ringRadius);
-
-        this.gfxGame.fillStyle(this.dreadnoughtProjectileCore, 1);
-        this.gfxGame.fillCircle(x, y, radius * 0.92);
-
-        const spikeLength = radius * 1.55;
-        this.gfxGame.lineStyle(1.2, 0xe5c6ff, 0.86);
-        this.gfxGame.beginPath();
-        this.gfxGame.moveTo(x - spikeLength, y);
-        this.gfxGame.lineTo(x + spikeLength, y);
-        this.gfxGame.moveTo(x, y - spikeLength);
-        this.gfxGame.lineTo(x, y + spikeLength);
-        this.gfxGame.strokePath();
-    }
-
-    private drawRaiderBody(x: number, y: number, radius: number, color: number, aimAngle: number, nowSeconds: number): void {
-        const outline = darkenColor(color, 42);
-        const spin = nowSeconds * 2.4;
-
-        this.drawPolygon(x, y, radius * 1.02, 4, spin + aimAngle, color, outline, VISUAL.STROKE.enemy, 1);
-        this.drawPolygon(x, y, radius * 0.58, 4, -spin * 0.8 + aimAngle, 0xffd6b8, 0xc97546, 2, 0.85);
-
-        const coreX = x + Math.cos(aimAngle) * radius * 0.16;
-        const coreY = y + Math.sin(aimAngle) * radius * 0.16;
-        this.gfxGame.fillStyle(0x111726, 0.95);
-        this.gfxGame.fillCircle(coreX, coreY, radius * 0.24);
-
-        this.gfxGame.lineStyle(1.6, 0xffcaa0, 0.5);
-        this.gfxGame.strokeCircle(x, y, radius + 5);
-    }
-
-    private drawDreadnoughtBody(
-        x: number,
-        y: number,
-        radius: number,
-        color: number,
-        aimAngle: number,
-        nowSeconds: number,
-        summonProgress: number
-    ): void {
-        const outline = darkenColor(color, 46);
-        const hullBase = darkenColor(color, 26);
-        const rotA = nowSeconds * 0.42;
-        const summonSpin = summonProgress <= 0.35
-            ? -summonProgress * 3.2
-            : -1.12 + ((summonProgress - 0.35) / 0.65) * 8.6;
-        const rotB = -nowSeconds * 0.64 + summonSpin;
-        const gearGlow = summonProgress > 0 ? 0.25 + summonProgress * 0.45 : 0;
-
-        this.drawPolygon(x, y, radius + 22, 8, rotA, 0x2b203d, 0xdfc4ff, 2, 0.26);
-        this.drawPolygon(x, y, radius + 12, 6, rotB, hullBase, 0xe6d3ff, 2, 0.55);
-        this.drawPolygon(x, y, radius, 6, aimAngle, color, outline, VISUAL.STROKE.enemy, 1);
-
-        this.gfxGame.lineStyle(2, 0xf0deff, 0.45);
-        this.gfxGame.beginPath();
-        this.gfxGame.moveTo(x - Math.cos(aimAngle) * radius * 0.66, y - Math.sin(aimAngle) * radius * 0.66);
-        this.gfxGame.lineTo(x + Math.cos(aimAngle) * radius * 0.95, y + Math.sin(aimAngle) * radius * 0.95);
-        this.gfxGame.strokePath();
-
-        this.drawTriangle(x, y, radius * 0.42, aimAngle + Math.PI / 2, 0xf7ecff, 2);
-        this.gfxGame.fillStyle(0x130d20, 0.9);
-        this.gfxGame.fillCircle(x, y, radius * 0.28);
-        this.gfxGame.lineStyle(1.4 + summonProgress * 2.2, 0xffd7ff, Math.min(1, 0.65 + gearGlow));
-        this.gfxGame.strokeCircle(x, y, radius * 0.28);
-
-        if (summonProgress > 0) {
-            this.gfxGame.lineStyle(2, 0xe9c7ff, 0.42 * (1 - Math.abs(0.72 - summonProgress)));
-            this.gfxGame.strokeCircle(x, y, radius * (1.28 + summonProgress * 0.28));
-        }
-    }
-
-    /**
-     * Magnetar bruiser. Hex hull with two horseshoe magnet poles (red N / blue S)
-     * perpendicular to its aim, animated coil rotor, and a glowing electromagnetic core.
-     * CHARGING  - inward pulsing ring grows tighter and brighter as it reaches release.
-     * RELEASING - bright shockwave ring expands outward from the core.
-     */
-    private drawMagnetarBody(
-        x: number,
-        y: number,
-        radius: number,
-        color: number,
-        aimAngle: number,
-        nowSeconds: number,
-        phase: 'CHARGING' | 'RELEASING' | undefined,
-        phaseProgress: number
-    ): void {
-        const outline = darkenColor(color, 50);
-        const hullCore = darkenColor(color, 22);
-        const coilSpin = nowSeconds * (phase === 'RELEASING' ? 6.5 : 1.4);
-        const polePerp = aimAngle + Math.PI / 2;
-
-        // Hex hull + inner plating.
-        this.drawPolygon(x, y, radius * 1.08, 6, aimAngle, hullCore, outline, VISUAL.STROKE.enemy, 1);
-        this.drawPolygon(x, y, radius * 0.78, 6, -aimAngle, color, outline, 2, 0.6);
-
-        // Rotating coil arcs around the core.
-        this.gfxGame.lineStyle(2.2, 0xb6a2ff, 0.55);
-        this.gfxGame.beginPath();
-        this.gfxGame.arc(x, y, radius * 0.62, coilSpin, coilSpin + Math.PI * 0.85);
-        this.gfxGame.strokePath();
-        this.gfxGame.beginPath();
-        this.gfxGame.arc(x, y, radius * 0.62, coilSpin + Math.PI, coilSpin + Math.PI * 1.85);
-        this.gfxGame.strokePath();
-
-        // Magnetic pole arms (horseshoe stubs) on either side perpendicular to aim.
-        const poleOffset = radius * 0.96;
-        const poleRadius = radius * 0.36;
-        const northX = x + Math.cos(polePerp) * poleOffset;
-        const northY = y + Math.sin(polePerp) * poleOffset;
-        const southX = x - Math.cos(polePerp) * poleOffset;
-        const southY = y - Math.sin(polePerp) * poleOffset;
-        this.drawPolePad(northX, northY, poleRadius, 0xe34d4d, polePerp);
-        this.drawPolePad(southX, southY, poleRadius, 0xe34d4d, polePerp + Math.PI);
-
-        // Core orb: cyan while charging, white-hot during release.
-        const coreColor = phase === 'RELEASING' ? 0xfff7d0 : 0x9be8ff;
-        const corePulse = 1 + (phase === 'CHARGING' ? Math.sin(nowSeconds * 8) * 0.08 * phaseProgress : 0);
-        this.gfxGame.fillStyle(0x14102a, 0.95);
-        this.gfxGame.fillCircle(x, y, radius * 0.32);
-        this.gfxGame.fillStyle(coreColor, 0.9);
-        this.gfxGame.fillCircle(x, y, radius * 0.2 * corePulse);
-
-        this.drawMagnetarFieldFx(x, y, radius, nowSeconds, phase, phaseProgress);
-    }
-
-    private drawPolePad(x: number, y: number, radius: number, color: number, facing: number): void {
-        const outline = darkenColor(color, 45);
-        this.gfxGame.lineStyle(2, outline, 1);
-        this.gfxGame.fillStyle(color, 0.92);
-        this.gfxGame.beginPath();
-        this.gfxGame.arc(x, y, radius, facing - Math.PI / 2, facing + Math.PI / 2);
-        this.gfxGame.closePath();
-        this.gfxGame.fillPath();
-        this.gfxGame.strokePath();
-    }
-
-    private drawMagnetarFieldFx(
-        x: number,
-        y: number,
-        radius: number,
-        nowSeconds: number,
-        phase: 'CHARGING' | 'RELEASING' | undefined,
-        progress: number
-    ): void {
-        // CHARGING: 3 inward-spiraling rings, denser/brighter as we approach release.
-        if (phase === 'CHARGING' || phase === undefined) {
-            const intensity = 0.18 + progress * 0.5;
-            for (let i = 0; i < 3; i++) {
-                const phase01 = (nowSeconds * 0.55 + i / 3) % 1;
-                const ringRadius = radius + 110 - phase01 * 110;
-                const alpha = (1 - phase01) * intensity;
-                if (alpha <= 0.02) continue;
-                this.gfxGame.lineStyle(1.5, 0x9be8ff, alpha);
-                this.gfxGame.strokeCircle(x, y, ringRadius);
-            }
-            return;
-        }
-
-        // RELEASING: single bright shockwave expanding outward to the full pull radius
-        // (must visually match gameplay reach in BruteEnemy.pullRadius = 760).
-        const maxReach = 760;
-        const shockRadius = radius + progress * (maxReach - radius);
-        const alpha = (1 - progress) * 0.85;
-        this.gfxGame.lineStyle(3.5, 0xfff7d0, alpha);
-        this.gfxGame.strokeCircle(x, y, shockRadius);
-        this.gfxGame.lineStyle(1.8, 0xffcf6b, alpha * 0.6);
-        this.gfxGame.strokeCircle(x, y, shockRadius * 1.04);
-    }
-
-    private drawPolygon(
-        x: number,
-        y: number,
-        radius: number,
-        sides: number,
-        rotation: number,
-        fillColor: number,
-        strokeColor: number,
-        strokeWidth: number,
-        alpha = 1
-    ): void {
-        if (sides < 3) {
-            return;
-        }
-
-        this.gfxGame.lineStyle(strokeWidth, strokeColor, alpha);
-        this.gfxGame.fillStyle(fillColor, alpha);
-        this.gfxGame.beginPath();
-
-        for (let i = 0; i < sides; i++) {
-            const angle = rotation + (i * Math.PI * 2) / sides;
-            const px = x + Math.cos(angle) * radius;
-            const py = y + Math.sin(angle) * radius;
-            if (i === 0) {
-                this.gfxGame.moveTo(px, py);
-            } else {
-                this.gfxGame.lineTo(px, py);
-            }
-        }
-
-        this.gfxGame.closePath();
-        this.gfxGame.fillPath();
-        this.gfxGame.strokePath();
-    }
-
-    private getEnemyBodyColor(enemyType?: EnemyType): number {
-        if (!enemyType) {
-            return COLORS.ENEMY;
-        }
-
-        return this.enemyColorByType[enemyType] ?? COLORS.ENEMY;
     }
 
     private drawEnemyBarrel(x: number, y: number, radius: number, angle: number, retraction: number): void {

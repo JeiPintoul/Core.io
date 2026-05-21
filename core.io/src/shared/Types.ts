@@ -1,3 +1,5 @@
+import type { ProjectileVisualId } from './ProjectileVisuals';
+
 export const MAX_RELOAD_POINTS = 12;
 
 export type WaveType = 'CLEAR' | 'SURVIVE' | 'BOSS';
@@ -145,6 +147,7 @@ export interface ProjectileData {
     y: number;
     radius: number;
     color?: number;
+    visualId?: ProjectileVisualId;
 }
 export interface BossFightStartPayload {
     bossArenaX: number;
@@ -235,6 +238,7 @@ export interface ProjectileDestroyedPayload {
     y: number;
     radius: number;
     color?: number;
+    visualId?: ProjectileVisualId;
 }
 
 export interface WaveClearedPayload {

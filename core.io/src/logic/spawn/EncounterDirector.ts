@@ -24,6 +24,7 @@ const WAVE_TRANSITION_ANIMATION_DURATION_MS = 1500;
 const BOSS_EXIT_PORTAL_RADIUS = 62;
 const SURVIVE_DURATION_CAP_SECONDS = 60;
 const WAVE_TYPE_CLEAR_BIAS = 0.75;
+const ANOMALY_SPAWN_TOP_MARGIN = 120;
 
 export interface EncounterDirectorHost {
     getEnemies(): HostileEntity[];
@@ -593,7 +594,8 @@ export class EncounterDirector {
      */
     private enterAnomalyEncounter(now: number): void {
         this.anomalyEncounterActive = true;
-        const { spawnX, spawnY } = this.setupEncounterArena();
+        const { spawnX } = this.setupEncounterArena();
+        const spawnY = ENCOUNTER_ARENA.y + ANOMALY_SPAWN_TOP_MARGIN;
 
         this.host.setEnemies(this.factory.buildAnomalyGroup(spawnX, spawnY, this.anomalySpawnCount));
         this.host.setEngineState(EngineState.ANOMALY_ENCOUNTER);

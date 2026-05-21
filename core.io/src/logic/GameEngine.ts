@@ -1,6 +1,11 @@
 import { emitGameEvent, GameEvents, onGameEvent } from '../shared/EventBus';
 import { normalizeColorHex } from '../shared/ColorUtils';
 import {
+    ANOMALY_PROJECTILE_COLOR,
+    PROJECTILE_VISUAL_IDS,
+    type ProjectileVisualId
+} from '../shared/ProjectileVisuals';
+import {
     PLAYER_IDS,
     type CardSelectedPayload,
     type EntityStats,
@@ -18,6 +23,7 @@ import { Projectile } from './entities/Projectile';
 import { Player } from './entities/player/Player';
 import { Anomaly } from './entities/enemies/anomaly/Anomaly';
 import { AnomalyDecoy } from './entities/enemies/anomaly/AnomalyDecoy';
+import { DreadnoughtBoss } from './entities/boss/dreadnought/DreadnoughtBoss';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../shared/CombatMath';
 import { UpgradeManager } from './UpgradeManager';
@@ -547,6 +553,7 @@ export class GameEngine {
                 y: projectile.y,
                 radius: projectile.radius,
                 color: this.getProjectileColor(projectile),
+                visualId: projectile.visualId,
             })),
             arena: this.arenaSize,
             arenaOffset: { x: this.currentArena.x, y: this.currentArena.y },
@@ -652,7 +659,9 @@ export class GameEngine {
                 spawn.spawnX, spawn.spawnY,
                 spawn.dirX, spawn.dirY,
                 spawn.damage, spawn.penetration,
-                spawn.speed, spawn.lifespan
+                spawn.speed, spawn.lifespan,
+                this.getProjectileColorForShooter(shooter, faction),
+                this.getProjectileVisualForShooter(shooter, faction)
             );
             emitGameEvent(GameEvents.PROJECTILE_FIRED, {
                 shooterId: shooter.id,
@@ -692,7 +701,9 @@ export class GameEngine {
         projectileDamage: number,
         projectilePenetration: number,
         projectileSpeed: number,
-        projectileLifespan: number
+        projectileLifespan: number,
+        projectileColor?: number,
+        projectileVisualId?: ProjectileVisualId
     ): void {
         const velocityX = dirX * projectileSpeed;
         const velocityY = dirY * projectileSpeed;
@@ -706,7 +717,9 @@ export class GameEngine {
             projectilePenetration * Projectile.BASE_HEALTH,
             projectilePenetration,
             Projectile.RADIUS,
-            projectileLifespan
+            projectileLifespan,
+            projectileColor,
+            projectileVisualId
         );
         this.projectiles.push(projectile);
     }
@@ -891,9 +904,22 @@ export class GameEngine {
     }
 
     private getProjectileColor(projectile: Projectile): number | undefined {
+        if (projectile.color !== undefined) return projectile.color;
         if (projectile.faction !== 'player') return undefined;
         const owner = this.getPlayers().find((player) => player.id === projectile.ownerId);
         return owner?.color ?? this.player.color;
+    }
+
+    private getProjectileColorForShooter(shooter: Entity, faction: ProjectileFaction): number | undefined {
+        if (faction === 'enemy' && (shooter instanceof Anomaly || shooter instanceof AnomalyDecoy)) {
+            return ANOMALY_PROJECTILE_COLOR;
+        }
+
+        if (faction === 'player' && shooter instanceof Player) {
+            return shooter.color;
+        }
+
+        return undefined;
     }
 
     private destroyProjectile(projectileIndex: number): void {
@@ -906,8 +932,16 @@ export class GameEngine {
             y: projectile.y,
             radius: projectile.radius,
             color: this.getProjectileColor(projectile),
+            visualId: projectile.visualId,
         });
         this.projectiles.splice(projectileIndex, 1);
+    }
+
+    private getProjectileVisualForShooter(shooter: Entity, faction: ProjectileFaction): ProjectileVisualId | undefined {
+        if (faction !== 'enemy') return undefined;
+        if (shooter instanceof DreadnoughtBoss) return PROJECTILE_VISUAL_IDS.DREADNOUGHT;
+        if (shooter instanceof Anomaly || shooter instanceof AnomalyDecoy) return PROJECTILE_VISUAL_IDS.ANOMALY;
+        return undefined;
     }
 
     private checkCircularCollision(ax: number, ay: number, aRadius: number, bx: number, by: number, bRadius: number): boolean {

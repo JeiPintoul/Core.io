@@ -4,6 +4,7 @@ import type { Player } from '../../../player/Player';
 
 const MIN_DECOYS = 3;
 const MAX_TOTAL_SLOTS = 11; // real + up to 10 decoys
+const INITIAL_COOLDOWN_MS = 5000;
 const COOLDOWN_MS = 15000;
 const ORBIT_RADIUS = 260;
 
@@ -13,10 +14,16 @@ export class SwarmAbility implements AnomalyAbility {
 
     private isActive = false;
     private cooldownUntilMs = 0;
+    private hasStartedCooldown = false;
     private trueSlot = 0;
     private totalSlots = 0;
 
     execute(anomaly: Anomaly, player: Player, _dt: number, currentTimeMs: number): AnomalyAbilityResult | void {
+        if (!this.hasStartedCooldown) {
+            this.hasStartedCooldown = true;
+            this.cooldownUntilMs = currentTimeMs + INITIAL_COOLDOWN_MS;
+        }
+
         if (this.isActive) {
             this.snapAnomalyToSlot(anomaly, player);
             return { skipBaseBehavior: true };
