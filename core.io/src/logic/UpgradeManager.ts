@@ -1,6 +1,5 @@
 import type { CardRarity, UpgradeRollOption } from '../shared/Types';
-import { UPGRADE_CARDS, UPGRADE_CARDS_BY_RARITY, UPGRADE_CARD_COLORS, type UpgradeCard } from './constants/CardsDatabase';
-import { getColorsByTier, type ColorTier } from './constants/ColorConfig';
+import { UPGRADE_CARDS, UPGRADE_CARDS_BY_RARITY, type UpgradeCard } from './constants/CardsDatabase';
 
 type RarityWeights = Record<CardRarity, number>;
 
@@ -23,35 +22,10 @@ const LEVEL_RARITY_WEIGHTS: Array<{ maxLevel: number; weights: RarityWeights }> 
     }
 ];
 
-const SECONDARY_COLOR_HEXES = getColorsByTier('SECONDARY').map((color) => color.hex);
-const TERTIARY_COLOR_HEXES = getColorsByTier('TERTIARY').map((color) => color.hex);
-
-const COLOR_TIER_WEIGHTS_BY_RARITY: Record<CardRarity, Array<{ tier: ColorTier; weight: number }>> = {
-    COMMON: [
-        { tier: 'SECONDARY', weight: 100 }
-    ],
-    UNCOMMON: [
-        { tier: 'SECONDARY', weight: 85 },
-        { tier: 'TERTIARY', weight: 15 }
-    ],
-    RARE: [
-        { tier: 'SECONDARY', weight: 58 },
-        { tier: 'TERTIARY', weight: 42 }
-    ],
-    EPIC: [
-        { tier: 'SECONDARY', weight: 30 },
-        { tier: 'TERTIARY', weight: 70 }
-    ],
-    LEGENDARY: [
-        { tier: 'TERTIARY', weight: 100 }
-    ]
-};
-
 export class UpgradeManager {
     public rollUpgradeOptions(playerLevel: number): UpgradeRollOption[] {
         const options: UpgradeRollOption[] = [];
         const selectedCardIds = new Set<string>();
-        const selectedColorHexes = new Set<string>();
         const weights = this.getWeightsForLevel(playerLevel);
 
         for (let index = 0; index < 3; index++) {
@@ -59,13 +33,7 @@ export class UpgradeManager {
             const card = this.rollCard(rarity, selectedCardIds);
             selectedCardIds.add(card.id);
 
-            const colorHex = this.rollColor(rarity, selectedColorHexes);
-            selectedColorHexes.add(colorHex);
-
-            options.push({
-                card,
-                colorHex
-            });
+            options.push({ card, colorHex: card.paintColor });
         }
 
         return options;
@@ -116,37 +84,5 @@ export class UpgradeManager {
         }
 
         return UPGRADE_CARDS[0];
-    }
-
-    private rollColor(rarity: CardRarity, excludedColors: Set<string>): string {
-        const tier = this.rollColorTier(rarity);
-        const tierPool = (tier === 'TERTIARY' ? TERTIARY_COLOR_HEXES : SECONDARY_COLOR_HEXES)
-            .filter((hex) => !excludedColors.has(hex));
-
-        if (tierPool.length > 0) {
-            return tierPool[Math.floor(Math.random() * tierPool.length)];
-        }
-
-        const fallbackPool = UPGRADE_CARD_COLORS.filter((hex) => !excludedColors.has(hex));
-        if (fallbackPool.length > 0) {
-            return fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
-        }
-
-        return UPGRADE_CARD_COLORS[0];
-    }
-
-    private rollColorTier(rarity: CardRarity): ColorTier {
-        const table = COLOR_TIER_WEIGHTS_BY_RARITY[rarity];
-        const totalWeight = table.reduce((acc, entry) => acc + entry.weight, 0);
-
-        let roll = Math.random() * totalWeight;
-        for (const entry of table) {
-            roll -= entry.weight;
-            if (roll <= 0) {
-                return entry.tier;
-            }
-        }
-
-        return table[table.length - 1].tier;
     }
 }
