@@ -78,7 +78,7 @@ export class HudController {
         this.bindColorSelectionScreen();
         this.bindEvents();
         this.renderLevel();
-        this.renderWaveInfo(1, 'CLEAR', 0, 0);
+        this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
@@ -214,7 +214,7 @@ export class HudController {
         this.setStatsPinned(false);
         this.clearStatPreview();
         this.renderLevel();
-        this.renderWaveInfo(1, 'CLEAR', 0, 0);
+        this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
@@ -288,6 +288,12 @@ export class HudController {
                         ? 'SOBREVIVENCIA'
                         : 'ELIMINACAO';
                 this.playWaveMessage(`ONDA ${wave} - ${kindLabel}`, waveType === 'BOSS', durationMs);
+            })
+        );
+
+        this.unsubscribers.push(
+            onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, () => {
+                this.playWaveMessage('ANOMALIA DETECTADA', true, 1800);
             })
         );
 
@@ -367,7 +373,8 @@ export class HudController {
             state.currentWave,
             state.waveType,
             state.remainingToKill,
-            state.surviveTimeRemainingSeconds
+            state.surviveTimeRemainingSeconds,
+            state.isAnomalyEncounter ?? false
         );
         this.renderXpBar();
         this.renderXpProgress();
@@ -391,10 +398,13 @@ export class HudController {
         wave: number,
         waveType: 'CLEAR' | 'SURVIVE' | 'BOSS',
         remainingToKill: number,
-        surviveTimeRemaining: number
+        surviveTimeRemaining: number,
+        isAnomalyEncounter: boolean
     ): void {
         if (this.waveInfoTitleEl) {
-            const typeLabel = waveType === 'BOSS'
+            const typeLabel = isAnomalyEncounter
+                ? 'Anomalia'
+                : waveType === 'BOSS'
                 ? 'Boss'
                 : waveType === 'SURVIVE'
                     ? 'Sobrevivência'
@@ -403,7 +413,10 @@ export class HudController {
         }
 
         if (this.waveInfoSubEl) {
-            if (waveType === 'BOSS') {
+            if (isAnomalyEncounter) {
+                this.waveInfoSubEl.textContent = 'Identifique e neutralize a anomalia';
+                this.waveInfoSubEl.classList.add('is-danger');
+            } else if (waveType === 'BOSS') {
                 this.waveInfoSubEl.textContent = 'Derrote o boss';
                 this.waveInfoSubEl.classList.remove('is-danger');
             } else if (waveType === 'SURVIVE') {

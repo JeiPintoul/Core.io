@@ -25,6 +25,7 @@ const BOSS_EXIT_PORTAL_RADIUS = 62;
 const SURVIVE_DURATION_CAP_SECONDS = 60;
 const WAVE_TYPE_CLEAR_BIAS = 0.75;
 const ANOMALY_SPAWN_TOP_MARGIN = 120;
+const ACTIVE_ENEMY_SIZE_SCALE_WEIGHT = 0.45;
 
 export interface EncounterDirectorHost {
     getEnemies(): HostileEntity[];
@@ -202,20 +203,13 @@ export class EncounterDirector {
         if (this.host.getEngineState() !== EngineState.WAVE_ACTIVE) return;
 
         const milestone = getWaveMilestone(this.currentWave);
-        const baseMaxActive = this.currentWaveType === 'SURVIVE'
-            ? milestone.maxActiveEnemiesSurvive
-            : milestone.maxActiveEnemies;
-        const maxActive = Math.max(1, Math.round(baseMaxActive * this.host.getDifficultyActiveEnemyScale()));
+        const maxActive = this.getCurrentMaxActiveEnemies(milestone);
 
         if (this.host.getEnemies().length >= maxActive) return;
         if ((now - this.lastSpawnTime) / 1000 < WAVE_SPAWN_INTERVAL_SECONDS) return;
 
         if (this.currentWaveType === 'SURVIVE' && this.spawnQueue.length === 0) {
-            const refillTotal = Math.max(
-                1,
-                Math.round((milestone.maxActiveEnemiesSurvive * 2) * this.host.getDifficultySpawnScale())
-            );
-            this.initSpawnQueue(milestone, refillTotal);
+            this.initSpawnQueue(milestone, this.getCurrentSurviveRefillTotal(milestone));
         }
 
         if (this.spawnQueue.length === 0) return;
@@ -651,11 +645,7 @@ export class EncounterDirector {
 
         if (this.currentWaveType === 'SURVIVE') {
             this.surviveWaveEndsAtMs = now + Math.min(SURVIVE_DURATION_CAP_SECONDS, milestone.surviveDurationSeconds) * 1000;
-            const surviveTotal = Math.max(
-                1,
-                Math.round((milestone.maxActiveEnemiesSurvive * 2) * this.host.getDifficultySpawnScale())
-            );
-            this.initSpawnQueue(milestone, surviveTotal);
+            this.initSpawnQueue(milestone, this.getCurrentSurviveRefillTotal(milestone));
         } else {
             this.surviveWaveEndsAtMs = 0;
             this.initSpawnQueue(milestone, this.getCurrentWaveTotalToSpawn());
@@ -677,5 +667,23 @@ export class EncounterDirector {
 
     private rollWaveType(): WaveType {
         return this.rng.random() < WAVE_TYPE_CLEAR_BIAS ? 'CLEAR' : 'SURVIVE';
+    }
+
+    private getCurrentMaxActiveEnemies(milestone: WaveMilestone): number {
+        const baseMaxActive = this.currentWaveType === 'SURVIVE'
+            ? milestone.maxActiveEnemiesSurvive
+            : milestone.maxActiveEnemies;
+
+        const waveOffset = Math.max(0, this.currentWave - milestone.startWave);
+        const sizeScale = 1 + (waveOffset * milestone.sizeMultiplier * ACTIVE_ENEMY_SIZE_SCALE_WEIGHT);
+        const scaled = baseMaxActive * sizeScale * this.host.getDifficultyActiveEnemyScale();
+        return Math.max(1, Math.round(scaled));
+    }
+
+    private getCurrentSurviveRefillTotal(milestone: WaveMilestone): number {
+        return Math.max(
+            1,
+            Math.round(this.getCurrentMaxActiveEnemies(milestone) * 2 * this.host.getDifficultySpawnScale())
+        );
     }
 }

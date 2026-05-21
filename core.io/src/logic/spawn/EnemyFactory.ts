@@ -1,7 +1,7 @@
 import type { EnemyType, EntityStats, PlayerId } from '../../shared/Types';
 import type { Rng } from '../Rng';
 import { HostileEntity } from '../entities/enemies/HostileEntity';
-import { Enemy } from '../entities/enemies/Enemy';
+import { KamikazeEnemy } from '../entities/enemies/KamikazeEnemy';
 import { RangedEnemy } from '../entities/enemies/RangedEnemy';
 import { SentinelEnemy } from '../entities/enemies/SentinelEnemy';
 import { SkirmisherEnemy } from '../entities/enemies/SkirmisherEnemy';
@@ -33,6 +33,8 @@ export interface SpawnInstanceOptions {
 
 const ANOMALY_GROUP_RING_RADIUS = 110;
 const OFFSCREEN_SPAWN_ATTEMPTS = 16;
+const ANOMALY_BODY_DAMAGE_MAX_HEALTH_CAP = 0.35;
+const ANOMALY_BULLET_DAMAGE_MAX_HEALTH_CAP = 0.30;
 
 export class EnemyFactory {
     private static readonly VIEWPORT_SAFE_SPAWN_RADIUS = Math.max(1100, Math.hypot(1920 / 2, 1080 / 2) + 120);
@@ -64,7 +66,7 @@ export class EnemyFactory {
         const { orbitSlot = 0, orbitTotal = 1, orbitRadius = 0, ownerEnemyId, assignedPlayerId, mirrorStats } = opts;
 
         switch (enemyType) {
-            case 'KAMIKAZE': return new Enemy(id, x, y, multiplier);
+            case 'KAMIKAZE': return new KamikazeEnemy(id, x, y, multiplier);
             case 'RANGED': return new RangedEnemy(id, x, y, multiplier);
             case 'SENTINEL': return new SentinelEnemy(id, x, y, multiplier);
             case 'SKIRMISHER': return new SkirmisherEnemy(id, x, y, multiplier);
@@ -79,7 +81,7 @@ export class EnemyFactory {
             case 'DREADNOUGHT':
                 return new DreadnoughtBoss(id, x, y, Math.max(1, Math.round(multiplier)));
             default:
-                return new Enemy(id, x, y, multiplier);
+                return new KamikazeEnemy(id, x, y, multiplier);
         }
     }
 
@@ -136,13 +138,11 @@ export class EnemyFactory {
     }
 
     public buildAnomalyReferenceStats(): EntityStats {
-        const base = this.host.getMainPlayer().currentStats;
+        const players = this.host.getPlayers().filter((player) => player.health > 0);
+        const base = this.buildMedianPlayerStats(players.length > 0 ? players : [this.host.getMainPlayer()]);
         const profile = this.host.getDifficultyProfile();
-        if (profile.bossMaxHealthScale === 1) {
-            return base;
-        }
 
-        return {
+        const scaledStats = {
             maxHealth: base.maxHealth * profile.bossMaxHealthScale,
             healthRegen: base.healthRegen * profile.bossHealthRegenScale,
             bodyDamage: base.bodyDamage * profile.bossBodyDamageScale,
@@ -151,6 +151,34 @@ export class EnemyFactory {
             bulletDamage: base.bulletDamage * profile.bossBulletDamageScale,
             reloadPoints: base.reloadPoints + profile.bossReloadBonus,
             movementSpeed: base.movementSpeed * profile.bossMovementSpeedScale,
+        };
+
+        return {
+            ...scaledStats,
+            bodyDamage: Math.min(scaledStats.bodyDamage, scaledStats.maxHealth * ANOMALY_BODY_DAMAGE_MAX_HEALTH_CAP),
+            bulletDamage: Math.min(scaledStats.bulletDamage, scaledStats.maxHealth * ANOMALY_BULLET_DAMAGE_MAX_HEALTH_CAP),
+        };
+    }
+
+    private buildMedianPlayerStats(players: Player[]): EntityStats {
+        const pickMedian = (values: number[]): number => {
+            const sorted = [...values].sort((a, b) => a - b);
+            const mid = Math.floor(sorted.length / 2);
+            return sorted.length % 2 === 0
+                ? (sorted[mid - 1] + sorted[mid]) / 2
+                : sorted[mid];
+        };
+
+        const stats = players.map((player) => player.currentStats);
+        return {
+            maxHealth: pickMedian(stats.map((stat) => stat.maxHealth)),
+            healthRegen: pickMedian(stats.map((stat) => stat.healthRegen)),
+            bodyDamage: pickMedian(stats.map((stat) => stat.bodyDamage)),
+            bulletSpeed: pickMedian(stats.map((stat) => stat.bulletSpeed)),
+            bulletPenetration: pickMedian(stats.map((stat) => stat.bulletPenetration)),
+            bulletDamage: pickMedian(stats.map((stat) => stat.bulletDamage)),
+            reloadPoints: pickMedian(stats.map((stat) => stat.reloadPoints)),
+            movementSpeed: pickMedian(stats.map((stat) => stat.movementSpeed)),
         };
     }
 
