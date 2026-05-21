@@ -61,8 +61,8 @@ export class Anomaly extends HostileEntity {
             ...playerStats,
             maxHealth: effectiveMaxHealth,
             healthRegen: isFake ? 0 : playerStats.healthRegen * 0.65,
-            bulletPenetration: playerStats.bulletPenetration * 0.85,
-            reloadPoints: Math.max(0, playerStats.reloadPoints - 3)
+            bulletPenetration: playerStats.bulletPenetration * 0.65,
+            reloadPoints: Math.max(0, playerStats.reloadPoints - 5)
         };
         this.damage = playerStats.bodyDamage;
         this.xpDrop = isFake ? 0 : Anomaly.BASE_XP_DROP;
