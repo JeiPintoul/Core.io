@@ -47,8 +47,8 @@ export class Anomaly extends HostileEntity {
 
     private readonly preferredDistance = 380;
     private lastShotAtMs = 0;
-    private damageRampStartedAtMs: number | null = null;
-    private damageRampMultiplier = 0;
+    private combatRampStartedAtMs: number | null = null;
+    private combatRampMultiplier = 0;
 
     constructor(
         id: string,
@@ -93,14 +93,18 @@ export class Anomaly extends HostileEntity {
     }
 
     public override get contactDamage(): number {
-        return this.damage * this.damageBoostMultiplier * this.damageRampMultiplier;
+        return this.damage * this.damageBoostMultiplier * this.combatRampMultiplier;
     }
 
     public override getProjectileSpawns(aimAngle: number, sourceStats: EntityStats): ProjectileSpawnRequest[] {
         return super.getProjectileSpawns(aimAngle, {
             ...sourceStats,
-            bulletDamage: sourceStats.bulletDamage * this.damageRampMultiplier
+            bulletDamage: sourceStats.bulletDamage * this.combatRampMultiplier
         });
+    }
+
+    public override takeDamage(amount: number): void {
+        super.takeDamage(this.isFakeCopy ? amount : amount * this.combatRampMultiplier);
     }
 
     public override toData(): EntityData {
@@ -125,7 +129,7 @@ export class Anomaly extends HostileEntity {
         const { playerX, playerY, player, dt, currentTime, onShoot } = context;
         this.isInverted = false;
         this.damageBoostMultiplier = 1;
-        this.updateDamageRamp(currentTime);
+        this.updateCombatRamp(currentTime);
 
         // Run every ability each tick. skipBaseBehavior accumulates but never short-circuits the loop,
         // so abilities (e.g. Inversion, Dash) keep working even while Swarm holds position.
@@ -182,7 +186,7 @@ export class Anomaly extends HostileEntity {
     }
 
     private tryShoot(currentTimeMs: number, onShoot: (aimAngle: number) => void): void {
-        if (this.damageRampMultiplier <= 0) return;
+        if (this.combatRampMultiplier <= 0) return;
 
         const reloadMs = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, this.stats.reloadPoints) * 1000;
         if (currentTimeMs - this.lastShotAtMs < reloadMs) return;
@@ -191,17 +195,17 @@ export class Anomaly extends HostileEntity {
         onShoot(this.aimAngle);
     }
 
-    private updateDamageRamp(currentTimeMs: number): void {
-        this.damageRampStartedAtMs ??= currentTimeMs;
+    private updateCombatRamp(currentTimeMs: number): void {
+        this.combatRampStartedAtMs ??= currentTimeMs;
 
-        const elapsedMs = currentTimeMs - this.damageRampStartedAtMs;
+        const elapsedMs = currentTimeMs - this.combatRampStartedAtMs;
         if (elapsedMs < DAMAGE_GRACE_MS) {
-            this.damageRampMultiplier = 0;
+            this.combatRampMultiplier = 0;
             return;
         }
 
         const progress = Math.min(1, (elapsedMs - DAMAGE_GRACE_MS) / DAMAGE_RAMP_MS);
-        this.damageRampMultiplier = DAMAGE_RAMP_START_MULTIPLIER + ((1 - DAMAGE_RAMP_START_MULTIPLIER) * progress);
+        this.combatRampMultiplier = DAMAGE_RAMP_START_MULTIPLIER + ((1 - DAMAGE_RAMP_START_MULTIPLIER) * progress);
     }
 
     public static selectAbilityConstructors(count: number): AnomalyAbilityCtor[] {
