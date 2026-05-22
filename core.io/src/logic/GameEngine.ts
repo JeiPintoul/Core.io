@@ -24,6 +24,7 @@ import { Player } from './entities/player/Player';
 import { Anomaly } from './entities/enemies/anomaly/Anomaly';
 import { AnomalyDecoy } from './entities/enemies/anomaly/AnomalyDecoy';
 import { DreadnoughtBoss } from './entities/boss/dreadnought/DreadnoughtBoss';
+import { SentinelEnemy } from './entities/enemies/SentinelEnemy';
 import { ARENA } from '../client/constants/GameConstants';
 import { calculateCooldown, PLAYER_BASE_SHOT_COOLDOWN_SECONDS } from '../shared/CombatMath';
 import { UpgradeManager } from './UpgradeManager';
@@ -941,6 +942,7 @@ export class GameEngine {
         if (faction !== 'enemy') return undefined;
         if (shooter instanceof DreadnoughtBoss) return PROJECTILE_VISUAL_IDS.DREADNOUGHT;
         if (shooter instanceof Anomaly || shooter instanceof AnomalyDecoy) return PROJECTILE_VISUAL_IDS.ANOMALY;
+        if (shooter instanceof SentinelEnemy) return PROJECTILE_VISUAL_IDS.SENTINEL;
         return undefined;
     }
 

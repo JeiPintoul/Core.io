@@ -17,10 +17,10 @@ export class RangedEnemy extends HostileEntity {
         maxHealth: 22,
         healthRegen: 0,
         bodyDamage: 3,
-        bulletSpeed: 320,
-        bulletPenetration: 1,
+        bulletSpeed: 420,
+        bulletPenetration: 2,
         bulletDamage: 8,
-        reloadPoints: 1,
+        reloadPoints: 2,
         movementSpeed: 105
     };
 
@@ -44,10 +44,10 @@ export class RangedEnemy extends HostileEntity {
         this.setBarrels([
             {
                 id: 'ranged_front_barrel',
-                offsetX: 22,
+                offsetX: 38,
                 offsetY: 0,
                 angleOffset: 0,
-                recoilForce: 14,
+                recoilForce: 16,
                 damageMultiplier: 1,
                 speedMultiplier: 1,
                 lifespanMultiplier: 1

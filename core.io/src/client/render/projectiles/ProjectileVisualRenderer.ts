@@ -19,6 +19,9 @@ export class ProjectileVisualRenderer {
             case PROJECTILE_VISUAL_IDS.ANOMALY:
                 this.drawAnomaly(projectile.x, projectile.y, projectile.radius, pulseTime);
                 return;
+            case PROJECTILE_VISUAL_IDS.SENTINEL:
+                this.drawSentinel(projectile.x, projectile.y, projectile.radius, pulseTime);
+                return;
             default:
                 this.drawDefault(projectile.x, projectile.y, projectile.radius, projectile.color ?? fallbackColor);
         }
@@ -69,5 +72,25 @@ export class ProjectileVisualRenderer {
         this.gfx.moveTo(x, y - spikeLength);
         this.gfx.lineTo(x, y + spikeLength);
         this.gfx.strokePath();
+    }
+
+    private drawSentinel(x: number, y: number, radius: number, pulseTime: number): void {
+        const pulse = 0.5 + Math.sin((x + y) * 0.035 + pulseTime * 9) * 0.5;
+
+        this.gfx.lineStyle(1.7, 0xffc1c1, 0.58 + pulse * 0.2);
+        this.gfx.strokeCircle(x, y, radius * 1.35);
+
+        this.gfx.lineStyle(1.2, 0x7a1515, 0.9);
+        this.gfx.fillStyle(0xff4444, 1);
+        this.gfx.beginPath();
+        this.gfx.moveTo(x, y - radius * 1.08);
+        this.gfx.lineTo(x - radius * 0.94, y + radius * 0.56);
+        this.gfx.lineTo(x + radius * 0.94, y + radius * 0.56);
+        this.gfx.closePath();
+        this.gfx.fillPath();
+        this.gfx.strokePath();
+
+        this.gfx.lineStyle(1, 0xffe0e0, 0.42);
+        this.gfx.strokeCircle(x, y, radius * 0.46);
     }
 }

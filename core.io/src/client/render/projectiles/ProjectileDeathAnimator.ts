@@ -15,6 +15,9 @@ export class ProjectileDeathAnimator {
             case PROJECTILE_VISUAL_IDS.ANOMALY:
                 this.playAnomaly(x, y, radius);
                 return;
+            case PROJECTILE_VISUAL_IDS.SENTINEL:
+                this.playSentinel(x, y, radius);
+                return;
             default:
                 this.playDefault(x, y, radius, color);
         }
@@ -104,6 +107,48 @@ export class ProjectileDeathAnimator {
             duration: 150,
             ease: 'Quad.easeOut',
             onComplete: () => core.destroy()
+        });
+    }
+
+    private playSentinel(x: number, y: number, radius: number): void {
+        const shard = this.scene.add.triangle(
+            x,
+            y,
+            0,
+            -radius * 1.2,
+            -radius,
+            radius * 0.62,
+            radius,
+            radius * 0.62,
+            0xff4444,
+            1
+        );
+        shard.setStrokeStyle(1.3, 0xffc1c1, 0.8);
+        shard.setDepth(9);
+
+        const ring = this.scene.add.circle(x, y, radius * 1.15, 0xffffff, 0);
+        ring.setStrokeStyle(1.8, 0xffb3b3, 0.55);
+        ring.setDepth(8);
+
+        this.scene.tweens.add({
+            targets: shard,
+            scaleX: 0,
+            scaleY: 0,
+            alpha: 0,
+            angle: 90,
+            duration: 160,
+            ease: 'Quad.easeOut',
+            onComplete: () => shard.destroy()
+        });
+
+        this.scene.tweens.add({
+            targets: ring,
+            scaleX: 1.6,
+            scaleY: 1.6,
+            alpha: 0,
+            duration: 190,
+            ease: 'Quad.easeOut',
+            onComplete: () => ring.destroy()
         });
     }
 }

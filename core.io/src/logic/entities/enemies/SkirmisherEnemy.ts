@@ -13,17 +13,18 @@ export class SkirmisherEnemy extends HostileEntity {
     static readonly BASE_STATS: EntityStats = {
         maxHealth: 34,
         healthRegen: 0,
-        bodyDamage: 4,
-        bulletSpeed: 390,
-        bulletPenetration: 0.9,
-        bulletDamage: 5,
-        reloadPoints: 1,
-        movementSpeed: 128
+        bodyDamage: 5,
+        bulletSpeed: 540,
+        bulletPenetration: 0.85,
+        bulletDamage: 6,
+        reloadPoints: 2,
+        movementSpeed: 152
     };
 
-    private readonly preferredDistance = 340;
-    private readonly distanceTolerance = 74;
-    private readonly baseShootCooldownSeconds = 1.35;
+    private readonly preferredDistance = 210;
+    private readonly distanceTolerance = 46;
+    private readonly maxShootDistance = 560;
+    private readonly baseShootCooldownSeconds = 0.95;
     private strafeDirection: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
     private lastShotAtMs = 0;
     private lastStrafeFlipAtMs = 0;
@@ -47,34 +48,54 @@ export class SkirmisherEnemy extends HostileEntity {
 
         this.setBarrels([
             {
+                id: 'skirmisher_wide_left_barrel',
+                offsetX: 21,
+                offsetY: -8,
+                angleOffset: -0.34,
+                recoilForce: 10,
+                damageMultiplier: 0.72,
+                speedMultiplier: 0.96,
+                lifespanMultiplier: 0.62
+            },
+            {
                 id: 'skirmisher_left_barrel',
                 offsetX: 22,
                 offsetY: -5,
-                angleOffset: -0.18,
+                angleOffset: -0.17,
                 recoilForce: 12,
-                damageMultiplier: 0.84,
+                damageMultiplier: 0.82,
                 speedMultiplier: 1,
-                lifespanMultiplier: 1
+                lifespanMultiplier: 0.66
             },
             {
                 id: 'skirmisher_center_barrel',
                 offsetX: 24,
                 offsetY: 0,
                 angleOffset: 0,
-                recoilForce: 14,
+                recoilForce: 16,
                 damageMultiplier: 1,
-                speedMultiplier: 1.02,
-                lifespanMultiplier: 1
+                speedMultiplier: 1.04,
+                lifespanMultiplier: 0.7
             },
             {
                 id: 'skirmisher_right_barrel',
                 offsetX: 22,
                 offsetY: 5,
-                angleOffset: 0.18,
+                angleOffset: 0.17,
                 recoilForce: 12,
-                damageMultiplier: 0.84,
+                damageMultiplier: 0.82,
                 speedMultiplier: 1,
-                lifespanMultiplier: 1
+                lifespanMultiplier: 0.66
+            },
+            {
+                id: 'skirmisher_wide_right_barrel',
+                offsetX: 21,
+                offsetY: 8,
+                angleOffset: 0.34,
+                recoilForce: 10,
+                damageMultiplier: 0.72,
+                speedMultiplier: 0.96,
+                lifespanMultiplier: 0.62
             }
         ]);
     }
@@ -95,7 +116,7 @@ export class SkirmisherEnemy extends HostileEntity {
         }
 
         const shootCooldownMs = calculateCooldown(this.baseShootCooldownSeconds, this.stats.reloadPoints) * 1000;
-        if (distance <= 0.0001 || currentTime - this.lastShotAtMs < shootCooldownMs) {
+        if (distance <= 0.0001 || distance > this.maxShootDistance || currentTime - this.lastShotAtMs < shootCooldownMs) {
             return;
         }
 

@@ -1,7 +1,8 @@
 export const PROJECTILE_VISUAL_IDS = {
     DEFAULT: 'default',
     ANOMALY: 'anomaly',
-    DREADNOUGHT: 'dreadnought'
+    DREADNOUGHT: 'dreadnought',
+    SENTINEL: 'sentinel'
 } as const;
 
 export type ProjectileVisualId = typeof PROJECTILE_VISUAL_IDS[keyof typeof PROJECTILE_VISUAL_IDS];

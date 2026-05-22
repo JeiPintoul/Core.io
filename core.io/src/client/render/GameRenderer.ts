@@ -355,7 +355,7 @@ export class GameRenderer {
 
             if ((enemyType === 'RANGED' || enemyType === 'SKIRMISHER' || enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY' || enemyType === 'DREADNOUGHT')
                 && typeof aimAngle === 'number') {
-                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
+                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction, enemyType);
             }
 
             const bodyColor = this.enemyVisualRenderer.getBodyColor(enemyType);
@@ -390,7 +390,7 @@ export class GameRenderer {
                         continue;
                     }
 
-                    this.drawTriangle(triangle.x, triangle.y, 12, triangle.rotation, COLORS.ENEMY, VISUAL.STROKE.enemy);
+                    this.drawSentinelTriangle(triangle.x, triangle.y, 12, triangle.rotation, triangle.mode);
                     this.healthBarRenderer.drawWorldHealthBar(
                         triangle.id,
                         triangle.x,
@@ -465,8 +465,19 @@ export class GameRenderer {
         }
     }
 
-    private drawEnemyBarrel(x: number, y: number, radius: number, angle: number, retraction: number): void {
+    private drawEnemyBarrel(
+        x: number,
+        y: number,
+        radius: number,
+        angle: number,
+        retraction: number,
+        enemyType?: EnemyType
+    ): void {
         const barrelMetrics = this.getBarrelMetrics(radius, retraction);
+        const widthMultiplier = enemyType === 'SKIRMISHER' ? 1.65 : 1;
+        const lengthMultiplier = enemyType === 'SKIRMISHER' ? 0.82 : enemyType === 'RANGED' ? 1.28 : 1;
+        const barrelWidth = barrelMetrics.width * widthMultiplier;
+        const barrelLength = barrelMetrics.length * lengthMultiplier;
         const bx = x + Math.cos(angle) * barrelMetrics.offset;
         const by = y + Math.sin(angle) * barrelMetrics.offset;
 
@@ -475,8 +486,8 @@ export class GameRenderer {
         this.gfxGame.save();
         this.gfxGame.translateCanvas(bx, by);
         this.gfxGame.rotateCanvas(angle);
-        this.gfxGame.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
-        this.gfxGame.strokeRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
+        this.gfxGame.fillRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
+        this.gfxGame.strokeRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
         this.gfxGame.restore();
     }
 
@@ -524,6 +535,24 @@ export class GameRenderer {
         this.gfxGame.fillPath();
         this.gfxGame.strokePath();
         this.gfxGame.restore();
+    }
+
+    private drawSentinelTriangle(
+        x: number,
+        y: number,
+        radius: number,
+        rotation: number,
+        mode: 'ORBIT' | 'SHIELD' | 'HOMING'
+    ): void {
+        const fillColor = mode === 'HOMING' ? 0xff5c5c : COLORS.ENEMY;
+        const outlineColor = darkenColor(fillColor, 44);
+        const glowAlpha = mode === 'SHIELD' ? 0.42 : mode === 'HOMING' ? 0.34 : 0.2;
+
+        this.gfxGame.lineStyle(1.2, 0xffc1c1, glowAlpha);
+        this.gfxGame.strokeCircle(x, y, radius * 1.35);
+        this.drawTriangle(x, y, radius, rotation, fillColor, VISUAL.STROKE.enemy);
+        this.gfxGame.lineStyle(1, outlineColor, 0.8);
+        this.gfxGame.strokeCircle(x, y, radius * 0.42);
     }
 
     /**

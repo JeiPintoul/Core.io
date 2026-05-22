@@ -43,6 +43,15 @@ export class EnemyVisualRenderer {
             case 'KAMIKAZE':
                 this.drawRaiderBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds);
                 return;
+            case 'RANGED':
+                this.drawRangedBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds);
+                return;
+            case 'SKIRMISHER':
+                this.drawSkirmisherBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds);
+                return;
+            case 'SENTINEL':
+                this.drawSentinelBody(x, y, drawRadius, bodyColor, aimAngle ?? 0, nowSeconds);
+                return;
             case 'DREADNOUGHT':
                 this.drawDreadnoughtBody(x, y, radius, bodyColor, aimAngle ?? 0, nowSeconds, dreadnoughtSummonProgress ?? 0);
                 return;
@@ -94,6 +103,86 @@ export class EnemyVisualRenderer {
 
         this.gfx.lineStyle(1.6, 0xffcaa0, 0.5);
         this.gfx.strokeCircle(x, y, radius + 5);
+    }
+
+    private drawRangedBody(x: number, y: number, radius: number, color: number, aimAngle: number, nowSeconds: number): void {
+        const outline = darkenColor(color, 44);
+        const plate = darkenColor(color, 18);
+        const sweep = nowSeconds * 1.8;
+        const charge = 0.5 + Math.sin(nowSeconds * 5.2) * 0.5;
+
+        this.drawCircle(x, y, radius, color, VISUAL.STROKE.enemy);
+        this.drawPolygon(x, y, radius * 0.68, 3, aimAngle + Math.PI / 2, plate, outline, 1.5, 0.78);
+
+        this.gfx.lineStyle(1.2, 0xffdddd, 0.24 + charge * 0.22);
+        this.gfx.strokeCircle(x, y, radius * (0.36 + charge * 0.08));
+        this.gfx.lineStyle(1.4, 0xffc6c6, 0.44);
+        this.gfx.strokeCircle(x, y, radius * 0.78);
+        this.gfx.lineStyle(1.2, 0xffb0b0, 0.36);
+        this.gfx.beginPath();
+        this.gfx.arc(x, y, radius * 0.94, sweep, sweep + Math.PI * 0.85);
+        this.gfx.strokePath();
+
+        this.gfx.lineStyle(2, 0x6f1212, 0.85);
+        this.gfx.lineBetween(
+            x + Math.cos(aimAngle) * radius * 0.22,
+            y + Math.sin(aimAngle) * radius * 0.22,
+            x + Math.cos(aimAngle) * radius * 0.92,
+            y + Math.sin(aimAngle) * radius * 0.92
+        );
+    }
+
+    private drawSkirmisherBody(x: number, y: number, radius: number, color: number, aimAngle: number, nowSeconds: number): void {
+        const outline = darkenColor(color, 45);
+        const plate = darkenColor(color, 20);
+        const pulse = 0.5 + Math.sin(nowSeconds * 9) * 0.5;
+        const forwardX = Math.cos(aimAngle);
+        const forwardY = Math.sin(aimAngle);
+        const rightX = -forwardY;
+        const rightY = forwardX;
+
+        this.drawCircle(x, y, radius, color, VISUAL.STROKE.enemy);
+        this.drawPolygon(x, y, radius * 0.56, 3, aimAngle, plate, outline, 1.4, 0.82);
+
+        this.gfx.lineStyle(1.4, 0xffcccc, 0.32 + pulse * 0.22);
+        this.gfx.strokeCircle(x, y, radius * (0.72 + pulse * 0.08));
+        this.gfx.lineStyle(1.1, 0xffd6d6, 0.35 + pulse * 0.2);
+        for (const spread of [-0.34, 0, 0.34]) {
+            this.gfx.lineBetween(
+                x + forwardX * radius * 0.05 + rightX * radius * spread,
+                y + forwardY * radius * 0.05 + rightY * radius * spread,
+                x + forwardX * radius * (0.7 + pulse * 0.18) + rightX * radius * spread * 1.6,
+                y + forwardY * radius * (0.7 + pulse * 0.18) + rightY * radius * spread * 1.6
+            );
+        }
+    }
+
+    private drawSentinelBody(x: number, y: number, radius: number, color: number, aimAngle: number, nowSeconds: number): void {
+        const outline = darkenColor(color, 48);
+        const plate = darkenColor(color, 18);
+        const spin = nowSeconds * 1.25;
+        const innerSpin = -nowSeconds * 2.4;
+
+        this.drawPolygon(x, y, radius * 1.04, 3, aimAngle + Math.PI / 2, color, outline, VISUAL.STROKE.enemy, 1);
+        this.drawPolygon(x, y, radius * 0.72, 3, innerSpin + Math.PI / 2, plate, outline, 1.5, 0.82);
+
+        this.gfx.lineStyle(1.1, 0xffd0d0, 0.36);
+        this.gfx.beginPath();
+        this.gfx.moveTo(x + Math.cos(innerSpin) * radius * 0.2, y + Math.sin(innerSpin) * radius * 0.2);
+        this.gfx.lineTo(x + Math.cos(innerSpin) * radius * 0.58, y + Math.sin(innerSpin) * radius * 0.58);
+        this.gfx.moveTo(x + Math.cos(innerSpin + Math.PI * 2 / 3) * radius * 0.2, y + Math.sin(innerSpin + Math.PI * 2 / 3) * radius * 0.2);
+        this.gfx.lineTo(x + Math.cos(innerSpin + Math.PI * 2 / 3) * radius * 0.58, y + Math.sin(innerSpin + Math.PI * 2 / 3) * radius * 0.58);
+        this.gfx.moveTo(x + Math.cos(innerSpin + Math.PI * 4 / 3) * radius * 0.2, y + Math.sin(innerSpin + Math.PI * 4 / 3) * radius * 0.2);
+        this.gfx.lineTo(x + Math.cos(innerSpin + Math.PI * 4 / 3) * radius * 0.58, y + Math.sin(innerSpin + Math.PI * 4 / 3) * radius * 0.58);
+        this.gfx.strokePath();
+
+        this.gfx.lineStyle(1.6, 0xffc1c1, 0.44);
+        this.gfx.beginPath();
+        this.gfx.arc(x, y, radius * 1.18, spin, spin + Math.PI * 0.9);
+        this.gfx.strokePath();
+        this.gfx.beginPath();
+        this.gfx.arc(x, y, radius * 1.18, spin + Math.PI, spin + Math.PI * 1.9);
+        this.gfx.strokePath();
     }
 
     private drawDreadnoughtBody(
