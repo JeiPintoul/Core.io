@@ -8,6 +8,7 @@ export class MinimapRenderer {
     private readonly grid = 0x38517c;
     private readonly viewport = 0xd5e9ff;
     private readonly playerDot = 0xffffff;
+    private readonly portalDot = 0xd7c3ff;
 
     constructor(
         private readonly scene: Phaser.Scene,
@@ -15,7 +16,7 @@ export class MinimapRenderer {
         private readonly gfxHud: Phaser.GameObjects.Graphics
     ) {}
 
-    public draw(players: GameState['players']): void {
+    public draw(players: GameState['players'], portal: GameState['bossExitPortal'] = null): void {
         const metrics = this.getMetrics();
         const mapSize = metrics.size;
         const x = this.camera.width - mapSize - metrics.padding;
@@ -23,6 +24,7 @@ export class MinimapRenderer {
 
         this.drawFrame(x, y, mapSize);
         this.drawViewport(x, y, mapSize);
+        this.drawPortal(portal, x, y, mapSize);
         this.drawPlayers(players, x, y, mapSize);
     }
 
@@ -117,5 +119,20 @@ export class MinimapRenderer {
             this.gfxHud.lineStyle(1.1, this.border, 0.76);
             this.gfxHud.strokeCircle(dotX, dotY, dotRadius + 0.8);
         }
+    }
+
+    private drawPortal(portal: GameState['bossExitPortal'], x: number, y: number, mapSize: number): void {
+        if (!portal) {
+            return;
+        }
+
+        const dotX = x + (Phaser.Math.Clamp(portal.x, 0, ARENA.width) / ARENA.width) * mapSize;
+        const dotY = y + (Phaser.Math.Clamp(portal.y, 0, ARENA.height) / ARENA.height) * mapSize;
+        const pulse = 0.5 + Math.sin(this.scene.time.now / 180) * 0.5;
+
+        this.gfxHud.fillStyle(this.portalDot, 0.35 + pulse * 0.25);
+        this.gfxHud.fillCircle(dotX, dotY, 6.5);
+        this.gfxHud.lineStyle(1.6, 0x8ee8ff, 0.85);
+        this.gfxHud.strokeCircle(dotX, dotY, 8.2);
     }
 }

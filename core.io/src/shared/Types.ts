@@ -1,3 +1,5 @@
+import type { ProjectileVisualId } from './ProjectileVisuals';
+
 export const MAX_RELOAD_POINTS = 12;
 
 export type WaveType = 'CLEAR' | 'SURVIVE' | 'BOSS';
@@ -130,6 +132,11 @@ export interface EntityData {
     enemyType?: EnemyType;
     aimAngle?: number;
     sentinelTriangles?: SentinelTriangleData[];
+    magnetarPhase?: 'CHARGING' | 'RELEASING';
+    magnetarPhaseProgress?: number;
+    ownerEnemyId?: string | null;
+    spawnedAtMs?: number;
+    dreadnoughtSummonProgress?: number;
 }
 
 export interface ProjectileData {
@@ -140,6 +147,7 @@ export interface ProjectileData {
     y: number;
     radius: number;
     color?: number;
+    visualId?: ProjectileVisualId;
 }
 export interface BossFightStartPayload {
     bossArenaX: number;
@@ -172,10 +180,12 @@ export interface GameState {
     isPaused: boolean;
     objective: ObjectiveState | null;
     isBossFight?: boolean;
+    isAnomalyEncounter?: boolean;
     arenaOffset?: { x: number; y: number };
     isColorSelection: boolean;
     autoSpin: boolean;
     isCoop: boolean;
+    bossExitPortal?: { x: number; y: number; radius: number } | null;
 }
 
 export interface InputState {
@@ -228,6 +238,7 @@ export interface ProjectileDestroyedPayload {
     y: number;
     radius: number;
     color?: number;
+    visualId?: ProjectileVisualId;
 }
 
 export interface WaveClearedPayload {
@@ -318,6 +329,9 @@ export interface GameEventPayloads {
     audio_restart_requested: undefined;
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
+    boss_exit_portal_used: undefined;
+    anomaly_encounter_start: BossFightStartPayload;
+    anomaly_defeated: undefined;
     arena_resized: { width: number; height: number };
     anomaly_teleport: AnomalyTeleportPayload;
     anomaly_dash: AnomalyDashPayload;

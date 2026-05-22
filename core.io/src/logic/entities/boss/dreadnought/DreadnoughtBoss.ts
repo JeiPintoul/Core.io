@@ -1,55 +1,98 @@
-import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
-import type { EnemyType, EntityData, EntityStats } from '../../../shared/Types';
-import { calculateCooldown } from '../../../shared/CombatMath';
+import { HostileEntity, type EnemyUpdateContext, type PendingEnemySpawn } from '../../enemies/HostileEntity';
+import type { EnemyType, EntityData, EntityStats } from '../../../../shared/Types';
+import { calculateCooldown } from '../../../../shared/CombatMath';
 
 type BossPhase = 1 | 2 | 3;
+
+export interface BossCoopScaling {
+    healthMultiplier: number;
+    bodyDamageMultiplier: number;
+    bulletSpeedMultiplier: number;
+    bulletPenetrationMultiplier: number;
+    bulletDamageMultiplier: number;
+    movementSpeedMultiplier: number;
+    reloadBonus: number;
+    extraPlayers: number;
+}
+
+const NO_COOP_SCALING: BossCoopScaling = {
+    healthMultiplier: 1,
+    bodyDamageMultiplier: 1,
+    bulletSpeedMultiplier: 1,
+    bulletPenetrationMultiplier: 1,
+    bulletDamageMultiplier: 1,
+    movementSpeedMultiplier: 1,
+    reloadBonus: 0,
+    extraPlayers: 0,
+};
+
+const BASE_MINION_LIMITS: Record<EnemyType, number> = {
+    KAMIKAZE: 4,
+    RANGED: 3,
+    SKIRMISHER: 2,
+    BRUTE: 1,
+    SENTINEL: 0,
+    ANOMALY: 0,
+    ANOMALY_DECOY: 0,
+    DREADNOUGHT: 0,
+};
 
 export class DreadnoughtBoss extends HostileEntity {
     public readonly enemyType: EnemyType = 'DREADNOUGHT';
     public readonly stats: EntityStats;
     public aimAngle = 0;
     public damage: number;
-    public readonly pendingSpawns: Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> = [];
+    public readonly pendingSpawns: PendingEnemySpawn[] = [];
 
     static readonly BASE_XP_DROP = 780;
 
     private readonly preferredDistance = 450;
     private readonly strafeSpeedFactor = 0.6;
     private readonly summonRadius = 170;
+    private readonly minionLimits: Record<EnemyType, number>;
+    private readonly summonWindupMs = 650;
+    private readonly minionSpawnGraceMs = 650;
 
     private currentPhase: BossPhase = 1;
     private lastShotAtMs = 0;
     private lastSummonAtMs = -Infinity;
+    private summonStartedAtMs = -Infinity;
+    private summonPendingCount = 0;
     private lastDashAtMs = -Infinity;
     private strafeDirection: 1 | -1 = Math.random() < 0.5 ? 1 : -1;
 
-    constructor(id: string, x: number, y: number, bossCount: number) {
+    constructor(id: string, x: number, y: number, bossCount: number, coopScaling: BossCoopScaling = NO_COOP_SCALING) {
         const encounterCount = Math.max(1, bossCount);
         const encounterScale = 1 + (encounterCount - 1) * 0.14;
 
         const stats: EntityStats = {
-            maxHealth: 1800 * encounterScale,
-            healthRegen: 2 + (encounterCount - 1) * 0.35,
-            bodyDamage: 22 * encounterScale,
-            bulletSpeed: 380,
-            bulletPenetration: 2.2 + (encounterCount - 1) * 0.12,
-            bulletDamage: 20 * encounterScale,
-            reloadPoints: 2 + (encounterCount - 1) * 0.25,
-            movementSpeed: 100
+            maxHealth: 1800 * encounterScale * coopScaling.healthMultiplier,
+            healthRegen: 0,
+            bodyDamage: 22 * encounterScale * coopScaling.bodyDamageMultiplier,
+            bulletSpeed: 380 * coopScaling.bulletSpeedMultiplier,
+            bulletPenetration: (2.2 + (encounterCount - 1) * 0.12) * coopScaling.bulletPenetrationMultiplier,
+            bulletDamage: 20 * encounterScale * coopScaling.bulletDamageMultiplier,
+            reloadPoints: 2 + (encounterCount - 1) * 0.25 + coopScaling.reloadBonus,
+            movementSpeed: 100 * coopScaling.movementSpeedMultiplier
         };
 
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed, 52);
         this.stats = stats;
         this.damage = stats.bodyDamage;
+        this.minionLimits = this.buildMinionLimits(coopScaling.extraPlayers);
         this.xpDrop = DreadnoughtBoss.BASE_XP_DROP + Math.round((encounterCount - 1) * 80);
         this.applyPhaseLoadout(1);
     }
 
     public override toData(): EntityData {
-        return { ...super.toData(), aimAngle: this.aimAngle };
+        return {
+            ...super.toData(),
+            aimAngle: this.aimAngle,
+            dreadnoughtSummonProgress: this.getSummonProgress(performance.now())
+        };
     }
 
-    public override drainPendingSpawns(): Array<{ enemyType?: EnemyType; x: number; y: number; multiplier?: number }> {
+    public override drainPendingSpawns(): PendingEnemySpawn[] {
         return this.pendingSpawns.splice(0);
     }
 
@@ -71,7 +114,7 @@ export class DreadnoughtBoss extends HostileEntity {
         }
 
         this.tryShoot(distance, currentTime, onShoot);
-        this.trySummon(currentTime);
+        this.updateSummon(currentTime, context.countEnemiesByType);
     }
 
     private updateMovement(dx: number, dy: number, distance: number, dt: number, currentTime: number): void {
@@ -128,7 +171,15 @@ export class DreadnoughtBoss extends HostileEntity {
         onShoot(this.aimAngle);
     }
 
-    private trySummon(currentTime: number): void {
+    private updateSummon(currentTime: number, countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): void {
+        if (this.summonPendingCount > 0) {
+            if (currentTime - this.summonStartedAtMs >= this.summonWindupMs) {
+                this.queueSummons(this.summonPendingCount, countEnemiesByType);
+                this.summonPendingCount = 0;
+            }
+            return;
+        }
+
         const summonCooldownByPhase: Record<BossPhase, number> = {
             1: 15000,
             2: 8200,
@@ -152,22 +203,54 @@ export class DreadnoughtBoss extends HostileEntity {
             return;
         }
 
-        for (let i = 0; i < count; i++) {
-            const angle = (i / count) * Math.PI * 2 + Math.random() * 0.25;
-            const type = this.rollSummonType(this.currentPhase);
+        this.summonStartedAtMs = currentTime;
+        this.summonPendingCount = count;
+    }
+
+    private queueSummons(count: number, countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): void {
+        let spawned = 0;
+        let attempts = 0;
+        while (spawned < count && attempts < count * 4) {
+            attempts += 1;
+            const type = this.rollAvailableSummonType(countEnemiesByType);
+            if (!type) {
+                return;
+            }
+
+            const angle = (spawned / count) * Math.PI * 2 + Math.random() * 0.25;
             const minionMultiplier = this.currentPhase === 3 ? 0.64 : 0.54;
 
             this.pendingSpawns.push({
                 enemyType: type,
                 x: this.x + Math.cos(angle) * this.summonRadius,
                 y: this.y + Math.sin(angle) * this.summonRadius,
-                multiplier: minionMultiplier
+                multiplier: minionMultiplier,
+                ownerEnemyId: this.id,
+                xpDrop: 0,
+                spawnGraceMs: this.minionSpawnGraceMs
             });
+            spawned += 1;
         }
     }
 
-    private rollSummonType(phase: BossPhase): EnemyType {
-        const table = phase === 1
+    private getSummonProgress(currentTimeMs: number): number {
+        if (this.summonPendingCount <= 0) {
+            return 0;
+        }
+
+        return Math.min(1, Math.max(0, (currentTimeMs - this.summonStartedAtMs) / this.summonWindupMs));
+    }
+
+    private rollAvailableSummonType(countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number): EnemyType | null {
+        const available = this.getSummonTable(this.currentPhase).filter(({ type }) =>
+            countEnemiesByType(type, this.id) + this.countPendingMinions(type) < this.minionLimits[type]
+        );
+
+        return this.rollFromTable(available);
+    }
+
+    private getSummonTable(phase: BossPhase): Array<{ type: EnemyType; weight: number }> {
+        return phase === 1
             ? [
                 { type: 'KAMIKAZE' as const, weight: 55 },
                 { type: 'RANGED' as const, weight: 30 },
@@ -186,6 +269,12 @@ export class DreadnoughtBoss extends HostileEntity {
                     { type: 'BRUTE' as const, weight: 34 },
                     { type: 'KAMIKAZE' as const, weight: 14 }
                 ];
+    }
+
+    private rollFromTable(table: Array<{ type: EnemyType; weight: number }>): EnemyType | null {
+        if (table.length === 0) {
+            return null;
+        }
 
         const total = table.reduce((acc, item) => acc + item.weight, 0);
         let roll = Math.random() * total;
@@ -197,6 +286,20 @@ export class DreadnoughtBoss extends HostileEntity {
         }
 
         return table[table.length - 1].type;
+    }
+
+    private countPendingMinions(type: EnemyType): number {
+        return this.pendingSpawns.filter(spawn => spawn.enemyType === type).length;
+    }
+
+    private buildMinionLimits(extraPlayers: number): Record<EnemyType, number> {
+        return {
+            ...BASE_MINION_LIMITS,
+            KAMIKAZE: BASE_MINION_LIMITS.KAMIKAZE + extraPlayers,
+            RANGED: BASE_MINION_LIMITS.RANGED + extraPlayers,
+            SKIRMISHER: BASE_MINION_LIMITS.SKIRMISHER + Math.ceil(extraPlayers * 0.67),
+            BRUTE: BASE_MINION_LIMITS.BRUTE + Math.floor(extraPlayers / 2),
+        };
     }
 
     private getPhaseByHealth(): BossPhase {

@@ -1,5 +1,5 @@
 import { Entity } from '../Entity';
-import type { EnemyType, EntityData, EntityStats, TriangleCollidable } from '../../../shared/Types';
+import type { EnemyType, EntityData, EntityStats, PlayerId, TriangleCollidable } from '../../../shared/Types';
 import type { Player } from '../player/Player';
 
 export interface PendingEnemySpawn {
@@ -7,9 +7,14 @@ export interface PendingEnemySpawn {
     x: number;
     y: number;
     multiplier?: number;
+    xpDrop?: number;
     orbitSlot?: number;
     orbitTotal?: number;
     orbitRadius?: number;
+    ownerEnemyId?: string;
+    assignedPlayerId?: PlayerId;
+    mirrorStats?: EntityStats;
+    spawnGraceMs?: number;
 }
 
 export interface EnemyUpdateContext {
@@ -19,12 +24,16 @@ export interface EnemyUpdateContext {
     readonly dt: number;
     readonly currentTime: number;
     readonly onShoot: (aimAngle: number) => void;
+    readonly countEnemiesByType: (enemyType: EnemyType, ownerEnemyId?: string) => number;
 }
 
 export abstract class HostileEntity extends Entity {
     public abstract readonly enemyType: EnemyType;
     public abstract readonly stats: EntityStats;
     public abstract damage: number;
+    public ownerEnemyId: string | null = null;
+    public spawnedAtMs = 0;
+    public spawnCollisionGraceEndsAtMs = 0;
 
     public override get contactDamage(): number {
         return this.damage;
@@ -71,6 +80,8 @@ export abstract class HostileEntity extends Entity {
             radius: this.radius,
             stats: this.stats,
             enemyType: this.enemyType,
+            ownerEnemyId: this.ownerEnemyId,
+            spawnedAtMs: this.spawnedAtMs,
         };
     }
 }

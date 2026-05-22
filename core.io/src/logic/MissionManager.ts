@@ -40,9 +40,12 @@ export class MissionManager {
         this.current = this.createObjective(selected, currentTimeMs);
     }
 
-    public startBossMission(currentTimeMs: number, bossKind: 'ANOMALY' | 'DREADNOUGHT'): void {
-        const mission = bossKind === 'ANOMALY' ? ANOMALY_FLAWLESS_MISSION : BOSS_FLAWLESS_MISSION;
-        this.current = this.createObjective(mission, currentTimeMs);
+    public startBossMission(currentTimeMs: number): void {
+        this.current = this.createObjective(BOSS_FLAWLESS_MISSION, currentTimeMs);
+    }
+
+    public startAnomalyMission(currentTimeMs: number): void {
+        this.current = this.createObjective(ANOMALY_FLAWLESS_MISSION, currentTimeMs);
     }
 
     public onEnemyKilled(enemyType: EnemyType): void {
@@ -62,6 +65,14 @@ export class MissionManager {
     }
 
     public onBossDefeated(): void {
+        this.completeFlawlessIfActive();
+    }
+
+    public onAnomalyDefeated(): void {
+        this.completeFlawlessIfActive();
+    }
+
+    private completeFlawlessIfActive(): void {
         if (!this.current || this.current.completed || this.current.failed) return;
         if (this.current.definition.kind !== 'BOSS_NO_DAMAGE') return;
 

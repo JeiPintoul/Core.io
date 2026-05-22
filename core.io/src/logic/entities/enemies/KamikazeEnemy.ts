@@ -1,7 +1,7 @@
 import { HostileEntity, type EnemyUpdateContext } from './HostileEntity';
 import type { EnemyType, EntityData, EntityStats } from '../../../shared/Types';
 
-export class Enemy extends HostileEntity {
+export class KamikazeEnemy extends HostileEntity {
     public readonly enemyType: EnemyType = 'KAMIKAZE';
     public readonly stats: EntityStats;
     public aimAngle = 0;
@@ -10,7 +10,7 @@ export class Enemy extends HostileEntity {
     static readonly BASE_XP_DROP = 25;
 
     static readonly BASE_STATS: EntityStats = {
-        maxHealth: 38,
+        maxHealth: 30,
         healthRegen: 0,
         bodyDamage: 6,
         bulletSpeed: 0,
@@ -22,6 +22,7 @@ export class Enemy extends HostileEntity {
 
     private readonly preferredDistance = 230;
     private readonly distanceTolerance = 80;
+    private readonly directApproachRange = 320;
     private readonly strafeFactor = 0.92;
     private readonly burstSpeed = 390;
     private readonly burstDurationMs = 460;
@@ -35,19 +36,19 @@ export class Enemy extends HostileEntity {
 
     constructor(id: string, x: number, y: number, multiplier: number = 1) {
         const stats: EntityStats = {
-            maxHealth: Enemy.BASE_STATS.maxHealth * multiplier,
+            maxHealth: KamikazeEnemy.BASE_STATS.maxHealth * multiplier,
             healthRegen: 0,
-            bodyDamage: Enemy.BASE_STATS.bodyDamage * multiplier,
+            bodyDamage: KamikazeEnemy.BASE_STATS.bodyDamage * multiplier,
             bulletSpeed: 0,
             bulletPenetration: 0,
             bulletDamage: 0,
             reloadPoints: 0,
-            movementSpeed: Enemy.BASE_STATS.movementSpeed * multiplier
+            movementSpeed: KamikazeEnemy.BASE_STATS.movementSpeed * multiplier
         };
         super(id, x, y, stats.maxHealth, stats.maxHealth, stats.movementSpeed);
         this.stats = stats;
         this.damage = stats.bodyDamage;
-        this.xpDrop = Math.round(Enemy.BASE_XP_DROP * multiplier);
+        this.xpDrop = Math.round(KamikazeEnemy.BASE_XP_DROP * multiplier);
     }
 
     public override toData(): EntityData {
@@ -73,9 +74,23 @@ export class Enemy extends HostileEntity {
         }
 
         this.damage = this.stats.bodyDamage;
+
+        if (distance > this.directApproachRange) {
+            this.updateDirectMovement(dx, dy, distance, dt);
+            return;
+        }
+
         this.updateOrbitDirection(currentTime);
         this.updateOrbitMovement(dx, dy, distance, dt);
         this.tryStartBurst(dx, dy, distance, currentTime);
+    }
+
+    private updateDirectMovement(dx: number, dy: number, distance: number, dt: number): void {
+        const moveDirX = dx / distance;
+        const moveDirY = dy / distance;
+        this.aimAngle = Math.atan2(moveDirY, moveDirX);
+        this.x += moveDirX * this.speed * dt;
+        this.y += moveDirY * this.speed * dt;
     }
 
     private updateOrbitDirection(currentTime: number): void {
