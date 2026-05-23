@@ -140,12 +140,14 @@ export class GameScene extends Phaser.Scene {
         );
 
         this.subscriptions.push(
-            onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, radius }) => {
-                if (xpDropped <= 0) {
-                    return;
+            onGameEvent(GameEvents.ENEMY_DESTROYED, ({ x, y, xpDropped, coinDropped, radius }) => {
+                if (xpDropped > 0) {
+                    this.gameRenderer.playFloatingText(x, y - radius - 30, `+${xpDropped} XP`, '#44ff44');
                 }
 
-                this.gameRenderer.playFloatingText(x, y - radius - 30, `+${xpDropped} XP`, '#44ff44');
+                if (coinDropped > 0) {
+                    this.gameRenderer.playFloatingText(x, y - radius - 50, `+${coinDropped} Moedas`, '#ffd66b');
+                }
             })
         );
 

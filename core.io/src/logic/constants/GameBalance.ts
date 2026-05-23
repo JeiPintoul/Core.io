@@ -38,6 +38,12 @@ export const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
     }
 };
 
+export const COIN_DROP_XP_RATIO = 0.2;
+
+export function calculateCoinDrop(xpDrop: number): number {
+    return Math.max(0, Math.round(xpDrop * COIN_DROP_XP_RATIO));
+}
+
 export const DIFFICULTY_PROFILE_BY_PLAYER_COUNT: Record<1 | 2 | 3 | 4, DifficultyProfile> = {
     1: {
         enemyStatScale: 1,

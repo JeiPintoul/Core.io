@@ -176,6 +176,7 @@ export interface GameState {
     waveType: WaveType;
     remainingToKill: number;
     activeEnemyCount: number;
+    coins: number;
     surviveTimeRemainingSeconds: number;
     isPaused: boolean;
     objective: ObjectiveState | null;
@@ -218,6 +219,7 @@ export interface EntityDestroyedPayload {
 export interface EnemyDestroyedPayload {
     id: string;
     xpDropped: number;
+    coinDropped: number;
     x: number;
     y: number;
     radius: number;
@@ -340,4 +342,3 @@ export interface GameEventPayloads {
     auto_spin_toggled: { enabled: boolean };
     run_config_changed: RunConfiguration;
 }
-

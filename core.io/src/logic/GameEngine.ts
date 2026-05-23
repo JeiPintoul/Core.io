@@ -33,6 +33,7 @@ import {
     DEFAULT_RUN_CONFIGURATION,
     PLAYER_DEFAULT_COLOR_HEX,
     PLAYER_DEFAULT_COLORS,
+    calculateCoinDrop,
     getDifficultyProfile,
     type DifficultyProfile
 } from './constants/GameBalance';
@@ -73,21 +74,9 @@ export class GameEngine {
 
     private readonly processedEnemyDeathIds = new Set<string>();
 
-<<<<<<< HEAD
-    private isBossFightActive = false;
-    private currentArena: { x: number; y: number; width: number; height: number };
-    private readonly BOSS_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
-    private debugGodModeInvincible = false;
-    private debugGodModeEnabled = false;
-
-    private anomalySpawnCount = 0;
-    private anomalyCurrentChance = ANOMALY_BASE_CHANCE;
-    private anomalyCooldownWaves = 0;
-
-=======
->>>>>>> main
     private totalEnemiesKilledInRun = 0;
     private totalAnomaliesMetInRun = 0;
+    private coins = 0;
     private runConfiguration: RunConfiguration = structuredClone(DEFAULT_RUN_CONFIGURATION);
     private upgradeSelectionQueue: PlayerId[] = [];
     private activeUpgradePlayerId: PlayerId | null = null;
@@ -223,9 +212,12 @@ export class GameEngine {
                 if (this.processedEnemyDeathIds.has(enemy.id)) return;
 
                 this.processedEnemyDeathIds.add(enemy.id);
+                const coinDropped = calculateCoinDrop(enemy.xpDrop);
+                this.coins += coinDropped;
                 emitGameEvent(GameEvents.ENEMY_DESTROYED, {
                     id: enemy.id,
                     xpDropped: enemy.xpDrop,
+                    coinDropped,
                     x: enemy.x,
                     y: enemy.y,
                     radius: enemy.radius
@@ -361,79 +353,6 @@ export class GameEngine {
         this.debugGodModeEnabled = !this.debugGodModeEnabled;
         return this.debugGodModeEnabled;
     }
-<<<<<<< HEAD
-
-    public setDebugInvincibility(enabled: boolean): void {
-        this.debugGodModeInvincible = enabled;
-    }
-
-    public debugIsInvincible(): boolean {
-        return this.debugGodModeInvincible;
-    }
-
-    public debugHealPlayer(): void {
-        this.player.health = this.player.maxHealth;
-        this.emitStateUpdate();
-    }
-
-    public debugGrantRandomCard(): void {
-        const options = this.upgradeManager.rollUpgradeOptions(this.player.level);
-        const option = options[Math.floor(Math.random() * options.length)];
-        this.player.applyStatModifiers(option.card.modifiers);
-        this.player.applyColorBuff(option.colorHex);
-        this.player.applyUpgradeColor(option.colorHex);
-        this.syncPlayerCoreStats();
-        this.emitStateUpdate();
-    }
-
-    public debugForceAdvanceWave(): void {
-        const now = performance.now();
-
-        if (this.engineState === EngineState.BOSS_FIGHT) {
-            this.enemies = [];
-            this.endBossFight(now);
-            return;
-        }
-
-        this.enemies = [];
-        this.spawnQueue = [];
-        this.enemiesKilledThisWave = this.getCurrentWaveTotalToSpawn();
-        this.triggerWaveClear(now);
-    }
-
-    public debugSpawnEnemy(): void {
-        const milestone = getWaveMilestone(this.currentWave);
-        const enemyType = this.rollEnemyType(milestone.enemyWeights);
-        this.spawnEnemy(enemyType);
-    }
-
-    public debugSpawnBoss(): void {
-        if (this.isBossFightActive) {
-            return;
-        }
-
-        this.enterBossFight();
-    }
-
-    public debugLevelUpPlayer(): void {
-        this.player.level += 1;
-        this.player.pendingUpgrades += 1;
-        this.player.xpToNextLevel = Math.floor(this.player.xpToNextLevel * 1.25);
-
-        emitGameEvent(GameEvents.LEVEL_UP, { newLevel: this.player.level });
-        emitGameEvent(GameEvents.XP_UPDATE, {
-            currentXp: this.player.currentXp,
-            requires: this.player.xpToNextLevel
-        });
-        this.emitStateUpdate();
-    }
-
-    public togglePause(): boolean {
-        if (!this.isRunning) {
-            return this.isPaused;
-        }
-=======
->>>>>>> main
 
     public setDebugInvincibility(enabled: boolean): void { this.debugGodModeInvincible = enabled; }
     public debugIsInvincible(): boolean { return this.debugGodModeInvincible; }
@@ -530,6 +449,7 @@ export class GameEngine {
         this.projectileIdCounter = 0;
         this.isPaused = false;
         this.pauseStartedAtMs = 0;
+        this.coins = 0;
 
         this.engineState = EngineState.COLOR_SELECTION;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
@@ -650,6 +570,7 @@ export class GameEngine {
             waveType: this.director.getCurrentWaveType(),
             remainingToKill: this.director.getRemainingToKill(),
             activeEnemyCount: this.enemies.length,
+            coins: this.coins,
             surviveTimeRemainingSeconds: this.director.getSurviveTimeRemaining(currentTimeMs),
             isPaused: this.isPaused,
             objective: this.missionManager.getObjectiveState(),
@@ -884,20 +805,6 @@ export class GameEngine {
             const projectile = this.projectiles[projectileIndex];
 
             if (projectile.faction === 'enemy') {
-<<<<<<< HEAD
-                if (this.checkCircularCollision(projectile.x, projectile.y, projectile.radius, this.player.x, this.player.y, this.player.radius)) {
-                    if (!this.debugGodModeInvincible) {
-                        const shouldDestroy = projectile.handleCollisionWith(
-                            this.player,
-                            this.player.contactDamage,
-                            currentTime,
-                            () => this.missionManager.onPlayerDamaged()
-                        );
-                        if (shouldDestroy) {
-                            this.destroyProjectile(projectileIndex);
-                        }
-                    }
-=======
                 const alivePlayers = this.getPlayers().filter((player) => player.health > 0);
                 for (const player of alivePlayers) {
                     if (!this.checkCircularCollision(projectile.x, projectile.y, projectile.radius, player.x, player.y, player.radius)) continue;
@@ -912,7 +819,6 @@ export class GameEngine {
                         () => this.missionManager.onPlayerDamaged()
                     );
                     if (shouldDestroy) { this.destroyProjectile(projectileIndex); break; }
->>>>>>> main
                 }
                 continue;
             }

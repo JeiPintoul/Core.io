@@ -3,8 +3,6 @@ import { createIcons, Home, Volume2, VolumeX } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
-<<<<<<< HEAD
-=======
 import {
     MODIFIER_META,
     RARITY_LABELS_PTBR,
@@ -12,7 +10,6 @@ import {
     getUpgradeCardFlavor,
     getUpgradeCardSymbol
 } from './client/hud/UpgradePresentation';
->>>>>>> main
 import { GodMode } from './debug/GodMode';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
 import { normalizeColorHex } from './shared/ColorUtils';
