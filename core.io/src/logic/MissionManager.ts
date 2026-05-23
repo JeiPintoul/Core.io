@@ -1,6 +1,6 @@
 import type { EnemyType, ObjectiveState, WaveMilestone, WaveType } from '../shared/Types';
 import { emitGameEvent, GameEvents } from '../shared/EventBus';
-import { MISSIONS_DATABASE, type MissionDefinition } from './constants/MissionsDatabase';
+import { ANOMALY_FLAWLESS_MISSION, BOSS_FLAWLESS_MISSION, MISSIONS_DATABASE, type MissionDefinition } from './constants/MissionsDatabase';
 
 interface ActiveObjective {
     definition: MissionDefinition;
@@ -37,14 +37,15 @@ export class MissionManager {
             this.injectAndShuffle(selected, spawnQueue);
         }
 
-        this.current = {
-            definition: selected,
-            progress: 0,
-            completed: false,
-            failed: false,
-            rewardGranted: false,
-            createdAtMs: currentTimeMs,
-        };
+        this.current = this.createObjective(selected, currentTimeMs);
+    }
+
+    public startBossMission(currentTimeMs: number): void {
+        this.current = this.createObjective(BOSS_FLAWLESS_MISSION, currentTimeMs);
+    }
+
+    public startAnomalyMission(currentTimeMs: number): void {
+        this.current = this.createObjective(ANOMALY_FLAWLESS_MISSION, currentTimeMs);
     }
 
     public onEnemyKilled(enemyType: EnemyType): void {
@@ -63,9 +64,25 @@ export class MissionManager {
         this.tryComplete();
     }
 
+    public onBossDefeated(): void {
+        this.completeFlawlessIfActive();
+    }
+
+    public onAnomalyDefeated(): void {
+        this.completeFlawlessIfActive();
+    }
+
+    private completeFlawlessIfActive(): void {
+        if (!this.current || this.current.completed || this.current.failed) return;
+        if (this.current.definition.kind !== 'BOSS_NO_DAMAGE') return;
+
+        this.current.progress = 1;
+        this.tryComplete();
+    }
+
     public onPlayerDamaged(): void {
         if (!this.current || this.current.completed || this.current.failed) return;
-        if (this.current.definition.kind !== 'NO_DAMAGE_DURATION') return;
+        if (this.current.definition.kind !== 'NO_DAMAGE_DURATION' && this.current.definition.kind !== 'BOSS_NO_DAMAGE') return;
         this.current.failed = true;
     }
 
@@ -96,6 +113,14 @@ export class MissionManager {
         this.current = null;
     }
 
+    public shiftActiveObjectiveTime(offsetMs: number): void {
+        if (!this.current || offsetMs <= 0) {
+            return;
+        }
+
+        this.current.createdAtMs += offsetMs;
+    }
+
     private isEligible(mission: MissionDefinition, spawnQueue: EnemyType[], waveType: WaveType, milestone: WaveMilestone): boolean {
         switch (mission.kind) {
             case 'KILL_COUNT':
@@ -113,6 +138,9 @@ export class MissionManager {
 
             case 'NO_DAMAGE_DURATION':
                 return true;
+
+            case 'BOSS_NO_DAMAGE':
+                return false;
         }
     }
 
@@ -160,6 +188,17 @@ export class MissionManager {
         }
 
         return missions[missions.length - 1];
+    }
+
+    private createObjective(definition: MissionDefinition, currentTimeMs: number): ActiveObjective {
+        return {
+            definition,
+            progress: 0,
+            completed: false,
+            failed: false,
+            rewardGranted: false,
+            createdAtMs: currentTimeMs,
+        };
     }
 
     private shuffle<T>(arr: T[]): void {

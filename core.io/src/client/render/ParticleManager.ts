@@ -1,47 +1,32 @@
 import Phaser from 'phaser';
-import { VISUAL } from '../constants/GameConstants';
-import { darkenColor } from './RenderUtils';
+import type { EnemyType } from '../../shared/Types';
+import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
+import { EntityDeathAnimator } from './entities/EntityDeathAnimator';
+import { ProjectileDeathAnimator } from './projectiles/ProjectileDeathAnimator';
 
 export class ParticleManager {
-    constructor(private scene: Phaser.Scene) {}
+    private readonly entityDeathAnimator: EntityDeathAnimator;
+    private readonly projectileDeathAnimator: ProjectileDeathAnimator;
 
-    playProjectileDeath(x: number, y: number, radius: number, color: number): void {
-        const outlineColor = darkenColor(color, 42);
-        const pulse = this.scene.add.circle(x, y, radius, color, 1);
-        pulse.setStrokeStyle(VISUAL.STROKE.bullet, outlineColor, 1);
-
-        this.scene.tweens.add({
-            targets: pulse,
-            scaleX: 0,
-            scaleY: 0,
-            alpha: 0,
-            duration: 150,
-            ease: 'Quad.easeOut',
-            onComplete: () => pulse.destroy()
-        });
+    constructor(private scene: Phaser.Scene) {
+        this.entityDeathAnimator = new EntityDeathAnimator(scene);
+        this.projectileDeathAnimator = new ProjectileDeathAnimator(scene);
     }
 
-    playEntityDeathGhost(
+    playProjectileDeath(x: number, y: number, radius: number, color: number, visualId?: ProjectileVisualId): void {
+        this.projectileDeathAnimator.play(x, y, radius, color, visualId);
+    }
+
+    playEntityDeath(
         x: number,
         y: number,
         radius: number,
         fillColor: number,
         outlineColor: number,
-        strokeWidth: number
+        strokeWidth: number,
+        enemyType?: EnemyType
     ): void {
-        const ghost = this.scene.add.circle(x, y, radius, fillColor, 1);
-        ghost.setStrokeStyle(strokeWidth, outlineColor, 1);
-
-        this.scene.tweens.add({
-            targets: ghost,
-            y: ghost.y - VISUAL.PLAYER.deathRiseDistance,
-            scaleX: 0,
-            scaleY: 0,
-            alpha: 0,
-            duration: 500,
-            ease: 'Quad.easeOut',
-            onComplete: () => ghost.destroy()
-        });
+        this.entityDeathAnimator.play(x, y, radius, fillColor, outlineColor, strokeWidth, enemyType);
     }
 
     playFloatingText(x: number, y: number, text: string, color: string): void {

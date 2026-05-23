@@ -1,5 +1,5 @@
 import type { CardRarity, UpgradeRollOption } from '../shared/Types';
-import { UPGRADE_CARDS, UPGRADE_CARDS_BY_RARITY, UPGRADE_CARD_COLORS, type UpgradeCard } from './constants/CardsDatabase';
+import { UPGRADE_CARDS, UPGRADE_CARDS_BY_RARITY, type UpgradeCard } from './constants/CardsDatabase';
 
 type RarityWeights = Record<CardRarity, number>;
 
@@ -33,10 +33,7 @@ export class UpgradeManager {
             const card = this.rollCard(rarity, selectedCardIds);
             selectedCardIds.add(card.id);
 
-            options.push({
-                card,
-                colorHex: this.rollColor()
-            });
+            options.push({ card, colorHex: card.paintColor });
         }
 
         return options;
@@ -87,9 +84,5 @@ export class UpgradeManager {
         }
 
         return UPGRADE_CARDS[0];
-    }
-
-    private rollColor(): string {
-        return UPGRADE_CARD_COLORS[Math.floor(Math.random() * UPGRADE_CARD_COLORS.length)];
     }
 }

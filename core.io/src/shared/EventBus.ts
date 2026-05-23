@@ -34,12 +34,16 @@ export const GameEvents = {
     AUDIO_RESTART_REQUESTED: 'audio_restart_requested',
     BOSS_FIGHT_START: 'boss_fight_start',
     BOSS_DEFEATED: 'boss_defeated',
+    BOSS_EXIT_PORTAL_USED: 'boss_exit_portal_used',
+    ANOMALY_ENCOUNTER_START: 'anomaly_encounter_start',
+    ANOMALY_DEFEATED: 'anomaly_defeated',
     ARENA_RESIZED: 'arena_resized',
     ANOMALY_TELEPORT: 'anomaly_teleport',
     ANOMALY_DASH: 'anomaly_dash',
     START_RUN_WITH_COLOR: 'start_run_with_color',
     AUTO_FIRE_TOGGLED: 'auto_fire_toggled',
     AUTO_SPIN_TOGGLED: 'auto_spin_toggled',
+    RUN_CONFIG_CHANGED: 'run_config_changed',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

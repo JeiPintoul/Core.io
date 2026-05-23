@@ -15,14 +15,39 @@ const ZERO_BONUS_STATS: EntityStats = {
     movementSpeed: 0
 };
 
+const COLOR_STAT_KEYS: Array<keyof EntityStats> = [
+    'maxHealth',
+    'healthRegen',
+    'bodyDamage',
+    'bulletSpeed',
+    'bulletPenetration',
+    'bulletDamage',
+    'reloadPoints',
+    'movementSpeed'
+];
+
+const COLOR_BONUS_CAPS: Record<keyof EntityStats, number> = {
+    maxHealth: 85,
+    healthRegen: 4.5,
+    bodyDamage: 18,
+    bulletSpeed: 165,
+    bulletPenetration: 3.5,
+    bulletDamage: 20,
+    reloadPoints: 4.2,
+    movementSpeed: 60
+};
+
 export class Player extends Entity {
     private static readonly OUT_OF_COMBAT_REGEN_DELAY_MS = 10000;
     private static readonly OUT_OF_COMBAT_BONUS_REGEN_PER_SECOND = 5;
+    private static readonly UPGRADE_COLOR_BASE_SCALE = 0.38;
+    private static readonly UPGRADE_COLOR_DIMINISHING_FACTOR = 0.8;
 
     public name: string;
     public color: number;
     public isUpgrading: boolean;
     public spinAngle = 0;
+    public aimAngle = 0;
     private static readonly SPIN_RATE = 2.5;
     public level: number;
     public currentXp: number;
@@ -31,6 +56,9 @@ export class Player extends Entity {
     public readonly appliedUpgradeColors: number[];
     public bonusStats: StatModifiers;
     public colorBonusStats: StatModifiers;
+    private readonly progressionEnabled: boolean;
+    private primaryColorHex: string | null = null;
+    private selectedUpgradeColorHexes: string[] = [];
     private readonly baseStats: EntityStats = {
         maxHealth: 100,
         healthRegen: 1,
@@ -48,7 +76,8 @@ export class Player extends Entity {
         x: number,
         y: number,
         name: string,
-        color: number = 0x4488ff
+        color: number = 0x4488ff,
+        progressionEnabled: boolean = true
     ) {
         const base = {
             maxHealth: 100,
@@ -64,6 +93,7 @@ export class Player extends Entity {
         this.name = name;
         this.color = color;
         this.isUpgrading = false;
+        this.progressionEnabled = progressionEnabled;
         this.level = 1;
         this.currentXp = 0;
         this.xpToNextLevel = 100;
@@ -84,7 +114,9 @@ export class Player extends Entity {
             }
         ]);
 
-        this.setupListeners();
+        if (this.progressionEnabled) {
+            this.setupListeners();
+        }
     }
 
     public override get contactDamage(): number {
@@ -126,6 +158,7 @@ export class Player extends Entity {
     public update(input: InputState, dt: number, isControlsInverted: boolean): void {
         if (input.autoSpin) {
             this.spinAngle += Player.SPIN_RATE * dt;
+            this.aimAngle = this.spinAngle;
         }
 
         const up    = isControlsInverted ? input.down  : input.up;
@@ -147,21 +180,20 @@ export class Player extends Entity {
             this.x += (movementX / magnitude) * speedPerFrame;
             this.y += (movementY / magnitude) * speedPerFrame;
         }
+
+        if (!input.autoSpin) {
+            const targetX = isControlsInverted ? (2 * this.x) - input.targetX : input.targetX;
+            const targetY = isControlsInverted ? (2 * this.y) - input.targetY : input.targetY;
+            const aimDx = targetX - this.x;
+            const aimDy = targetY - this.y;
+            if (Math.hypot(aimDx, aimDy) > 0.0001) {
+                this.aimAngle = Math.atan2(aimDy, aimDx);
+            }
+        }
     }
 
     public applyStatModifiers(modifiers: StatModifiers): void {
-        const statKeys: Array<keyof EntityStats> = [
-            'maxHealth',
-            'healthRegen',
-            'bodyDamage',
-            'bulletSpeed',
-            'bulletPenetration',
-            'bulletDamage',
-            'reloadPoints',
-            'movementSpeed'
-        ];
-
-        for (const key of statKeys) {
+        for (const key of COLOR_STAT_KEYS) {
             const modifier = modifiers[key];
             if (modifier === undefined) {
                 continue;
@@ -171,9 +203,24 @@ export class Player extends Entity {
         }
     }
 
+    public setPrimaryColorBuff(colorHex: string): void {
+        this.primaryColorHex = colorHex.toLowerCase();
+        this.selectedUpgradeColorHexes = [];
+        this.rebuildColorBonuses();
+    }
+
+    public applyUpgradeColorBuff(colorHex: string): void {
+        this.selectedUpgradeColorHexes.push(colorHex.toLowerCase());
+        this.rebuildColorBonuses();
+    }
+
     public applyColorBuff(colorHex: string): void {
-        const def = getColorDefinition(colorHex);
-        this.colorBonusStats = def ? { ...def.modifiers } : {};
+        if (!this.primaryColorHex) {
+            this.setPrimaryColorBuff(colorHex);
+            return;
+        }
+
+        this.applyUpgradeColorBuff(colorHex);
     }
 
     public applyUpgradeColor(colorHex: string): void {
@@ -186,6 +233,59 @@ export class Player extends Entity {
 
         this.appliedUpgradeColors.push(parsedColor);
         this.color = parsedColor;
+    }
+
+    private rebuildColorBonuses(): void {
+        const nextBonus: StatModifiers = {};
+        const primaryColor = this.primaryColorHex ? getColorDefinition(this.primaryColorHex) : undefined;
+
+        if (primaryColor) {
+            this.mergeScaledModifiers(nextBonus, primaryColor.modifiers, 1);
+        }
+
+        const colorStackCounts = new Map<string, number>();
+        for (const hex of this.selectedUpgradeColorHexes) {
+            const color = getColorDefinition(hex);
+            if (!color) {
+                continue;
+            }
+
+            const previousStacks = colorStackCounts.get(color.id) ?? 0;
+            colorStackCounts.set(color.id, previousStacks + 1);
+
+            const stackScale = Player.UPGRADE_COLOR_BASE_SCALE * Math.pow(Player.UPGRADE_COLOR_DIMINISHING_FACTOR, previousStacks);
+            const tierScale = color.tier === 'TERTIARY' ? 1.25 : color.tier === 'SECONDARY' ? 1 : 0.85;
+            this.mergeScaledModifiers(nextBonus, color.modifiers, stackScale * tierScale);
+        }
+
+        this.colorBonusStats = this.clampColorBonuses(nextBonus);
+    }
+
+    private mergeScaledModifiers(target: StatModifiers, source: StatModifiers, scale: number): void {
+        for (const key of COLOR_STAT_KEYS) {
+            const value = source[key];
+            if (value === undefined || value === 0) {
+                continue;
+            }
+
+            target[key] = (target[key] ?? 0) + value * scale;
+        }
+    }
+
+    private clampColorBonuses(modifiers: StatModifiers): StatModifiers {
+        const result: StatModifiers = {};
+
+        for (const key of COLOR_STAT_KEYS) {
+            const value = modifiers[key];
+            if (value === undefined) {
+                continue;
+            }
+
+            const cap = COLOR_BONUS_CAPS[key];
+            result[key] = Math.max(-cap, Math.min(cap, value));
+        }
+
+        return result;
     }
 
     public consumePendingUpgrade(): void {
@@ -206,6 +306,10 @@ export class Player extends Entity {
     }
 
     public gainXp(amount: number): void {
+        if (!this.progressionEnabled) {
+            return;
+        }
+
         this.currentXp += amount;
 
         while (this.currentXp >= this.xpToNextLevel) {

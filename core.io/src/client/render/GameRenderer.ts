@@ -1,8 +1,12 @@
 import Phaser from 'phaser';
-import type { GameState, ProjectileFaction } from '../../shared/Types';
-import { COLORS, ARENA, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
+import type { EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
+import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
+import { COLORS, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
+import { MinimapRenderer } from './MinimapRenderer';
 import { ParticleManager } from './ParticleManager';
+import { EnemyVisualRenderer } from './entities/EnemyVisualRenderer';
+import { ProjectileVisualRenderer } from './projectiles/ProjectileVisualRenderer';
 import { darkenColor } from './RenderUtils';
 
 interface EntityRenderSnapshot {
@@ -13,24 +17,24 @@ interface EntityRenderSnapshot {
     outlineColor: number;
     strokeWidth: number;
     lastSeenAt: number;
+    enemyType?: EnemyType;
 }
 
 export class GameRenderer {
     private healthBarRenderer: HealthBarRenderer;
+    private minimapRenderer: MinimapRenderer;
     private particleManager: ParticleManager;
+    private enemyVisualRenderer: EnemyVisualRenderer;
+    private projectileVisualRenderer: ProjectileVisualRenderer;
     private readonly entitySnapshots = new Map<string, EntityRenderSnapshot>();
     private currentPlayerId: string | null = null;
     private isPlayerDeathAnimating = false;
-    private playerNameText: Phaser.GameObjects.Text | null = null;
+    private readonly playerNameTexts = new Map<string, Phaser.GameObjects.Text>();
     private cursorWorldPoint = new Phaser.Geom.Point(0, 0);
     private readonly playerBarrelRetraction = { value: 0 };
     private readonly enemyBarrelRetractions = new Map<string, { value: number }>();
     private readonly enemyRecoilTweens = new Map<string, Phaser.Tweens.Tween>();
     private playerRecoilTween: Phaser.Tweens.Tween | null = null;
-
-    private readonly minimapBackground = 0x060b1f;
-    private readonly minimapBorder = 0x79a6ff;
-    private readonly minimapPlayerDot = 0xffffff;
 
     constructor(
         private scene: Phaser.Scene,
@@ -41,7 +45,10 @@ export class GameRenderer {
         private gfxHud: Phaser.GameObjects.Graphics
     ) {
         this.healthBarRenderer = new HealthBarRenderer(scene, gfxGame);
+        this.minimapRenderer = new MinimapRenderer(scene, camera, gfxHud);
         this.particleManager = new ParticleManager(scene);
+        this.enemyVisualRenderer = new EnemyVisualRenderer(gfxGame);
+        this.projectileVisualRenderer = new ProjectileVisualRenderer(gfxGame);
     }
 
     /**
@@ -50,16 +57,21 @@ export class GameRenderer {
     renderFrame(state: GameState) {
         this.gfxGame.clear();
         this.gfxHud.clear();
-        this.currentPlayerId = state.player.id;
+        const players = state.players?.length > 0 ? state.players : [state.player];
+        this.currentPlayerId = players[0]?.id ?? state.player.id;
 
         const activeEntityIds = new Set<string>();
+        const playerColorById = new Map<string, number>();
+        for (const player of players) {
+            playerColorById.set(player.id, player.color ?? COLORS.PLAYER);
+        }
 
-        const resolvedPlayerColor = state.player.color ?? COLORS.PLAYER;
-        this.drawProjectiles(state, resolvedPlayerColor);
+        this.drawProjectiles(state, playerColorById);
+        this.drawPortal(state);
         this.drawEnemies(state, activeEntityIds);
-        this.drawPlayer(state, activeEntityIds);
-        this.updatePlayerName(state.player);
-        this.drawMinimap(state.player.x, state.player.y);
+        this.drawPlayers(players, activeEntityIds);
+        this.updatePlayerNames(players);
+        this.minimapRenderer.draw(players, state.bossExitPortal ?? null);
         this.pruneEnemyBarrelRetraction(activeEntityIds);
 
         this.healthBarRenderer.pruneWorldHealthBars(activeEntityIds);
@@ -68,7 +80,7 @@ export class GameRenderer {
 
     public playEntityDestroyedAnimation(entityId: string): void {
         if (this.currentPlayerId && entityId === this.currentPlayerId) {
-            this.hidePlayerName();
+            this.hidePlayerName(entityId);
             this.playPlayerDeathAnimation();
             return;
         }
@@ -79,17 +91,26 @@ export class GameRenderer {
         }
 
         this.entitySnapshots.delete(entityId);
+        this.hidePlayerName(entityId);
 
-        this.particleManager.playEntityDeathGhost(
+        this.particleManager.playEntityDeath(
             snapshot.x, snapshot.y, snapshot.radius,
-            snapshot.fillColor, snapshot.outlineColor, snapshot.strokeWidth
+            snapshot.fillColor, snapshot.outlineColor, snapshot.strokeWidth,
+            snapshot.enemyType
         );
     }
 
-    public playProjectileDeathAnimation(x: number, y: number, radius: number, faction: ProjectileFaction, color?: number): void {
+    public playProjectileDeathAnimation(
+        x: number,
+        y: number,
+        radius: number,
+        faction: ProjectileFaction,
+        color?: number,
+        visualId?: ProjectileVisualId
+    ): void {
         const isPlayerProjectile = faction === 'player';
         const pulseColor = color ?? (isPlayerProjectile ? COLORS.PLAYER : COLORS.ENEMY);
-        this.particleManager.playProjectileDeath(x, y, radius, pulseColor);
+        this.particleManager.playProjectileDeath(x, y, radius, pulseColor, visualId);
     }
 
     public playFloatingText(x: number, y: number, text: string, color: string): void {
@@ -115,7 +136,9 @@ export class GameRenderer {
             onComplete: () => {
                 this.isPlayerDeathAnimating = false;
                 this.gfxPlayer.clear();
-                this.hidePlayerName();
+                if (this.currentPlayerId) {
+                    this.hidePlayerName(this.currentPlayerId);
+                }
             }
         });
     }
@@ -126,7 +149,8 @@ export class GameRenderer {
         y: number,
         radius: number,
         fillColor: number,
-        strokeWidth: number
+        strokeWidth: number,
+        enemyType?: EnemyType
     ): void {
         const outlineColor = darkenColor(fillColor, 40);
 
@@ -137,7 +161,8 @@ export class GameRenderer {
             fillColor,
             outlineColor,
             strokeWidth,
-            lastSeenAt: this.scene.time.now
+            lastSeenAt: this.scene.time.now,
+            enemyType
         });
     }
 
@@ -211,45 +236,54 @@ export class GameRenderer {
     }
 
     /**
-     * Desenha o player com cano rotacionado para o cursor
+     * Desenha jogadores locais (P1 e, se ativo, P2)
      */
-    private drawPlayer(state: GameState, activeEntityIds: Set<string>) {
-        const { x, y, radius, stats, health, isDead, color: playerColor } = state.player;
+    private drawPlayers(players: GameState['players'], activeEntityIds: Set<string>): void {
+        if (players.length === 0) {
+            return;
+        }
+
+        const primary = players[0];
+        this.drawPrimaryPlayer(primary, activeEntityIds);
+
+        for (let i = 1; i < players.length; i++) {
+            this.drawSecondaryPlayer(players[i], activeEntityIds);
+        }
+    }
+
+    private drawPrimaryPlayer(player: GameState['player'], activeEntityIds: Set<string>): void {
+        const { x, y, radius, stats, health, isDead, color: playerColor } = player;
 
         if (isDead) {
             if (!this.isPlayerDeathAnimating) {
                 this.gfxPlayer.clear();
             }
-
-            this.hidePlayerName();
-
+            this.hidePlayerName(player.id);
             return;
         }
 
-        activeEntityIds.add(state.player.id);
+        activeEntityIds.add(player.id);
 
         this.gfxPlayer.clear();
         this.gfxPlayer.setPosition(x, y);
         this.gfxPlayer.setScale(1);
         this.gfxPlayer.setAlpha(1);
 
-        // When auto-spin is active use the server-driven spinAngle; otherwise aim at cursor
-        let angle: number;
-        if (state.autoSpin && state.player.aimAngle !== undefined) {
-            angle = state.player.aimAngle;
-        } else {
+        const resolvedAimAngle = (typeof player.aimAngle === 'number' && Number.isFinite(player.aimAngle))
+            ? player.aimAngle
+            : null;
+        let angle = resolvedAimAngle ?? 0;
+        if (resolvedAimAngle === null) {
             const worldPoint = this.getCursorWorldPoint();
             angle = Math.atan2(worldPoint.y - y, worldPoint.x - x);
         }
 
-        // Draw barrel
         this.drawPlayerBarrel(radius, angle, this.playerBarrelRetraction.value);
 
-        // Draw body
         const resolvedPlayerColor = playerColor ?? COLORS.PLAYER;
         this.drawPlayerBody(radius, resolvedPlayerColor);
         this.rememberEntitySnapshot(
-            state.player.id,
+            player.id,
             x,
             y,
             radius,
@@ -257,9 +291,35 @@ export class GameRenderer {
             VISUAL.STROKE.player
         );
 
-        // Draw health bar
         this.healthBarRenderer.drawWorldHealthBar(
-            state.player.id,
+            player.id,
+            x,
+            y + radius + VISUAL.HEALTH_BAR.offsetAboveEntity,
+            radius * 2,
+            health,
+            stats.maxHealth
+        );
+    }
+
+    private drawSecondaryPlayer(player: GameState['player'], activeEntityIds: Set<string>): void {
+        const { id, x, y, radius, stats, health, isDead, color, aimAngle } = player;
+        if (isDead) {
+            this.hidePlayerName(id);
+            return;
+        }
+
+        activeEntityIds.add(id);
+
+        const resolvedColor = color ?? 0x55ffaa;
+        const barrelRetraction = this.enemyBarrelRetractions.get(id)?.value ?? 0;
+        const angle = aimAngle ?? 0;
+
+        this.drawEnemyBarrel(x, y, radius, angle, barrelRetraction);
+        this.drawCircle(x, y, radius, resolvedColor, VISUAL.STROKE.player);
+        this.rememberEntitySnapshot(id, x, y, radius, resolvedColor, VISUAL.STROKE.player);
+
+        this.healthBarRenderer.drawWorldHealthBar(
+            id,
             x,
             y + radius + VISUAL.HEALTH_BAR.offsetAboveEntity,
             radius * 2,
@@ -272,8 +332,14 @@ export class GameRenderer {
      * Desenha todos os inimigos
      */
     private drawEnemies(state: GameState, activeEntityIds: Set<string>) {
+        const nowSeconds = this.scene.time.now / 1000;
+        const shouldMaskAnomalyHealth = state.enemies.some((enemy) => enemy.enemyType === 'ANOMALY_DECOY');
+
         for (const enemy of state.enemies) {
-            const { x, y, radius, health, stats, isDead, enemyType, aimAngle, sentinelTriangles } = enemy;
+            const {
+                x, y, radius, health, stats, isDead, enemyType, aimAngle,
+                sentinelTriangles, ownerEnemyId, spawnedAtMs
+            } = enemy;
 
             if (isDead) {
                 continue;
@@ -287,37 +353,35 @@ export class GameRenderer {
 
             const barrelRetraction = this.enemyBarrelRetractions.get(enemy.id)?.value ?? 0;
 
-            if (enemyType === 'RANGED' && typeof aimAngle === 'number') {
-                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
+            if ((enemyType === 'RANGED' || enemyType === 'SKIRMISHER' || enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY' || enemyType === 'DREADNOUGHT')
+                && typeof aimAngle === 'number') {
+                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction, enemyType);
             }
 
-            if (enemyType === 'ANOMALY' && typeof aimAngle === 'number') {
-                this.drawEnemyBarrel(x, y, radius, aimAngle, barrelRetraction);
-                this.gfxGame.lineStyle(2, 0xaabbff, 0.35);
-                this.gfxGame.strokeCircle(x, y, radius + 8);
-                this.gfxGame.lineStyle(1, 0xaabbff, 0.15);
-                this.gfxGame.strokeCircle(x, y, radius + 16);
-            }
+            const bodyColor = this.enemyVisualRenderer.getBodyColor(enemyType);
+            const spawnScale = this.getSpawnScale(ownerEnemyId, spawnedAtMs, nowSeconds);
+            this.enemyVisualRenderer.draw(enemy, bodyColor, nowSeconds, spawnScale);
 
-            const bodyColor = enemyType === 'ANOMALY' ? 0xdde8ff : COLORS.ENEMY;
-            this.drawCircle(x, y, radius, bodyColor, VISUAL.STROKE.enemy);
             this.rememberEntitySnapshot(
                 enemy.id,
                 x,
                 y,
                 radius,
                 bodyColor,
-                VISUAL.STROKE.enemy
+                VISUAL.STROKE.enemy,
+                enemyType
             );
 
-            this.healthBarRenderer.drawWorldHealthBar(
-                enemy.id,
-                x,
-                y - radius - 10,
-                radius * 2,
-                health,
-                stats.maxHealth
-            );
+            if (!this.shouldHideEnemyHealthBar(enemyType, shouldMaskAnomalyHealth)) {
+                this.healthBarRenderer.drawWorldHealthBar(
+                    enemy.id,
+                    x,
+                    y - radius - 10,
+                    radius * 2,
+                    health,
+                    stats.maxHealth
+                );
+            }
 
             // Draw sentinel triangles if present
             if (sentinelTriangles) {
@@ -326,7 +390,7 @@ export class GameRenderer {
                         continue;
                     }
 
-                    this.drawTriangle(triangle.x, triangle.y, 12, triangle.rotation, COLORS.ENEMY, VISUAL.STROKE.enemy);
+                    this.drawSentinelTriangle(triangle.x, triangle.y, 12, triangle.rotation, triangle.mode);
                     this.healthBarRenderer.drawWorldHealthBar(
                         triangle.id,
                         triangle.x,
@@ -340,23 +404,80 @@ export class GameRenderer {
         }
     }
 
+    private shouldHideEnemyHealthBar(enemyType: EnemyType | undefined, shouldMaskAnomalyHealth: boolean): boolean {
+        return shouldMaskAnomalyHealth && (enemyType === 'ANOMALY' || enemyType === 'ANOMALY_DECOY');
+    }
+
+    private getSpawnScale(ownerEnemyId: string | null | undefined, spawnedAtMs: number | undefined, nowSeconds: number): number {
+        if (!ownerEnemyId || !spawnedAtMs) {
+            return 1;
+        }
+
+        const elapsedMs = (nowSeconds * 1000) - spawnedAtMs;
+        if (elapsedMs >= 520) {
+            return 1;
+        }
+
+        const progress = Phaser.Math.Clamp(elapsedMs / 520, 0, 1);
+        return 0.2 + Phaser.Math.Easing.Back.Out(progress) * 0.8;
+    }
+
+    private drawPortal(state: GameState): void {
+        const portal = state.bossExitPortal;
+        if (!portal) {
+            return;
+        }
+
+        const pulseTime = this.scene.time.now / 1000;
+        const pulse = 0.5 + Math.sin(pulseTime * 4.8) * 0.5;
+
+        this.gfxGame.fillStyle(0x7f5cff, 0.16 + pulse * 0.08);
+        this.gfxGame.fillCircle(portal.x, portal.y, portal.radius * (1.2 + pulse * 0.12));
+        this.gfxGame.lineStyle(3, 0xded0ff, 0.85);
+        this.gfxGame.strokeCircle(portal.x, portal.y, portal.radius);
+        this.gfxGame.lineStyle(1.6, 0x8ee8ff, 0.72);
+        this.gfxGame.strokeCircle(portal.x, portal.y, portal.radius * (0.68 + pulse * 0.08));
+
+        for (let i = 0; i < 3; i++) {
+            const angle = pulseTime * 1.8 + (i * Math.PI * 2) / 3;
+            const dotX = portal.x + Math.cos(angle) * portal.radius * 0.82;
+            const dotY = portal.y + Math.sin(angle) * portal.radius * 0.82;
+            this.gfxGame.fillStyle(0xf4efff, 0.75);
+            this.gfxGame.fillCircle(dotX, dotY, 4.2);
+        }
+    }
+
     /**
      * Desenha todos os projéteis
      */
-    private drawProjectiles(state: GameState, playerColor: number) {
+    private drawProjectiles(state: GameState, playerColorById: Map<string, number>) {
+        const pulseTime = this.scene.time.now / 1000;
+
         for (const proj of state.projectiles) {
             if (!this.isInCameraView(proj.x, proj.y, proj.radius, 20)) {
                 continue;
             }
 
             const isPlayerProjectile = proj.faction === 'player';
-            const fillColor = isPlayerProjectile ? playerColor : COLORS.ENEMY;
-            this.drawCircle(proj.x, proj.y, proj.radius, fillColor, VISUAL.STROKE.bullet);
+            const fallbackPlayerColor = playerColorById.get(proj.ownerId) ?? COLORS.PLAYER;
+            const fallbackColor = isPlayerProjectile ? fallbackPlayerColor : COLORS.ENEMY;
+            this.projectileVisualRenderer.draw(proj, fallbackColor, pulseTime);
         }
     }
 
-    private drawEnemyBarrel(x: number, y: number, radius: number, angle: number, retraction: number): void {
+    private drawEnemyBarrel(
+        x: number,
+        y: number,
+        radius: number,
+        angle: number,
+        retraction: number,
+        enemyType?: EnemyType
+    ): void {
         const barrelMetrics = this.getBarrelMetrics(radius, retraction);
+        const widthMultiplier = enemyType === 'SKIRMISHER' ? 1.65 : 1;
+        const lengthMultiplier = enemyType === 'SKIRMISHER' ? 0.82 : enemyType === 'RANGED' ? 1.28 : 1;
+        const barrelWidth = barrelMetrics.width * widthMultiplier;
+        const barrelLength = barrelMetrics.length * lengthMultiplier;
         const bx = x + Math.cos(angle) * barrelMetrics.offset;
         const by = y + Math.sin(angle) * barrelMetrics.offset;
 
@@ -365,8 +486,8 @@ export class GameRenderer {
         this.gfxGame.save();
         this.gfxGame.translateCanvas(bx, by);
         this.gfxGame.rotateCanvas(angle);
-        this.gfxGame.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
-        this.gfxGame.strokeRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
+        this.gfxGame.fillRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
+        this.gfxGame.strokeRect(0, -barrelWidth / 2, barrelLength, barrelWidth);
         this.gfxGame.restore();
     }
 
@@ -416,6 +537,24 @@ export class GameRenderer {
         this.gfxGame.restore();
     }
 
+    private drawSentinelTriangle(
+        x: number,
+        y: number,
+        radius: number,
+        rotation: number,
+        mode: 'ORBIT' | 'SHIELD' | 'HOMING'
+    ): void {
+        const fillColor = mode === 'HOMING' ? 0xff5c5c : COLORS.ENEMY;
+        const outlineColor = darkenColor(fillColor, 44);
+        const glowAlpha = mode === 'SHIELD' ? 0.42 : mode === 'HOMING' ? 0.34 : 0.2;
+
+        this.gfxGame.lineStyle(1.2, 0xffc1c1, glowAlpha);
+        this.gfxGame.strokeCircle(x, y, radius * 1.35);
+        this.drawTriangle(x, y, radius, rotation, fillColor, VISUAL.STROKE.enemy);
+        this.gfxGame.lineStyle(1, outlineColor, 0.8);
+        this.gfxGame.strokeCircle(x, y, radius * 0.42);
+    }
+
     /**
      * Helper: desenha cano do player
      */
@@ -455,72 +594,56 @@ export class GameRenderer {
         };
     }
 
-    private ensurePlayerNameText(): Phaser.GameObjects.Text {
-        if (this.playerNameText) {
-            return this.playerNameText;
+    private ensurePlayerNameText(playerId: string): Phaser.GameObjects.Text {
+        const existing = this.playerNameTexts.get(playerId);
+        if (existing) {
+            return existing;
         }
 
-        this.playerNameText = this.scene.add.text(0, 0, '', {
+        const text = this.scene.add.text(0, 0, '', {
             fontFamily: 'Trebuchet MS, sans-serif',
             fontSize: '16px',
             color: '#ffffff',
             stroke: '#0d1736',
             strokeThickness: 4
         });
-        this.playerNameText.setOrigin(0.5, 1);
-        this.playerNameText.setDepth(10);
+        text.setOrigin(0.5, 1);
+        text.setDepth(10);
+        this.playerNameTexts.set(playerId, text);
 
-        return this.playerNameText;
+        return text;
     }
 
-    private updatePlayerName(player: GameState['player']): void {
-        if (player.isDead || !player.name) {
-            this.hidePlayerName();
+    private updatePlayerNames(players: GameState['players']): void {
+        const activeNamePlayers = new Set<string>();
+
+        for (const player of players) {
+            if (player.isDead || !player.name) {
+                this.hidePlayerName(player.id);
+                continue;
+            }
+
+            activeNamePlayers.add(player.id);
+            const playerNameText = this.ensurePlayerNameText(player.id);
+            playerNameText.setText(player.name);
+            playerNameText.setPosition(player.x, player.y - player.radius - 18);
+            playerNameText.setVisible(this.isInCameraView(player.x, player.y, player.radius, 150));
+        }
+
+        for (const playerId of this.playerNameTexts.keys()) {
+            if (!activeNamePlayers.has(playerId)) {
+                this.hidePlayerName(playerId);
+            }
+        }
+    }
+
+    private hidePlayerName(playerId: string): void {
+        const text = this.playerNameTexts.get(playerId);
+        if (!text) {
             return;
         }
 
-        const playerNameText = this.ensurePlayerNameText();
-        playerNameText.setText(player.name);
-        playerNameText.setPosition(player.x, player.y - player.radius - 18);
-        playerNameText.setVisible(this.isInCameraView(player.x, player.y, player.radius, 150));
-    }
-
-    private hidePlayerName(): void {
-        if (!this.playerNameText) {
-            return;
-        }
-
-        this.playerNameText.setVisible(false);
-    }
-
-    private getMinimapMetrics(): { size: number; padding: number } {
-        const h = this.scene.scale.displaySize.height;
-        if (h <= 900) return { size: 148, padding: 18 };
-        if (h <= 1120) return { size: 168, padding: 22 };
-        return { size: 192, padding: 28 };
-    }
-
-    private drawMinimap(playerX: number, playerY: number): void {
-        const metrics = this.getMinimapMetrics();
-        const x = this.camera.width - metrics.size - metrics.padding;
-        const y = this.camera.height - metrics.size - metrics.padding;
-
-        this.gfxHud.fillStyle(this.minimapBackground, 0.65);
-        this.gfxHud.fillRoundedRect(x - 6, y - 6, metrics.size + 12, metrics.size + 12, 8);
-
-        this.gfxHud.fillStyle(0x10183a, 0.95);
-        this.gfxHud.fillRect(x, y, metrics.size, metrics.size);
-
-        this.gfxHud.lineStyle(2, this.minimapBorder, 1);
-        this.gfxHud.strokeRect(x, y, metrics.size, metrics.size);
-
-        const mapX = Phaser.Math.Clamp(playerX, 0, ARENA.width);
-        const mapY = Phaser.Math.Clamp(playerY, 0, ARENA.height);
-        const dotX = x + (mapX / ARENA.width) * metrics.size;
-        const dotY = y + (mapY / ARENA.height) * metrics.size;
-
-        this.gfxHud.fillStyle(this.minimapPlayerDot, 1);
-        this.gfxHud.fillCircle(dotX, dotY, 4);
+        text.setVisible(false);
     }
 
     private isInCameraView(x: number, y: number, radius: number, padding = 0): boolean {
@@ -550,7 +673,7 @@ export class GameRenderer {
     public playFiringRecoil(shooterId: string, recoilStrength: number, isPlayer: boolean): void {
         const retractionDistance = Phaser.Math.Clamp(recoilStrength, 2, 16);
 
-        if (isPlayer) {
+        if (isPlayer && shooterId === this.currentPlayerId) {
             if (this.playerRecoilTween) {
                 this.playerRecoilTween.stop();
                 this.playerRecoilTween = null;
@@ -627,16 +750,15 @@ export class GameRenderer {
         }
 
         this.enemyRecoilTweens.clear();
-    this.enemyBarrelRetractions.clear();
+        this.enemyBarrelRetractions.clear();
         this.entitySnapshots.clear();
         this.healthBarRenderer.pruneWorldHealthBars(new Set<string>());
+        this.currentPlayerId = null;
 
-        if (!this.playerNameText) {
-            return;
+        for (const text of this.playerNameTexts.values()) {
+            text.destroy();
         }
-
-        this.playerNameText.destroy();
-        this.playerNameText = null;
+        this.playerNameTexts.clear();
     }
 
     public drawBossWorld(arenaX: number, arenaY: number, arenaWidth: number, arenaHeight: number): void {

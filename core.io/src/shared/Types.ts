@@ -1,6 +1,22 @@
+import type { ProjectileVisualId } from './ProjectileVisuals';
+
 export const MAX_RELOAD_POINTS = 12;
 
-export type WaveType = 'CLEAR' | 'SURVIVE';
+export type WaveType = 'CLEAR' | 'SURVIVE' | 'BOSS';
+export const PLAYER_IDS = ['player_1', 'player_2', 'player_3', 'player_4'] as const;
+export type PlayerId = (typeof PLAYER_IDS)[number];
+export type PlayerCount = 1 | 2 | 3 | 4;
+export type ControlPreference = 'KEYBOARD' | 'GAMEPAD';
+
+export interface PlayerRunConfiguration {
+    name: string;
+    control: ControlPreference;
+}
+
+export interface RunConfiguration {
+    playerCount: PlayerCount;
+    players: Record<PlayerId, PlayerRunConfiguration>;
+}
 
 export interface EntityStats {
     maxHealth: number;
@@ -46,6 +62,7 @@ export interface UpgradeCardData {
     description: string;
     rarity: CardRarity;
     modifiers: StatModifiers;
+    paintColor: string;
 }
 
 export interface UpgradeRollOption {
@@ -54,6 +71,7 @@ export interface UpgradeRollOption {
 }
 
 export interface UpgradeModalVisibilityPayload {
+    playerId: PlayerId;
     upgradesRemaining: number;
 }
 
@@ -62,11 +80,12 @@ export interface UpgradeModalOptionsPayload extends UpgradeModalVisibilityPayloa
 }
 
 export interface CardSelectedPayload {
+    playerId: PlayerId;
     cardId: string;
     colorHex: string;
 }
 
-export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'ANOMALY';
+export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'SKIRMISHER' | 'BRUTE' | 'ANOMALY' | 'ANOMALY_DECOY' | 'DREADNOUGHT';
 export type ProjectileFaction = 'player' | 'enemy';
 
 export interface TriangleCollidable {
@@ -113,15 +132,22 @@ export interface EntityData {
     enemyType?: EnemyType;
     aimAngle?: number;
     sentinelTriangles?: SentinelTriangleData[];
+    magnetarPhase?: 'CHARGING' | 'RELEASING';
+    magnetarPhaseProgress?: number;
+    ownerEnemyId?: string | null;
+    spawnedAtMs?: number;
+    dreadnoughtSummonProgress?: number;
 }
 
 export interface ProjectileData {
     id: string;
-    ownerId: string; // pra saber quem atirou e não dar dano em si mesmo
+    ownerId: string; // pra saber quem atirou e nÃ£o dar dano em si mesmo
     faction: ProjectileFaction;
     x: number;
     y: number;
     radius: number;
+    color?: number;
+    visualId?: ProjectileVisualId;
 }
 export interface BossFightStartPayload {
     bossArenaX: number;
@@ -142,6 +168,7 @@ export interface ObjectiveState {
 
 export interface GameState {
     player: EntityData;
+    players: EntityData[];
     enemies: EntityData[];
     projectiles: ProjectileData[];
     arena: { width: number; height: number };
@@ -153,9 +180,12 @@ export interface GameState {
     isPaused: boolean;
     objective: ObjectiveState | null;
     isBossFight?: boolean;
+    isAnomalyEncounter?: boolean;
     arenaOffset?: { x: number; y: number };
     isColorSelection: boolean;
     autoSpin: boolean;
+    isCoop: boolean;
+    bossExitPortal?: { x: number; y: number; radius: number } | null;
 }
 
 export interface InputState {
@@ -168,6 +198,11 @@ export interface InputState {
     isShooting: boolean;
     autoFire: boolean;
     autoSpin: boolean;
+}
+
+export interface PlayerInputPayload {
+    playerId: PlayerId;
+    input: InputState;
 }
 
 export interface EntityDamagePayload {
@@ -203,6 +238,7 @@ export interface ProjectileDestroyedPayload {
     y: number;
     radius: number;
     color?: number;
+    visualId?: ProjectileVisualId;
 }
 
 export interface WaveClearedPayload {
@@ -213,6 +249,7 @@ export interface WaveClearedPayload {
 export interface WaveAnimationPayload {
     wave: number;
     durationMs: number;
+    waveType?: WaveType;
 }
 
 export interface WaveClearAnimationPayload extends WaveAnimationPayload {
@@ -268,7 +305,7 @@ export interface GameOverPayload {
 }
 
 export interface GameEventPayloads {
-    player_input: InputState;
+    player_input: PlayerInputPayload;
     state_update: GameState;
     level_up: LevelUpPayload;
     show_upgrade_modal: UpgradeModalVisibilityPayload;
@@ -292,10 +329,15 @@ export interface GameEventPayloads {
     audio_restart_requested: undefined;
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
+    boss_exit_portal_used: undefined;
+    anomaly_encounter_start: BossFightStartPayload;
+    anomaly_defeated: undefined;
     arena_resized: { width: number; height: number };
     anomaly_teleport: AnomalyTeleportPayload;
     anomaly_dash: AnomalyDashPayload;
-    start_run_with_color: { colorHex: string };
+    start_run_with_color: { playerColors: Partial<Record<PlayerId, string>> };
     auto_fire_toggled: { enabled: boolean };
     auto_spin_toggled: { enabled: boolean };
+    run_config_changed: RunConfiguration;
 }
+

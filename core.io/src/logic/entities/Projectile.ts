@@ -1,4 +1,5 @@
 import type { ProjectileFaction, TriangleCollidable } from '../../shared/Types';
+import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
 import { Entity } from './Entity';
 
 export class Projectile implements TriangleCollidable {
@@ -28,6 +29,8 @@ export class Projectile implements TriangleCollidable {
     readonly penetrationPower: number;
     lifespan: number;
     readonly radius: number;
+    readonly color?: number;
+    readonly visualId?: ProjectileVisualId;
 
     constructor(
         id: string,
@@ -41,7 +44,9 @@ export class Projectile implements TriangleCollidable {
         health: number,
         penetrationPower: number,
         radius: number,
-        lifespan: number
+        lifespan: number,
+        color?: number,
+        visualId?: ProjectileVisualId
     ) {
         this.id = id;
         this.ownerId = ownerId;
@@ -55,6 +60,8 @@ export class Projectile implements TriangleCollidable {
         this.penetrationPower = penetrationPower;
         this.radius = radius;
         this.lifespan = lifespan;
+        this.color = color;
+        this.visualId = visualId;
     }
 
     update(dt: number): void {
@@ -87,6 +94,7 @@ export class Projectile implements TriangleCollidable {
     ): boolean {
         const effectiveDamage = Math.min(this.damage, this.health);
         if (effectiveDamage <= 0) {
+            this.applyImpactImpulse(target, false);
             return true;
         }
 
