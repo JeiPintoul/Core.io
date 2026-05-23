@@ -79,7 +79,7 @@ export class HudController {
         this.bindColorSelectionScreen();
         this.bindEvents();
         this.renderLevel();
-        this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
+        this.renderWaveInfo(1, 'CLEAR', 0, 0, false, false);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
@@ -216,7 +216,7 @@ export class HudController {
         this.setStatsPinned(false);
         this.clearStatPreview();
         this.renderLevel();
-        this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
+        this.renderWaveInfo(1, 'CLEAR', 0, 0, false, false);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
@@ -377,7 +377,8 @@ export class HudController {
             state.waveType,
             state.remainingToKill,
             state.surviveTimeRemainingSeconds,
-            state.isAnomalyEncounter ?? false
+            state.isAnomalyEncounter ?? false,
+            state.isShop ?? false
         );
         this.renderXpBar();
         this.renderXpProgress();
@@ -403,11 +404,14 @@ export class HudController {
         waveType: 'CLEAR' | 'SURVIVE' | 'BOSS',
         remainingToKill: number,
         surviveTimeRemaining: number,
-        isAnomalyEncounter: boolean
+        isAnomalyEncounter: boolean,
+        isShop: boolean
     ): void {
         if (this.waveInfoTitleEl) {
             const typeLabel = isAnomalyEncounter
                 ? 'Anomalia'
+                : isShop
+                ? 'Loja'
                 : waveType === 'BOSS'
                 ? 'Boss'
                 : waveType === 'SURVIVE'
@@ -417,7 +421,10 @@ export class HudController {
         }
 
         if (this.waveInfoSubEl) {
-            if (isAnomalyEncounter) {
+            if (isShop) {
+                this.waveInfoSubEl.textContent = 'Compre melhorias antes do boss';
+                this.waveInfoSubEl.classList.remove('is-danger');
+            } else if (isAnomalyEncounter) {
                 this.waveInfoSubEl.textContent = 'Identifique e neutralize a anomalia';
                 this.waveInfoSubEl.classList.add('is-danger');
             } else if (waveType === 'BOSS') {

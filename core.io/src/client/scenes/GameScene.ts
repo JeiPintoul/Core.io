@@ -171,12 +171,15 @@ export class GameScene extends Phaser.Scene {
             })
         );
 
-        const focusEncounterArena = (payload: { bossArenaX: number; bossArenaY: number; bossArenaWidth: number; bossArenaHeight: number }) => {
+        const focusEncounterArena = (
+            payload: { bossArenaX: number; bossArenaY: number; bossArenaWidth: number; bossArenaHeight: number },
+            drawWorld: (x: number, y: number, width: number, height: number) => void
+        ) => {
             this.cameras.main.fadeOut(500, 255, 255, 255);
             this.cameras.main.once(
                 Phaser.Cameras.Scene2D.Events.FADE_OUT_COMPLETE,
                 () => {
-                    this.gameRenderer.drawBossWorld(
+                    drawWorld(
                         payload.bossArenaX,
                         payload.bossArenaY,
                         payload.bossArenaWidth,
@@ -205,8 +208,15 @@ export class GameScene extends Phaser.Scene {
             );
         };
 
-        this.subscriptions.push(onGameEvent(GameEvents.BOSS_FIGHT_START, focusEncounterArena));
-        this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, focusEncounterArena));
+        this.subscriptions.push(onGameEvent(GameEvents.SHOP_ENTERED, (payload) => {
+            focusEncounterArena(payload, (x, y, width, height) => this.gameRenderer.drawShopWorld(x, y, width, height));
+        }));
+        this.subscriptions.push(onGameEvent(GameEvents.BOSS_FIGHT_START, (payload) => {
+            focusEncounterArena(payload, (x, y, width, height) => this.gameRenderer.drawBossWorld(x, y, width, height));
+        }));
+        this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, (payload) => {
+            focusEncounterArena(payload, (x, y, width, height) => this.gameRenderer.drawBossWorld(x, y, width, height));
+        }));
         this.subscriptions.push(onGameEvent(GameEvents.BOSS_EXIT_PORTAL_USED, restoreMainArena));
         this.subscriptions.push(onGameEvent(GameEvents.ANOMALY_DEFEATED, restoreMainArena));
 

@@ -5,6 +5,7 @@ import { EngineState } from '../EngineState';
 import { HostileEntity } from '../entities/enemies/HostileEntity';
 import { Anomaly } from '../entities/enemies/anomaly/Anomaly';
 import { AnomalyDecoy } from '../entities/enemies/anomaly/AnomalyDecoy';
+import { TrainingDummyEnemy } from '../entities/enemies/TrainingDummyEnemy';
 import { Player } from '../entities/player/Player';
 import { EnemyFactory } from './EnemyFactory';
 import {
@@ -20,6 +21,7 @@ import {
 } from '../constants/WaveConfig';
 
 const ENCOUNTER_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+const SHOP_ARENA = { x: 1200, y: 1350, width: 2600, height: 2300 };
 const WAVE_TRANSITION_ANIMATION_DURATION_MS = 1500;
 const BOSS_EXIT_PORTAL_RADIUS = 62;
 const SURVIVE_DURATION_CAP_SECONDS = 60;
@@ -46,6 +48,8 @@ export interface EncounterDirectorHost {
     isUpgradeSelectionActive(): boolean;
     enterUpgradePhase(now: number): void;
     clearUpgradeSelectionState(): void;
+    openShop(centerX: number, centerY: number): void;
+    closeShop(): void;
 
     missionStartBoss(now: number): void;
     missionStartAnomaly(now: number): void;
@@ -75,6 +79,7 @@ export class EncounterDirector {
 
     private bossFightActive = false;
     private bossExitPortalActive = false;
+    private activePortal: { x: number; y: number; radius: number } | null = null;
     private anomalyEncounterActive = false;
     private activeBossWaveRule: BossWaveRule | null = null;
 
@@ -102,7 +107,7 @@ export class EncounterDirector {
     public getSpawnQueueSnapshot(): EnemyType[] { return this.spawnQueue; }
 
     public getBossExitPortal(): { x: number; y: number; radius: number } {
-        return {
+        return this.activePortal ?? {
             x: ENCOUNTER_ARENA.x + ENCOUNTER_ARENA.width / 2,
             y: ENCOUNTER_ARENA.y + ENCOUNTER_ARENA.height / 2,
             radius: BOSS_EXIT_PORTAL_RADIUS,
@@ -152,6 +157,7 @@ export class EncounterDirector {
 
         this.bossFightActive = false;
         this.bossExitPortalActive = false;
+        this.activePortal = null;
         this.anomalyEncounterActive = false;
         this.activeBossWaveRule = null;
         this.anomalySpawnCount = 0;
@@ -184,7 +190,7 @@ export class EncounterDirector {
 
         const bossRule = getBossWaveRule(this.currentWave);
         if (bossRule) {
-            this.startBossWaveAnimation(bossRule, now);
+            this.enterShopBeforeBoss(bossRule);
             return;
         }
         if (this.tryStartAnomalyEncounter(now, this.currentWave)) return;
@@ -228,7 +234,14 @@ export class EncounterDirector {
             p.health > 0 && Math.hypot(p.x - portal.x, p.y - portal.y) < p.radius + portal.radius
         );
 
-        if (entered) this.exitBossArena(now);
+        if (!entered) return;
+
+        if (this.host.getEngineState() === EngineState.SHOP) {
+            this.exitShop(now);
+            return;
+        }
+
+        this.exitBossArena(now);
     }
 
     public tickPhase(now: number): void {
@@ -253,6 +266,8 @@ export class EncounterDirector {
             case EngineState.UPGRADE_PHASE:
                 if (this.bossExitPortalActive) return;
                 if (!this.host.isUpgradeSelectionActive()) this.startWaveStartingAnimation(now);
+                return;
+            case EngineState.SHOP:
                 return;
             case EngineState.WAVE_STARTING_ANIMATION:
                 if (now >= this.waveStartingAnimationEndsAtMs) this.resumeWaveSpawning(now);
@@ -392,6 +407,10 @@ export class EncounterDirector {
             this.endBossFight(now);
             return;
         }
+        if (this.host.getEngineState() === EngineState.SHOP) {
+            this.exitShop(now);
+            return;
+        }
         if (this.bossExitPortalActive) {
             this.exitBossArena(now);
             return;
@@ -477,7 +496,7 @@ export class EncounterDirector {
         if (this.anomalyCooldownWaves > 0) this.anomalyCooldownWaves -= 1;
 
         const bossRule = getBossWaveRule(nextWave);
-        if (bossRule) { this.startBossWaveAnimation(bossRule, now); return; }
+        if (bossRule) { this.enterShopBeforeBoss(bossRule); return; }
         if (this.tryStartAnomalyEncounter(now, nextWave)) return;
 
         this.host.setEngineState(EngineState.WAVE_CLEAR_ANIMATION);
@@ -510,6 +529,7 @@ export class EncounterDirector {
         this.activeBossWaveRule = rule;
         this.currentWaveType = 'BOSS';
         this.spawnQueue = [];
+        this.host.setEnemies([]);
         this.host.setEngineState(EngineState.WAVE_STARTING_ANIMATION);
         this.waveStartingAnimationEndsAtMs = now + WAVE_TRANSITION_ANIMATION_DURATION_MS;
 
@@ -517,6 +537,39 @@ export class EncounterDirector {
             wave: this.currentWave,
             waveType: 'BOSS',
             durationMs: WAVE_TRANSITION_ANIMATION_DURATION_MS
+        });
+    }
+
+    private enterShopBeforeBoss(rule: BossWaveRule): void {
+        this.activeBossWaveRule = rule;
+        this.currentWaveType = 'BOSS';
+        this.spawnQueue = [];
+        this.host.setArena({ ...SHOP_ARENA });
+        this.host.setEnemies([]);
+        this.host.clearUpgradeSelectionState();
+        this.host.reviveDefeatedPlayers();
+
+        const centerX = SHOP_ARENA.x + SHOP_ARENA.width / 2;
+        const centerY = SHOP_ARENA.y + SHOP_ARENA.height / 2;
+        this.host.positionPlayers(centerX, centerY);
+        this.host.openShop(centerX, centerY);
+        this.host.setEnemies([
+            new TrainingDummyEnemy('shop_training_dummy', centerX + 940, centerY - 120),
+        ]);
+
+        this.bossExitPortalActive = true;
+        this.activePortal = {
+            x: centerX,
+            y: SHOP_ARENA.y + SHOP_ARENA.height - 260,
+            radius: BOSS_EXIT_PORTAL_RADIUS,
+        };
+
+        this.host.setEngineState(EngineState.SHOP);
+        emitGameEvent(GameEvents.SHOP_ENTERED, {
+            bossArenaX: SHOP_ARENA.x,
+            bossArenaY: SHOP_ARENA.y,
+            bossArenaWidth: SHOP_ARENA.width,
+            bossArenaHeight: SHOP_ARENA.height,
         });
     }
 
@@ -563,6 +616,7 @@ export class EncounterDirector {
         const bossRule = this.activeBossWaveRule;
         this.bossFightActive = false;
         this.bossExitPortalActive = true;
+        this.activePortal = this.getBossExitPortal();
         this.activeBossWaveRule = null;
         this.host.setEnemies([]);
         this.spawnQueue = [];
@@ -655,12 +709,27 @@ export class EncounterDirector {
         emitGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, { wave: this.currentWave });
     }
 
+    private exitShop(now: number): void {
+        const bossRule = this.activeBossWaveRule ?? getBossWaveRule(this.currentWave);
+        if (!bossRule) {
+            this.exitBossArena(now);
+            return;
+        }
+
+        this.host.closeShop();
+        this.bossExitPortalActive = false;
+        this.activePortal = null;
+        this.startBossWaveAnimation(bossRule, now);
+    }
+
     private exitBossArena(now: number): void {
         if (!this.bossExitPortalActive) return;
         this.host.restoreMainArena();
+        this.host.closeShop();
         this.host.setEnemies([]);
         this.spawnQueue = [];
         this.bossExitPortalActive = false;
+        this.activePortal = null;
         emitGameEvent(GameEvents.BOSS_EXIT_PORTAL_USED, undefined);
         this.startWaveStartingAnimation(now);
     }

@@ -1,4 +1,4 @@
-import type { PlayerId, RunConfiguration } from '../../shared/Types';
+import type { CardRarity, PlayerId, RunConfiguration } from '../../shared/Types';
 
 export interface DifficultyProfile {
     enemyStatScale: number;
@@ -39,6 +39,14 @@ export const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
 };
 
 export const COIN_DROP_XP_RATIO = 0.2;
+export const SHOP_HEAL_PRICE = 45;
+export const SHOP_CARD_PRICE_BY_RARITY: Record<CardRarity, number> = {
+    COMMON: 60,
+    UNCOMMON: 95,
+    RARE: 150,
+    EPIC: 240,
+    LEGENDARY: 380,
+};
 
 export function calculateCoinDrop(xpDrop: number): number {
     return Math.max(0, Math.round(xpDrop * COIN_DROP_XP_RATIO));
