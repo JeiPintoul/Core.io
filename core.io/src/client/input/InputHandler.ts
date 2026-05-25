@@ -1,16 +1,7 @@
 import Phaser from 'phaser';
 import { PLAYER_IDS, type GameState, type InputState, type PlayerId, type RunConfiguration } from '../../shared/Types';
 import { emitGameEvent, GameEvents, onGameEvent } from '../../shared/EventBus';
-
-const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
-    playerCount: 1,
-    players: {
-        player_1: { name: 'Jogador', control: 'KEYBOARD' },
-        player_2: { name: 'Jogador 2', control: 'GAMEPAD' },
-        player_3: { name: 'Jogador 3', control: 'GAMEPAD' },
-        player_4: { name: 'Jogador 4', control: 'GAMEPAD' },
-    }
-};
+import { DEFAULT_RUN_CONFIGURATION } from '../../logic/constants/GameBalance';
 
 const GAMEPAD_MOVE_DEADZONE = 0.28;
 const GAMEPAD_AIM_DEADZONE = 0.2;

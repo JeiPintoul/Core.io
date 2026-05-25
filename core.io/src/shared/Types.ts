@@ -11,6 +11,7 @@ export type ControlPreference = 'KEYBOARD' | 'GAMEPAD';
 export interface PlayerRunConfiguration {
     name: string;
     control: ControlPreference;
+    primaryColorHex: string;
 }
 
 export interface RunConfiguration {

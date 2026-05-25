@@ -31,10 +31,10 @@ export const PLAYER_DEFAULT_COLOR_HEX: Record<PlayerId, string> = {
 export const DEFAULT_RUN_CONFIGURATION: RunConfiguration = {
     playerCount: 1,
     players: {
-        player_1: { name: 'Jogador', control: 'KEYBOARD' },
-        player_2: { name: 'Jogador 2', control: 'GAMEPAD' },
-        player_3: { name: 'Jogador 3', control: 'GAMEPAD' },
-        player_4: { name: 'Jogador 4', control: 'GAMEPAD' },
+        player_1: { name: 'Jogador 1', control: 'KEYBOARD', primaryColorHex: '#4488ff' },
+        player_2: { name: 'Jogador 2', control: 'GAMEPAD', primaryColorHex: '#ff4444' },
+        player_3: { name: 'Jogador 3', control: 'GAMEPAD', primaryColorHex: '#44cc66' },
+        player_4: { name: 'Jogador 4', control: 'GAMEPAD', primaryColorHex: '#4488ff' },
     }
 };
 

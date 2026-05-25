@@ -5,6 +5,9 @@
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Core.io</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,700;12..96,800;12..96,900&family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
   </head>
   <body>
     <div id="game-container"></div>
@@ -77,119 +80,78 @@
 
       <div id="hud-toast" aria-live="assertive"></div>
 
-      <div id="hud-keybinds" class="hud-card">
-        <div class="keybind-row"><kbd>E</kbd><span>Auto-Fire</span></div>
-        <div class="keybind-row"><kbd>C</kbd><span>Auto-Spin</span></div>
-      </div>
+      <div id="lobby">
+        <div class="lobby-bg" aria-hidden="true"></div>
 
-      <div id="hud-audio-widget">
-        <button id="btn-audio-global" class="hud-card" aria-label="Configurações de áudio">
-          <i data-lucide="volume-2"></i>
-          <i data-lucide="volume-x"></i>
-        </button>
-        <div id="hud-audio-panel">
-          <button id="btn-mute-global">Som: ON</button>
+        <aside class="lobby-brand">
+          <div class="lobby-brand-top">
+            <div class="lobby-logo">
+              <span class="logo-dot logo-dot--red"></span>
+              <span class="logo-dot logo-dot--blue"></span>
+              <span class="logo-dot logo-dot--green"></span>
+            </div>
+            <p class="lobby-tagline">CO-OP ARENA · ROGUELIKE</p>
+            <h1 class="lobby-title">CORE<svg class="lobby-title-eye" viewBox="0 0 64 64" aria-hidden="true"><polygon class="eye-triangle" points="32,8 58,56 6,56"/><ellipse class="eye-iris" cx="32" cy="40" rx="9" ry="5.5"/><circle class="eye-pupil" cx="32" cy="40" r="2.4"/></svg><span class="lobby-title-suffix">IO</span></h1>
+            <p class="lobby-pitch">Sobreviva em <strong>cooperativo local</strong> e evolua sua build onda após onda.</p>
+          </div>
+
+          <div class="lobby-brand-bottom">
+            <div class="lobby-records">
+              <small>RECORDES</small>
+              <div class="lobby-records-row">
+                <div><strong id="stat-max-wave">0</strong><span>ONDA MÁXIMA</span></div>
+                <div><strong id="stat-total-kills">0</strong><span>ELIMINAÇÕES</span></div>
+                <div><strong id="stat-total-anomalies">0</strong><span>ANOMALIAS</span></div>
+              </div>
+            </div>
+            <button id="btn-jogar" class="lobby-play-btn">
+              <span>JOGAR</span>
+              <i data-lucide="arrow-right"></i>
+            </button>
+            <div class="lobby-keybinds">
+              <span><kbd>E</kbd>AUTO-FIRE</span>
+              <span><kbd>C</kbd>AUTO-SPIN</span>
+              <span><kbd>ESC</kbd>PAUSA</span>
+            </div>
+          </div>
+        </aside>
+
+        <section class="lobby-cards" aria-label="Lobby">
+          <header class="lobby-cards-header">
+            <div class="lobby-topbar">
+              <span class="lobby-online-badge">
+                <i data-lucide="users" class="lobby-online-icon"></i>
+                <span class="lobby-online-dots" aria-hidden="true">
+                  <span class="dot dot--green"></span>
+                  <span class="dot dot--red"></span>
+                  <span class="dot dot--blue"></span>
+                </span>
+                <strong>3</strong>
+                <span class="lobby-online-label">ONLINE</span>
+              </span>
+              <button class="lobby-icon-btn" id="lobby-settings" aria-label="Configurações"><i data-lucide="settings"></i></button>
+              <button class="lobby-icon-btn" id="lobby-help" aria-label="Ajuda"><i data-lucide="help-circle"></i></button>
+              <button class="lobby-icon-btn" id="lobby-mute" aria-label="Som"><i data-lucide="volume-2"></i></button>
+            </div>
+            <div class="lobby-cards-title">
+              <h2>Lobby</h2>
+              <span class="lobby-count"><strong id="lobby-player-count">1</strong> / 4 jogadores</span>
+            </div>
+          </header>
+          <div class="lobby-grid"></div>
+          <p class="lobby-footer-hint">
+            <span>SLOTS DE CONTROLE: conexão automática por ordem dos jogadores ativos</span>
+            <span><strong>NO CONTROLE:</strong> D-PAD NAVEGA · A CONFIRMA</span>
+          </p>
+        </section>
+
+        <div id="lobby-settings-panel" class="lobby-settings-panel" hidden>
           <label for="music-volume-global">Volume</label>
           <input id="music-volume-global" type="range" min="0" max="100" value="32" />
+          <button type="button" id="btn-mute-global">SOM: ON</button>
         </div>
       </div>
-
-      <div id="menu-inicial">
-        <h1>CORE.IO</h1>
-        <p id="menu-subtitle">Sobreviva em cooperativo local e evolua sua build onda apos onda.</p>
-        <input type="text" id="player-name" placeholder="Digite seu Nome" />
-        <div id="menu-options">
-          <div class="menu-option-row">
-            <label for="player-count">Jogadores</label>
-            <select id="player-count">
-              <option value="1">1 Jogador</option>
-              <option value="2">2 Jogadores</option>
-              <option value="3">3 Jogadores</option>
-              <option value="4">4 Jogadores</option>
-            </select>
-          </div>
-          <div class="menu-option-row">
-            <label id="player1-control-label" for="player1-control">P1</label>
-            <select id="player1-control">
-              <option value="keyboard">Teclado + Mouse</option>
-              <option value="gamepad">Controle</option>
-            </select>
-          </div>
-          <div class="menu-option-row is-multiplayer-only" id="player2-name-wrap">
-            <label for="player2-name">P2 Nome</label>
-            <input type="text" id="player2-name" placeholder="Nome do Jogador 2" />
-          </div>
-          <div class="menu-option-row is-multiplayer-only" id="player2-control-wrap">
-            <label id="player2-control-label" for="player2-control">P2</label>
-            <select id="player2-control">
-              <option value="gamepad">Controle</option>
-              <option value="keyboard">Teclado</option>
-            </select>
-          </div>
-          <div class="menu-option-row is-multiplayer-only" id="player3-name-wrap">
-            <label for="player3-name">P3 Nome</label>
-            <input type="text" id="player3-name" placeholder="Nome do Jogador 3" />
-          </div>
-          <div class="menu-option-row is-multiplayer-only" id="player3-control-wrap">
-            <label id="player3-control-label" for="player3-control">P3</label>
-            <select id="player3-control">
-              <option value="gamepad">Controle</option>
-            </select>
-          </div>
-          <div class="menu-option-row is-multiplayer-only" id="player4-name-wrap">
-            <label for="player4-name">P4 Nome</label>
-            <input type="text" id="player4-name" placeholder="Nome do Jogador 4" />
-          </div>
-          <div class="menu-option-row is-multiplayer-only" id="player4-control-wrap">
-            <label id="player4-control-label" for="player4-control">P4</label>
-            <select id="player4-control">
-              <option value="gamepad">Controle</option>
-            </select>
-          </div>
-        </div>
-        <p id="menu-control-slots-hint">Slots de controle: conexao automatica por ordem dos jogadores ativos.</p>
-        <p id="menu-gamepad-help">No controle: D-pad para navegar e A para confirmar.</p>
-        <button id="btn-jogar">JOGAR</button>
-        <button id="btn-menu-home" class="btn-home" style="display:none"><i data-lucide="home"></i> MENU</button>
-        <div id="global-stats">
-          <h3>Estatisticas Globais</h3>
-          <div class="global-stats-row"><span>Onda Maxima</span><strong id="stat-max-wave">0</strong></div>
-          <div class="global-stats-row"><span>Inimigos Eliminados</span><strong id="stat-total-kills">0</strong></div>
-          <div class="global-stats-row"><span>Anomalias Encontradas</span><strong id="stat-total-anomalies">0</strong></div>
-        </div>
-      </div>
-
-      <div id="color-selection-screen" class="hidden">
-        <p class="color-selection-subtitle">SELECIONE SEU TANQUE</p>
-        <h2>Escolha uma Faccao</h2>
-        <p class="color-selection-hint">Controle: use esquerda/direita e confirme com A</p>
-        <div class="color-cards">
-          <div class="color-card" data-color="red" style="--card-glow:#cc2222">
-            <div class="css-tank">
-              <div class="css-tank-barrel"></div>
-              <div class="css-tank-body" style="background:#ff4444;"></div>
-            </div>
-            <span class="color-card-name">Red</span>
-            <span class="color-card-desc">Ataque e agressao</span>
-          </div>
-          <div class="color-card" data-color="green" style="--card-glow:#22aa44">
-            <div class="css-tank">
-              <div class="css-tank-barrel"></div>
-              <div class="css-tank-body" style="background:#44cc66;"></div>
-            </div>
-            <span class="color-card-name">Green</span>
-            <span class="color-card-desc">Velocidade e ritmo</span>
-          </div>
-          <div class="color-card" data-color="blue" style="--card-glow:#2244cc">
-            <div class="css-tank">
-              <div class="css-tank-barrel"></div>
-              <div class="css-tank-body" style="background:#4488ff;"></div>
-            </div>
-            <span class="color-card-name">Blue</span>
-            <span class="color-card-desc">Defesa e controle</span>
-          </div>
-        </div>
-      </div>
+      <!-- end #lobby -->
     </div>
 
     <script type="module" src="/src/main.ts"></script>
