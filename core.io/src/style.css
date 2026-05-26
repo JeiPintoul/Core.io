@@ -1768,16 +1768,452 @@ body {
   border-radius: 5px;
 }
 
-.upgrade-card--epic::before,
-.upgrade-card--legendary::before {
-  animation: card-sheen 2.6s ease-in-out infinite;
+.upgrade-card--rare,
+.upgrade-card--epic,
+.upgrade-card--legendary {
+  overflow: visible;
+  --dust-opacity: 0.38;
+  --dust-speed: 3.6s;
+  --dust-glow: 0 0 0.18rem color-mix(in srgb, var(--upgrade-card-color), transparent 45%);
+}
+
+.upgrade-card--rare .upgrade-card-rarity,
+.upgrade-card--epic .upgrade-card-rarity,
+.upgrade-card--legendary .upgrade-card-rarity,
+.upgrade-card--rare .upgrade-card-name,
+.upgrade-card--epic .upgrade-card-name,
+.upgrade-card--legendary .upgrade-card-name,
+.upgrade-card--rare .upgrade-card-art,
+.upgrade-card--epic .upgrade-card-art,
+.upgrade-card--legendary .upgrade-card-art,
+.upgrade-card--rare .upgrade-card-description,
+.upgrade-card--epic .upgrade-card-description,
+.upgrade-card--legendary .upgrade-card-description {
+  position: relative;
+}
+
+.upgrade-card--rare .upgrade-card-rarity::before,
+.upgrade-card--rare .upgrade-card-rarity::after,
+.upgrade-card--epic .upgrade-card-rarity::before,
+.upgrade-card--epic .upgrade-card-rarity::after,
+.upgrade-card--legendary .upgrade-card-rarity::before,
+.upgrade-card--legendary .upgrade-card-rarity::after,
+.upgrade-card--rare .upgrade-card-name::before,
+.upgrade-card--rare .upgrade-card-name::after,
+.upgrade-card--epic .upgrade-card-name::before,
+.upgrade-card--epic .upgrade-card-name::after,
+.upgrade-card--legendary .upgrade-card-name::before,
+.upgrade-card--legendary .upgrade-card-name::after,
+.upgrade-card--rare .upgrade-card-art::before,
+.upgrade-card--rare .upgrade-card-art::after,
+.upgrade-card--epic .upgrade-card-art::before,
+.upgrade-card--epic .upgrade-card-art::after,
+.upgrade-card--legendary .upgrade-card-art::before,
+.upgrade-card--legendary .upgrade-card-art::after,
+.upgrade-card--rare .upgrade-card-description::before,
+.upgrade-card--rare .upgrade-card-description::after,
+.upgrade-card--epic .upgrade-card-description::before,
+.upgrade-card--epic .upgrade-card-description::after,
+.upgrade-card--legendary .upgrade-card-description::before,
+.upgrade-card--legendary .upgrade-card-description::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0.1rem;
+  width: 0.13rem;
+  height: 0.13rem;
+  border-radius: 50%;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--upgrade-card-color), #ffffff 24%);
+  opacity: 0;
+  filter: blur(0.01rem) drop-shadow(var(--dust-glow));
+  animation: upgrade-card-dust var(--dust-speed) ease-out infinite;
+}
+
+.upgrade-card--rare .upgrade-card-rarity::after,
+.upgrade-card--epic .upgrade-card-rarity::after,
+.upgrade-card--legendary .upgrade-card-rarity::after,
+.upgrade-card--rare .upgrade-card-name::after,
+.upgrade-card--epic .upgrade-card-name::after,
+.upgrade-card--legendary .upgrade-card-name::after {
+  animation-name: upgrade-card-dust-side;
+  animation-delay: calc(var(--dust-speed) * -0.42);
+}
+
+.upgrade-card--rare .upgrade-card-name::before,
+.upgrade-card--epic .upgrade-card-name::before,
+.upgrade-card--legendary .upgrade-card-name::before {
+  left: -0.45rem;
+  top: -0.15rem;
+  animation-delay: calc(var(--dust-speed) * -0.18);
+}
+
+.upgrade-card--rare .upgrade-card-name::after,
+.upgrade-card--epic .upgrade-card-name::after,
+.upgrade-card--legendary .upgrade-card-name::after {
+  left: auto;
+  right: 0.1rem;
+  top: 0.1rem;
+  animation-delay: calc(var(--dust-speed) * -0.62);
+}
+
+.upgrade-card--rare .upgrade-card-art::before,
+.upgrade-card--epic .upgrade-card-art::before,
+.upgrade-card--legendary .upgrade-card-art::before {
+  left: -0.25rem;
+  top: 48%;
+  animation-name: upgrade-card-dust-left;
+  animation-delay: calc(var(--dust-speed) * -0.28);
+}
+
+.upgrade-card--rare .upgrade-card-art::after,
+.upgrade-card--epic .upgrade-card-art::after,
+.upgrade-card--legendary .upgrade-card-art::after {
+  left: auto;
+  right: -0.25rem;
+  top: 44%;
+  animation-name: upgrade-card-dust-right;
+  animation-delay: calc(var(--dust-speed) * -0.74);
+}
+
+.upgrade-card--rare .upgrade-card-description::before,
+.upgrade-card--epic .upgrade-card-description::before,
+.upgrade-card--legendary .upgrade-card-description::before {
+  left: -0.2rem;
+  top: 18%;
+  animation-name: upgrade-card-dust-left;
+  animation-delay: calc(var(--dust-speed) * -0.52);
+}
+
+.upgrade-card--rare .upgrade-card-description::after,
+.upgrade-card--epic .upgrade-card-description::after,
+.upgrade-card--legendary .upgrade-card-description::after {
+  left: auto;
+  right: -0.2rem;
+  top: 15%;
+  animation-name: upgrade-card-dust-right;
+  animation-delay: calc(var(--dust-speed) * -0.88);
+}
+
+.upgrade-card--rare {
+  --dust-opacity: 0.5;
+  --dust-speed: 4.6s;
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 18%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.06) inset,
+    0 18px 30px rgba(0, 0, 0, 0.4),
+    0 0 1rem color-mix(in srgb, var(--upgrade-card-color), transparent 72%);
+}
+
+.upgrade-card--rare .upgrade-card-rarity::before {
+  box-shadow:
+    1.1rem -0.8rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 26%),
+    2.3rem -1.25rem 0 -0.03rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%),
+    3.3rem -0.75rem 0 -0.05rem rgba(255, 255, 255, 0.68),
+    4.8rem -0.35rem 0 -0.01rem var(--upgrade-card-color),
+    5.9rem -1.7rem 0 -0.06rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 30%),
+    7.1rem -1.15rem 0 -0.03rem rgba(255, 255, 255, 0.8),
+    8.2rem -0.35rem 0 -0.06rem var(--upgrade-card-color),
+    9.4rem -0.95rem 0 -0.02rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%),
+    12rem -0.55rem 0 -0.04rem var(--upgrade-card-color);
+}
+
+.upgrade-card--rare .upgrade-card-rarity::after {
+  box-shadow:
+    -0.75rem 0.55rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 22%),
+    1.2rem 0.95rem 0 -0.04rem var(--upgrade-card-color),
+    10.8rem 0.3rem 0 -0.02rem var(--upgrade-card-color),
+    13.1rem 0.85rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 32%);
+}
+
+.upgrade-card--rare .upgrade-card-name::before {
+  box-shadow:
+    -0.7rem -0.15rem 0 -0.02rem var(--upgrade-card-color),
+    1.4rem -0.65rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 36%),
+    6.2rem -0.4rem 0 -0.04rem rgba(255, 255, 255, 0.78);
+}
+
+.upgrade-card--rare .upgrade-card-name::after {
+  box-shadow:
+    0.55rem -0.4rem 0 -0.02rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 30%),
+    2.2rem 0.35rem 0 -0.04rem var(--upgrade-card-color);
+}
+
+.upgrade-card--rare .upgrade-card-art::before {
+  box-shadow:
+    -0.35rem -0.25rem 0 -0.02rem var(--upgrade-card-color),
+    0.15rem -1.15rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 38%),
+    0.7rem -2.35rem 0 -0.05rem rgba(255, 255, 255, 0.72);
+}
+
+.upgrade-card--rare .upgrade-card-art::after {
+  box-shadow:
+    0.25rem -0.45rem 0 -0.02rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%),
+    -0.4rem -1.55rem 0 -0.05rem var(--upgrade-card-color),
+    -0.95rem -2.85rem 0 -0.05rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 42%);
+}
+
+.upgrade-card--rare .upgrade-card-description::before {
+  box-shadow:
+    -0.2rem -0.4rem 0 -0.02rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 28%),
+    0.35rem -1.25rem 0 -0.04rem var(--upgrade-card-color),
+    -0.15rem -2.25rem 0 -0.05rem rgba(255, 255, 255, 0.72);
+}
+
+.upgrade-card--rare .upgrade-card-description::after {
+  box-shadow:
+    0.15rem -0.55rem 0 -0.02rem var(--upgrade-card-color),
+    -0.45rem -1.4rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 36%),
+    0.2rem -2.55rem 0 -0.05rem rgba(255, 255, 255, 0.68);
+}
+
+.upgrade-card--rare:hover {
+  --dust-opacity: 0.82;
+  --dust-speed: 2.85s;
+  --dust-glow: 0 0 0.38rem var(--upgrade-card-color);
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+    0 22px 36px rgba(0, 0, 0, 0.52),
+    0 0 1.8rem color-mix(in srgb, var(--upgrade-card-color), transparent 55%);
+}
+
+.upgrade-card--epic {
+  --dust-opacity: 0.78;
+  --dust-speed: 3.5s;
+  background:
+    radial-gradient(circle at 18% 0%, color-mix(in srgb, var(--upgrade-card-color), transparent 78%), transparent 38%),
+    linear-gradient(180deg, rgba(16, 28, 60, 0.94), rgba(7, 12, 30, 0.98));
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 24%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
+    0 20px 34px rgba(0, 0, 0, 0.45),
+    0 0 1.7rem color-mix(in srgb, var(--upgrade-card-color), transparent 62%);
+}
+
+.upgrade-card--epic .upgrade-card-rarity::before {
+  box-shadow:
+    0.8rem -0.95rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 32%),
+    1.7rem -1.55rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 46%),
+    2.9rem -0.35rem 0 -0.01rem var(--upgrade-card-color),
+    3.5rem -1.9rem 0 -0.06rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 38%),
+    4.2rem -1.05rem 0 -0.04rem rgba(255, 255, 255, 0.9),
+    5.8rem -1.25rem 0 -0.02rem #ffffff,
+    7.2rem -1.85rem 0 -0.06rem var(--upgrade-card-color),
+    8.4rem -0.7rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 42%),
+    9.8rem -1.45rem 0 -0.04rem var(--upgrade-card-color),
+    10.7rem -0.15rem 0 -0.06rem rgba(255, 255, 255, 0.78),
+    11.4rem -1.05rem 0 -0.02rem var(--upgrade-card-color),
+    13.2rem -0.45rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 52%);
+}
+
+.upgrade-card--epic .upgrade-card-rarity::after {
+  box-shadow:
+    -0.9rem 0.42rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 28%),
+    1.9rem 0.75rem 0 -0.02rem var(--upgrade-card-color),
+    4.9rem 0.2rem 0 -0.04rem rgba(255, 255, 255, 0.88),
+    9.8rem 0.45rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 40%),
+    12.7rem -0.05rem 0 -0.02rem #ffffff,
+    14.4rem 0.7rem 0 -0.04rem var(--upgrade-card-color);
+}
+
+.upgrade-card--epic .upgrade-card-name::before {
+  box-shadow:
+    -0.95rem -0.2rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%),
+    0.6rem -0.8rem 0 -0.04rem var(--upgrade-card-color),
+    2.8rem -0.35rem 0 -0.03rem rgba(255, 255, 255, 0.84),
+    7rem -0.75rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 46%);
+}
+
+.upgrade-card--epic .upgrade-card-name::after {
+  box-shadow:
+    0.6rem -0.55rem 0 -0.02rem var(--upgrade-card-color),
+    2.4rem 0.2rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 42%),
+    4.5rem -0.85rem 0 -0.05rem #ffffff;
+}
+
+.upgrade-card--epic .upgrade-card-art::before {
+  box-shadow:
+    -0.45rem -0.35rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 34%),
+    0.2rem -1.05rem 0 -0.04rem var(--upgrade-card-color),
+    -0.2rem -2.1rem 0 -0.05rem #ffffff,
+    0.85rem -3.25rem 0 -0.05rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 48%),
+    0.15rem -4.1rem 0 -0.06rem var(--upgrade-card-color);
+}
+
+.upgrade-card--epic .upgrade-card-art::after {
+  box-shadow:
+    0.45rem -0.2rem 0 -0.01rem var(--upgrade-card-color),
+    -0.1rem -1.25rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 46%),
+    -0.85rem -2.15rem 0 -0.05rem rgba(255, 255, 255, 0.85),
+    -0.25rem -3.5rem 0 -0.05rem var(--upgrade-card-color),
+    -1.15rem -4.25rem 0 -0.06rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 52%);
+}
+
+.upgrade-card--epic .upgrade-card-description::before {
+  box-shadow:
+    -0.25rem -0.35rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 36%),
+    0.35rem -1.15rem 0 -0.04rem var(--upgrade-card-color),
+    -0.2rem -2.1rem 0 -0.05rem rgba(255, 255, 255, 0.86),
+    0.65rem -3.15rem 0 -0.06rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 52%);
+}
+
+.upgrade-card--epic .upgrade-card-description::after {
+  box-shadow:
+    0.25rem -0.55rem 0 -0.01rem var(--upgrade-card-color),
+    -0.35rem -1.5rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 48%),
+    0.25rem -2.45rem 0 -0.05rem rgba(255, 255, 255, 0.84),
+    -0.65rem -3.5rem 0 -0.06rem var(--upgrade-card-color);
+}
+
+.upgrade-card--epic .upgrade-card-art-symbol {
+  text-shadow:
+    0 0 0.8rem color-mix(in srgb, var(--upgrade-card-color), transparent 38%),
+    0 0 1.5rem color-mix(in srgb, var(--upgrade-card-color), transparent 64%);
+}
+
+.upgrade-card--epic:hover {
+  --dust-opacity: 1;
+  --dust-speed: 2.15s;
+  --dust-glow: 0 0 0.52rem var(--upgrade-card-color);
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 42%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.14) inset,
+    0 24px 42px rgba(0, 0, 0, 0.58),
+    0 0 2.4rem color-mix(in srgb, var(--upgrade-card-color), transparent 42%);
 }
 
 .upgrade-card--legendary {
+  --dust-opacity: 1;
+  --dust-speed: 2.75s;
+  --dust-glow: 0 0 0.55rem var(--upgrade-card-color);
+  background:
+    radial-gradient(circle at 50% -10%, color-mix(in srgb, var(--upgrade-card-color), #ffffff 10%) 0%, transparent 42%),
+    linear-gradient(135deg, rgba(34, 25, 12, 0.24), transparent 36%),
+    linear-gradient(180deg, rgba(16, 28, 60, 0.96), rgba(6, 10, 25, 0.98));
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 36%);
   box-shadow:
-    0 0 0 1px rgba(255, 255, 255, 0.08) inset,
-    0 20px 38px rgba(0, 0, 0, 0.5),
-    0 0 42px color-mix(in srgb, var(--upgrade-card-color), transparent 48%);
+    0 0 0 1px rgba(255, 255, 255, 0.12) inset,
+    0 22px 40px rgba(0, 0, 0, 0.52),
+    0 0 2rem color-mix(in srgb, var(--upgrade-card-color), transparent 46%);
+  animation: legendary-card-idle 3.4s ease-in-out infinite;
+}
+
+.upgrade-card--legendary .upgrade-card-rarity::before {
+  box-shadow:
+    0.7rem -1.05rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 52%),
+    1.2rem -1.75rem 0 -0.05rem #ffffff,
+    2.2rem -0.35rem 0 -0.01rem var(--upgrade-card-color),
+    3rem -1.05rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 60%),
+    3.8rem -1.45rem 0 -0.02rem #ffffff,
+    5.8rem -0.75rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 42%),
+    6.8rem -1.75rem 0 -0.05rem var(--upgrade-card-color),
+    7.7rem -1.2rem 0 -0.01rem var(--upgrade-card-color),
+    8.9rem -0.35rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 66%),
+    10.4rem -0.55rem 0 -0.02rem #ffffff,
+    11.3rem -1.55rem 0 -0.05rem var(--upgrade-card-color),
+    12.5rem -1.35rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 58%),
+    14.2rem -0.65rem 0 -0.04rem #ffffff;
+}
+
+.upgrade-card--legendary .upgrade-card-rarity::after {
+  box-shadow:
+    -1rem 0.55rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 46%),
+    1.4rem 0.95rem 0 -0.02rem var(--upgrade-card-color),
+    3.2rem 0.25rem 0 -0.02rem #ffffff,
+    5.1rem 0.85rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 54%),
+    8.9rem 0.8rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 52%),
+    11.7rem 0.1rem 0 -0.02rem var(--upgrade-card-color),
+    13rem 1rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 62%),
+    14.4rem 0.55rem 0 -0.02rem #ffffff;
+}
+
+.upgrade-card--legendary .upgrade-card-name::before {
+  box-shadow:
+    -1.1rem -0.15rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 50%),
+    0.35rem -0.95rem 0 -0.04rem #ffffff,
+    1.8rem -0.25rem 0 -0.02rem var(--upgrade-card-color),
+    4.2rem -0.85rem 0 -0.05rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 64%),
+    7.6rem -0.3rem 0 -0.04rem #ffffff;
+}
+
+.upgrade-card--legendary .upgrade-card-name::after {
+  box-shadow:
+    0.8rem -0.75rem 0 -0.01rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 58%),
+    2.1rem 0.25rem 0 -0.04rem var(--upgrade-card-color),
+    3.8rem -0.5rem 0 -0.05rem #ffffff,
+    5.5rem 0.45rem 0 -0.04rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 54%);
+}
+
+.upgrade-card--legendary .upgrade-card-art::before {
+  box-shadow:
+    -0.5rem -0.25rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 54%),
+    0.35rem -1.05rem 0 -0.03rem var(--upgrade-card-color),
+    -0.35rem -1.95rem 0 -0.04rem #ffffff,
+    0.75rem -2.8rem 0 -0.05rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 66%),
+    -0.15rem -3.6rem 0 -0.05rem var(--upgrade-card-color),
+    1.05rem -4.6rem 0 -0.06rem #ffffff,
+    0.25rem -5.25rem 0 -0.06rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 60%);
+}
+
+.upgrade-card--legendary .upgrade-card-art::after {
+  box-shadow:
+    0.45rem -0.35rem 0 0 var(--upgrade-card-color),
+    -0.25rem -1.2rem 0 -0.03rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 62%),
+    -1.05rem -2.05rem 0 -0.04rem #ffffff,
+    -0.35rem -3rem 0 -0.05rem var(--upgrade-card-color),
+    -1.25rem -3.85rem 0 -0.05rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 70%),
+    -0.55rem -4.75rem 0 -0.06rem #ffffff,
+    -1.45rem -5.35rem 0 -0.06rem var(--upgrade-card-color);
+}
+
+.upgrade-card--legendary .upgrade-card-description::before {
+  box-shadow:
+    -0.35rem -0.35rem 0 0 color-mix(in srgb, var(--upgrade-card-color), #ffffff 58%),
+    0.35rem -1.2rem 0 -0.03rem var(--upgrade-card-color),
+    -0.25rem -2rem 0 -0.04rem #ffffff,
+    0.75rem -3rem 0 -0.05rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 70%),
+    -0.15rem -4.1rem 0 -0.06rem var(--upgrade-card-color);
+}
+
+.upgrade-card--legendary .upgrade-card-description::after {
+  box-shadow:
+    0.3rem -0.5rem 0 0 var(--upgrade-card-color),
+    -0.35rem -1.45rem 0 -0.03rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 66%),
+    0.2rem -2.35rem 0 -0.04rem #ffffff,
+    -0.7rem -3.45rem 0 -0.05rem var(--upgrade-card-color),
+    0.15rem -4.35rem 0 -0.06rem color-mix(in srgb, var(--upgrade-card-color), #ffffff 72%);
+}
+
+.upgrade-card--legendary::before,
+.upgrade-card--legendary::after {
+  box-shadow: 0 0 0.8rem color-mix(in srgb, var(--upgrade-card-color), transparent 50%);
+}
+
+.upgrade-card--legendary .upgrade-card-rarity,
+.upgrade-card--legendary .upgrade-card-name,
+.upgrade-card--legendary .upgrade-card-art-symbol {
+  text-shadow:
+    0 0 0.75rem color-mix(in srgb, var(--upgrade-card-color), transparent 34%),
+    0 0 1.6rem color-mix(in srgb, var(--upgrade-card-color), transparent 58%);
+}
+
+.upgrade-card--legendary .upgrade-card-art {
+  background:
+    radial-gradient(circle at 50% 35%, color-mix(in srgb, var(--upgrade-card-color), transparent 58%), transparent 66%),
+    linear-gradient(180deg, rgba(11, 17, 38, 0.78), rgba(3, 8, 18, 0.92));
+}
+
+.upgrade-card--legendary:hover {
+  --dust-opacity: 1;
+  --dust-speed: 1.7s;
+  --dust-glow: 0 0 0.78rem var(--upgrade-card-color);
+  border-color: color-mix(in srgb, var(--upgrade-card-color), #ffffff 58%);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.18) inset,
+    0 26px 46px rgba(0, 0, 0, 0.62),
+    0 0 3rem color-mix(in srgb, var(--upgrade-card-color), transparent 28%);
+  animation-duration: 1.9s;
 }
 
 .upgrade-card-footer {
@@ -1832,9 +2268,9 @@ body {
 
 .upgrade-card-lock {
   position: absolute;
-  right: 0.95rem;
+  right: 0.9rem;
   bottom: 0.9rem;
-  z-index: 4;
+  z-index: 6;
   display: inline-grid;
   place-items: center;
   width: 1.9rem;
@@ -1861,9 +2297,98 @@ body {
   box-shadow: 0 0 1rem color-mix(in srgb, var(--upgrade-card-color), transparent 60%);
 }
 
-@keyframes card-sheen {
-  0%, 100% { opacity: 0.45; }
-  50% { opacity: 1; }
+@keyframes legendary-card-idle {
+  0%, 100% {
+    filter: saturate(1);
+  }
+
+  50% {
+    filter: saturate(1.18);
+  }
+}
+
+@keyframes upgrade-card-dust {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0.35rem, 0);
+  }
+
+  28% {
+    opacity: calc(var(--dust-opacity) * 0.7);
+  }
+
+  62% {
+    opacity: var(--dust-opacity);
+  }
+
+  82% {
+    opacity: calc(var(--dust-opacity) * 0.45);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(0.82rem, -2.35rem, 0);
+  }
+}
+
+@keyframes upgrade-card-dust-side {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0.25rem, 0);
+  }
+
+  32% {
+    opacity: calc(var(--dust-opacity) * 0.72);
+  }
+
+  66% {
+    opacity: calc(var(--dust-opacity) * 0.9);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(0.82rem, -2.15rem, 0);
+  }
+}
+
+@keyframes upgrade-card-dust-left {
+  0% {
+    opacity: 0;
+    transform: translate3d(0.1rem, 0.4rem, 0);
+  }
+
+  30% {
+    opacity: calc(var(--dust-opacity) * 0.88);
+  }
+
+  68% {
+    opacity: calc(var(--dust-opacity) * 0.7);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(0.95rem, -2.6rem, 0);
+  }
+}
+
+@keyframes upgrade-card-dust-right {
+  0% {
+    opacity: 0;
+    transform: translate3d(-0.1rem, 0.4rem, 0);
+  }
+
+  28% {
+    opacity: calc(var(--dust-opacity) * 0.82);
+  }
+
+  64% {
+    opacity: var(--dust-opacity);
+  }
+
+  100% {
+    opacity: 0;
+    transform: translate3d(1.05rem, -2.6rem, 0);
+  }
 }
 
 @media (max-width: 980px), (max-height: 760px) {
