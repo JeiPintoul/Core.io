@@ -1514,8 +1514,43 @@ body {
   display: none;
 }
 
+.is-local-coop #hud-coin-counter {
+  display: none;
+}
+
 .is-local-coop .hud-player-button-xp-track {
   display: block;
+}
+
+.hud-player-money,
+.hud-player-money-detail {
+  display: none;
+  align-items: center;
+  gap: 0.35rem;
+  color: #ffd66b;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.62rem;
+  font-weight: 800;
+}
+
+.is-local-coop .hud-player-money {
+  display: inline-flex;
+  grid-column: 1 / 5;
+  justify-self: start;
+}
+
+.is-local-coop .hud-player-money-detail {
+  display: flex;
+  padding: 0 0 0.65rem;
+  border-bottom: 1px solid var(--hud-line);
+}
+
+.hud-player-money-icon {
+  width: 0.58rem;
+  height: 0.58rem;
+  border-radius: 50%;
+  background: radial-gradient(circle at 34% 30%, #fff2a8, #ffd15c 46%, #b87916 100%);
+  box-shadow: 0 0 0.55rem rgba(255, 209, 92, 0.42);
 }
 
 .hud-player-panel.is-active-upgrade .hud-player-stat-button {
@@ -2409,6 +2444,279 @@ body {
 
   #hud-xp-panel {
     width: min(360px, 52vw);
+  }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+  :root {
+    --minimap-size: 132px;
+    --minimap-padding: 14px;
+    --counter-gap: 5px;
+  }
+
+  #btn-pause {
+    top: 0.7rem;
+    right: 0.7rem;
+    width: 2.55rem;
+    height: 2.55rem;
+  }
+
+  #hud-wave-info {
+    top: 0.7rem;
+    left: 0.8rem;
+    min-width: 10rem;
+    padding: 0.48rem 0.7rem 0.55rem 0.82rem;
+  }
+
+  #hud-wave-info-title {
+    font-size: 0.9rem;
+  }
+
+  #hud-wave-info-sub {
+    font-size: 0.66rem;
+  }
+
+  #hud-objective {
+    top: 0.55rem;
+    min-width: min(360px, 36vw);
+    max-width: min(430px, 42vw);
+    padding: 0.32rem 0.5rem 0.38rem;
+    gap: 4px;
+  }
+
+  #hud-objective-label {
+    font-size: 0.68rem;
+  }
+
+  #hud-boss-bar {
+    top: 2.35rem;
+    width: min(430px, 42vw);
+    padding: 0.35rem 0.5rem;
+  }
+
+  #hud-minimap-group {
+    right: calc(var(--canvas-inset-right, 0px) + 0.85rem);
+    bottom: calc(var(--canvas-inset-bottom, 0px) + 0.85rem);
+  }
+
+  #hud-enemy-counter,
+  #hud-coin-counter {
+    padding: 0.34rem 0.45rem;
+    font-size: 0.66rem;
+  }
+
+  .hud-player-panel {
+    width: 14.5rem;
+  }
+
+  .hud-player-panel--player_1 {
+    left: 0.75rem;
+    bottom: 0.75rem;
+  }
+
+  .hud-player-panel--player_2 {
+    right: calc(var(--canvas-inset-right, 0px) + var(--minimap-size) * var(--canvas-scale, 1) + 1rem);
+    bottom: calc(var(--canvas-inset-bottom, 0px) + var(--minimap-size) * var(--canvas-scale, 1) + 3.9rem);
+  }
+
+  .hud-player-panel--player_3 {
+    left: 0.75rem;
+    top: 5.55rem;
+  }
+
+  .hud-player-panel--player_4 {
+    right: 4.35rem;
+    top: 0.75rem;
+  }
+
+  .hud-player-stat-button {
+    min-height: 2.35rem;
+    padding: 0.38rem 0.5rem;
+    gap: 0.38rem;
+  }
+
+  .hud-player-stat-button strong {
+    font-size: 0.78rem;
+  }
+
+  .hud-player-id,
+  .hud-player-level,
+  .hud-player-xp-brief,
+  .hud-player-money {
+    font-size: 0.56rem;
+  }
+
+  .hud-player-stat-panel {
+    width: min(15rem, calc(100vw - 1.5rem));
+    max-height: 44vh;
+    overflow-y: auto;
+    padding: 0.62rem;
+  }
+
+  .hud-player-stat-panel h2 {
+    font-size: 0.9rem;
+  }
+
+  .hud-player-health,
+  .hud-player-stat-panel ul {
+    gap: 4px;
+  }
+
+  .hud-player-health {
+    padding: 0.55rem 0;
+  }
+
+  .hud-player-xp {
+    padding-bottom: 0.5rem;
+  }
+
+  .hud-player-health span,
+  .hud-player-stat-panel li span,
+  .hud-player-health strong,
+  .hud-player-stat-panel li strong {
+    font-size: 0.68rem;
+  }
+
+  #upgrade-modal {
+    padding: 0.7rem;
+  }
+
+  #upgrade-modal-panel {
+    width: min(67rem, 94vw);
+    max-height: calc(100vh - 1.4rem);
+    overflow: hidden;
+    padding: 0.75rem;
+  }
+
+  .is-local-coop #upgrade-modal-panel {
+    width: min(72rem, calc(100vw - 31rem));
+  }
+
+  .upgrade-modal-header {
+    margin-bottom: 0.55rem;
+  }
+
+  #upgrade-modal-panel h2 {
+    margin-bottom: 0.25rem;
+    font-size: 1rem;
+    letter-spacing: 0.14em;
+  }
+
+  #upgrade-remaining {
+    margin-bottom: 0.35rem;
+    font-size: 0.68rem;
+  }
+
+  .upgrade-cards {
+    gap: 0.55rem;
+  }
+
+  .upgrade-card {
+    min-height: clamp(17rem, 46vh, 23rem);
+    padding: 0.6rem;
+    gap: 0.45rem;
+  }
+
+  .upgrade-card:hover,
+  .upgrade-card.is-gamepad-selected {
+    transform: translateY(-0.2rem) scale(1.01);
+  }
+
+  .upgrade-card--rare,
+  .upgrade-card--epic,
+  .upgrade-card--legendary {
+    overflow: hidden;
+    --dust-opacity: 0.22;
+  }
+
+  .upgrade-card-rarity {
+    font-size: 0.62rem;
+  }
+
+  .upgrade-card-name {
+    font-size: 0.88rem;
+  }
+
+  .upgrade-card-art {
+    min-height: 4.5rem;
+    padding: 0.5rem 0.6rem;
+  }
+
+  .upgrade-card-art-symbol {
+    font-size: 1.35rem;
+  }
+
+  .upgrade-card-art-flavor,
+  .upgrade-card-description {
+    font-size: 0.72rem;
+  }
+
+  .upgrade-card-modifiers {
+    gap: 0.35rem;
+  }
+
+  .upgrade-modifier {
+    gap: 0.35rem;
+    padding: 0.25rem 0.45rem;
+  }
+
+  .upgrade-modifier-icon {
+    width: 1.05rem;
+    height: 1.05rem;
+    font-size: 0.5rem;
+  }
+
+  .upgrade-modifier-label,
+  .upgrade-modifier-value,
+  .upgrade-card-footer {
+    font-size: 0.62rem;
+  }
+
+  #btn-upgrade-defer,
+  #btn-upgrade-reroll {
+    font-size: 0.62rem;
+    padding: 0.45rem 0.6rem;
+  }
+
+  #debug-mode-panel {
+    z-index: 45;
+    width: min(13.5rem, calc(100vw - 1.5rem));
+    padding: 0.55rem;
+  }
+}
+
+@media (max-width: 1450px), (max-height: 800px) {
+  :root {
+    --minimap-size: 116px;
+    --minimap-padding: 10px;
+  }
+
+  .hud-player-panel {
+    width: 13.25rem;
+  }
+
+  .hud-player-panel--player_2 {
+    bottom: calc(var(--canvas-inset-bottom, 0px) + var(--minimap-size) * var(--canvas-scale, 1) + 3.55rem);
+  }
+
+  .hud-player-panel--player_3 {
+    top: 5.15rem;
+  }
+
+  .hud-player-panel--player_4 {
+    right: 3.9rem;
+  }
+
+  .is-local-coop #upgrade-modal-panel {
+    width: min(64rem, calc(100vw - 28rem));
+  }
+
+  .upgrade-card {
+    min-height: clamp(15.5rem, 43vh, 20.5rem);
+  }
+
+  .upgrade-card-art {
+    min-height: 3.9rem;
   }
 }
 

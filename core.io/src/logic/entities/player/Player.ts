@@ -1,5 +1,5 @@
 import { Entity } from '../Entity';
-import { emitGameEvent, GameEvents, onGameEvent } from '../../../shared/EventBus';
+import { emitGameEvent, GameEvents } from '../../../shared/EventBus';
 import type { EntityStats, InputState, StatModifiers } from '../../../shared/Types';
 import { MAX_RELOAD_POINTS } from '../../../shared/Types';
 import { getColorDefinition } from '../../constants/ColorConfig';
@@ -53,6 +53,7 @@ export class Player extends Entity {
     public currentXp: number;
     public xpToNextLevel: number;
     public pendingUpgrades: number;
+    public coins: number;
     public readonly appliedUpgradeColors: number[];
     public bonusStats: StatModifiers;
     public colorBonusStats: StatModifiers;
@@ -69,7 +70,6 @@ export class Player extends Entity {
         reloadPoints: 0,
         movementSpeed: 150
     };
-    private unsubscribeEnemyDestroyed: (() => void) | null = null;
 
     constructor(
         id: string,
@@ -98,6 +98,7 @@ export class Player extends Entity {
         this.currentXp = 0;
         this.xpToNextLevel = 100;
         this.pendingUpgrades = 0;
+        this.coins = 0;
         this.appliedUpgradeColors = [];
         this.bonusStats = { ...ZERO_BONUS_STATS };
         this.colorBonusStats = {};
@@ -113,10 +114,6 @@ export class Player extends Entity {
                 lifespanMultiplier: 1
             }
         ]);
-
-        if (this.progressionEnabled) {
-            this.setupListeners();
-        }
     }
 
     public override get contactDamage(): number {
@@ -292,17 +289,15 @@ export class Player extends Entity {
         this.pendingUpgrades = Math.max(0, this.pendingUpgrades - 1);
     }
 
-    private setupListeners(): void {
-        this.unsubscribeEnemyDestroyed = onGameEvent(GameEvents.ENEMY_DESTROYED, (data) => {
-            this.gainXp(data.xpDropped);
-        });
+    public addCoins(amount: number): void {
+        this.coins = Math.max(0, this.coins + Math.max(0, Math.round(amount)));
     }
 
-    public destroy(): void {
-        if (this.unsubscribeEnemyDestroyed) {
-            this.unsubscribeEnemyDestroyed();
-            this.unsubscribeEnemyDestroyed = null;
-        }
+    public spendCoins(amount: number): boolean {
+        const cost = Math.max(0, Math.round(amount));
+        if (this.coins < cost) return false;
+        this.coins -= cost;
+        return true;
     }
 
     public gainXp(amount: number): void {

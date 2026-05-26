@@ -36,7 +36,6 @@ import {
     DEFAULT_RUN_CONFIGURATION,
     PLAYER_DEFAULT_COLOR_HEX,
     PLAYER_DEFAULT_COLORS,
-    calculateCoinDrop,
     getDifficultyProfile,
     type DifficultyProfile
 } from './constants/GameBalance';
@@ -45,6 +44,7 @@ import { MathRng, type Rng } from './Rng';
 import { EnemyFactory, type EnemyFactoryHost } from './spawn/EnemyFactory';
 import { EncounterDirector, type EncounterDirectorHost } from './spawn/EncounterDirector';
 import { ShopManager } from './shop/ShopManager';
+import { RewardDistributor } from './rewards/RewardDistributor';
 
 export class GameEngine {
     private player: Player;
@@ -54,6 +54,7 @@ export class GameEngine {
     private readonly arenaSize: { width: number; height: number };
     private readonly upgradeManager: UpgradeManager;
     private readonly shopManager: ShopManager;
+    private readonly rewardDistributor = new RewardDistributor();
     private readonly missionManager: MissionManager;
     private readonly factory: EnemyFactory;
     private readonly director: EncounterDirector;
@@ -78,10 +79,10 @@ export class GameEngine {
     private debugGodModeEnabled = false;
 
     private readonly processedEnemyDeathIds = new Set<string>();
+    private readonly lastPlayerDamageByEnemyId = new Map<string, PlayerId>();
 
     private totalEnemiesKilledInRun = 0;
     private totalAnomaliesMetInRun = 0;
-    private coins = 0;
     private runConfiguration: RunConfiguration = structuredClone(DEFAULT_RUN_CONFIGURATION);
     private upgradeSelectionQueue: PlayerId[] = [];
     private activeUpgradePlayerId: PlayerId | null = null;
@@ -133,7 +134,13 @@ export class GameEngine {
     private buildDirectorHost(): EncounterDirectorHost {
         return {
             getEnemies: () => this.enemies,
-            setEnemies: (list) => { this.enemies = list; },
+            setEnemies: (list) => {
+                this.enemies = list;
+                const activeEnemyIds = new Set(list.map((enemy) => enemy.id));
+                for (const enemyId of this.lastPlayerDamageByEnemyId.keys()) {
+                    if (!activeEnemyIds.has(enemyId)) this.lastPlayerDamageByEnemyId.delete(enemyId);
+                }
+            },
             addEnemy: (e) => { this.enemies.push(e); },
 
             setArena: (arena) => { this.currentArena = arena; },
@@ -244,12 +251,16 @@ export class GameEngine {
                 if (this.processedEnemyDeathIds.has(enemy.id)) return;
 
                 this.processedEnemyDeathIds.add(enemy.id);
-                const coinDropped = calculateCoinDrop(enemy.xpDrop);
-                this.coins += coinDropped;
+                const reward = this.rewardDistributor.distributeEnemyReward(
+                    enemy,
+                    this.getPlayers(),
+                    this.lastPlayerDamageByEnemyId.get(enemy.id) ?? null
+                );
+                this.lastPlayerDamageByEnemyId.delete(enemy.id);
                 emitGameEvent(GameEvents.ENEMY_DESTROYED, {
                     id: enemy.id,
-                    xpDropped: enemy.xpDrop,
-                    coinDropped,
+                    xpDropped: reward.xpDropped,
+                    coinDropped: reward.coinDropped,
                     x: enemy.x,
                     y: enemy.y,
                     radius: enemy.radius
@@ -389,7 +400,6 @@ export class GameEngine {
 
     public destroy(): void {
         this.stop();
-        for (const player of this.getPlayers()) player.destroy();
         this.additionalPlayers.clear();
         for (const unsubscribe of this.eventUnsubscribers) unsubscribe();
         this.eventUnsubscribers.length = 0;
@@ -426,13 +436,14 @@ export class GameEngine {
     public debugSpawnAnomaly(): void { this.director.debugSpawnAnomaly(performance.now()); }
 
     public debugGrantCoins(amount = 500): void {
-        this.coins = Math.max(0, this.coins + amount);
+        for (const player of this.getPlayers()) player.addCoins(amount);
         this.emitStateUpdate();
     }
 
     public debugKillAllEnemies(): void {
         const enemiesToDestroy = [...this.enemies];
         for (const enemy of enemiesToDestroy) {
+            this.lastPlayerDamageByEnemyId.delete(enemy.id);
             emitGameEvent(GameEvents.ENTITY_DESTROYED, { id: enemy.id });
         }
         this.enemies = [];
@@ -474,7 +485,6 @@ export class GameEngine {
         if (runConfiguration) this.runConfiguration = structuredClone(runConfiguration);
         this.runConfiguration.players.player_1.name = playerName;
 
-        for (const player of this.getPlayers()) player.destroy();
         this.additionalPlayers.clear();
 
         const activePlayerIds = this.getActivePlayerIds();
@@ -493,6 +503,7 @@ export class GameEngine {
         this.enemies = [];
         this.projectiles = [];
         this.processedEnemyDeathIds.clear();
+        this.lastPlayerDamageByEnemyId.clear();
         this.arenaSize.width = ARENA.width;
         this.arenaSize.height = ARENA.height;
         emitGameEvent(GameEvents.ARENA_RESIZED, { width: this.arenaSize.width, height: this.arenaSize.height });
@@ -509,7 +520,6 @@ export class GameEngine {
         this.projectileIdCounter = 0;
         this.isPaused = false;
         this.pauseStartedAtMs = 0;
-        this.coins = 0;
 
         this.engineState = EngineState.COLOR_SELECTION;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
@@ -618,6 +628,7 @@ export class GameEngine {
             currentXp: player.currentXp,
             xpToNextLevel: player.xpToNextLevel,
             pendingUpgrades: player.pendingUpgrades,
+            coins: player.coins,
         }));
 
         const exportState: GameState = {
@@ -643,7 +654,7 @@ export class GameEngine {
             waveType: this.director.getCurrentWaveType(),
             remainingToKill: this.director.getRemainingToKill(),
             activeEnemyCount: this.enemies.length,
-            coins: this.coins,
+            coins: playersData[0]?.coins ?? 0,
             surviveTimeRemainingSeconds: this.director.getSurviveTimeRemaining(currentTimeMs),
             isPaused: this.isPaused,
             objective: this.missionManager.getObjectiveState(),
@@ -902,6 +913,7 @@ export class GameEngine {
                 const enemy = this.enemies[enemyIndex];
                 if (!this.checkCircularCollision(projectile.x, projectile.y, projectile.radius, enemy.x, enemy.y, enemy.radius)) continue;
 
+                this.recordEnemyPlayerDamage(enemy, this.resolvePlayerId(projectile.ownerId));
                 const shouldDestroy = projectile.handleCollisionWith(enemy, enemy.contactDamage, currentTime, () => {});
                 this.removeEnemyTypes(enemy.onProjectileHit(currentTime));
 
@@ -913,6 +925,9 @@ export class GameEngine {
     private removeEnemyTypes(enemyTypes: EnemyType[]): void {
         if (enemyTypes.length === 0) return;
         const typesToRemove = new Set(enemyTypes);
+        for (const enemy of this.enemies) {
+            if (typesToRemove.has(enemy.enemyType)) this.lastPlayerDamageByEnemyId.delete(enemy.id);
+        }
         this.enemies = this.enemies.filter((enemy) => !typesToRemove.has(enemy.enemyType));
     }
 
@@ -970,9 +985,23 @@ export class GameEngine {
         const flatDamage = attacker.contactDamage;
         if (flatDamage <= 0) return;
 
+        if (target instanceof HostileEntity && attacker instanceof Player) {
+            this.recordEnemyPlayerDamage(target, attacker.id as PlayerId);
+        }
+
         target.takeDamage(flatDamage);
         target.registerCollisionDamageFrom(attacker.id, currentTime);
         onDamageTaken();
+    }
+
+    private recordEnemyPlayerDamage(enemy: HostileEntity, playerId: PlayerId | null): void {
+        if (!playerId || !this.getPlayerById(playerId)) return;
+        this.lastPlayerDamageByEnemyId.set(enemy.id, playerId);
+    }
+
+    private resolvePlayerId(entityId: string): PlayerId | null {
+        if (!PLAYER_IDS.includes(entityId as PlayerId)) return null;
+        return this.getPlayerById(entityId as PlayerId) ? entityId as PlayerId : null;
     }
 
     private isSameFaction(entityA: Entity, entityB: Entity): boolean {
@@ -1054,7 +1083,7 @@ export class GameEngine {
 
             for (const item of availableItems) {
                 if (!this.checkCircularCollision(player.x, player.y, player.radius, item.x, item.y, item.radius)) continue;
-                if (this.coins < item.price) {
+                if (player.coins < item.price) {
                     this.shopCharge = null;
                     continue;
                 }
@@ -1067,11 +1096,11 @@ export class GameEngine {
 
                 if (currentTime - this.shopCharge.startedAtMs < this.shopPurchaseChargeMs) return;
 
-                const result = this.shopManager.purchase(item.id, this.coins);
+                const result = this.shopManager.purchase(item.id, player.coins);
                 this.shopCharge = null;
                 if (!result.ok) return;
+                if (!player.spendCoins(result.item.price)) return;
 
-                this.coins = Math.max(0, this.coins - result.item.price);
                 if (result.item.kind === 'HEAL') {
                     player.health = player.maxHealth;
                 } else if (result.item.rarity) {

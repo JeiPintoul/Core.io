@@ -166,6 +166,7 @@ export interface EntityData {
     currentXp?: number;
     xpToNextLevel?: number;
     pendingUpgrades?: number;
+    coins?: number;
 }
 
 export interface ProjectileData {
