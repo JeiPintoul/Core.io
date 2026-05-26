@@ -11,22 +11,21 @@ export interface RewardDistributionResult {
 
 export class RewardDistributor {
     public distributeEnemyReward(enemy: HostileEntity, players: Player[], killerId: PlayerId | null): RewardDistributionResult {
-        const activePlayers = players.filter((player) => player.health > 0);
-        if (activePlayers.length === 0 || enemy.xpDrop <= 0) return { xpDropped: 0, coinDropped: 0 };
+        if (players.length === 0 || enemy.xpDrop <= 0) return { xpDropped: 0, coinDropped: 0 };
 
         if (enemy.enemyType === 'DREADNOUGHT') {
-            return this.distributeBossReward(enemy.xpDrop, activePlayers);
+            return this.distributeBossReward(enemy.xpDrop, players);
         }
 
-        if (!killerId || !activePlayers.some((player) => player.id === killerId)) {
+        if (!killerId || !players.some((player) => player.id === killerId)) {
             return { xpDropped: 0, coinDropped: 0 };
         }
 
-        const scale = getRegularEnemyRewardScale(activePlayers.length);
+        const scale = getRegularEnemyRewardScale(players.length);
         let primaryXp = 0;
         let primaryCoins = 0;
 
-        for (const player of activePlayers) {
+        for (const player of players) {
             const ratio = player.id === killerId ? 1 : COOP_ASSIST_REWARD_RATIO;
             const xp = this.toRewardAmount(enemy.xpDrop * scale * ratio);
             const coins = calculateCoinDrop(xp);

@@ -1442,12 +1442,13 @@ body {
 
 .hud-player-stat-button {
   width: 100%;
-  min-height: 2.65rem;
+  min-height: 0;
   display: grid;
   grid-template-columns: auto auto 1fr auto;
   align-items: center;
-  gap: 0.5rem;
-  padding: 0.45rem 0.6rem;
+  column-gap: 0.5rem;
+  row-gap: 0.12rem;
+  padding: 0.36rem 0.55rem 0.34rem;
   color: #eef3ff;
   background: rgba(7, 12, 27, 0.78);
   border: 1px solid color-mix(in srgb, var(--player-color), var(--hud-border) 52%);
@@ -1498,7 +1499,7 @@ body {
   display: none;
   grid-column: 1 / 5;
   width: 100%;
-  height: 0.22rem;
+  height: 0.18rem;
   overflow: hidden;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -1514,7 +1515,7 @@ body {
   display: none;
 }
 
-.is-local-coop #hud-coin-counter {
+#hud-coin-counter {
   display: none;
 }
 
@@ -1533,24 +1534,186 @@ body {
   font-weight: 800;
 }
 
-.is-local-coop .hud-player-money {
+.hud-player-money {
   display: inline-flex;
   grid-column: 1 / 5;
   justify-self: start;
+  line-height: 1;
+  margin-top: -0.04rem;
 }
 
-.is-local-coop .hud-player-money-detail {
-  display: flex;
-  padding: 0 0 0.65rem;
-  border-bottom: 1px solid var(--hud-line);
+.hud-player-money-detail {
+  display: inline-flex;
+  margin-left: auto;
+  align-self: flex-start;
+  line-height: 1;
+  padding-top: 0.1rem;
 }
 
 .hud-player-money-icon {
-  width: 0.58rem;
-  height: 0.58rem;
+  position: relative;
+  flex: 0 0 auto;
+  width: 0.78rem;
+  height: 0.7rem;
+  overflow: visible;
+}
+
+.hud-player-money-detail .hud-player-money-icon {
+  width: 1.42rem;
+  height: 0.92rem;
+}
+
+.hud-coin {
+  position: absolute;
   border-radius: 50%;
-  background: radial-gradient(circle at 34% 30%, #fff2a8, #ffd15c 46%, #b87916 100%);
-  box-shadow: 0 0 0.55rem rgba(255, 209, 92, 0.42);
+  background:
+    radial-gradient(ellipse at 32% 24%, #fff8b8 0 13%, transparent 14%),
+    radial-gradient(ellipse at 50% 50%, #ffe66f 0 43%, #ffc928 44% 68%, #b87916 100%);
+  border: 1px solid rgba(91, 51, 5, 0.62);
+  box-shadow:
+    0 0 0.24rem rgba(255, 222, 92, 0.46),
+    inset -0.05rem -0.05rem 0 rgba(122, 72, 8, 0.38),
+    inset 0.04rem 0.04rem 0 rgba(255, 255, 210, 0.48);
+}
+
+.hud-coin::after {
+  content: '';
+  position: absolute;
+  inset: 22% 19%;
+  border: 1px solid rgba(115, 71, 5, 0.5);
+  border-radius: 50%;
+}
+
+.hud-player-money-icon--pair .hud-coin {
+  width: 0.56rem;
+  height: 0.56rem;
+}
+
+.hud-player-money-icon--pair .hud-coin--back {
+  left: 0.03rem;
+  top: 0.15rem;
+  z-index: 1;
+}
+
+.hud-player-money-icon--pair .hud-coin--front {
+  left: 0.26rem;
+  top: 0.04rem;
+  z-index: 2;
+}
+
+.hud-player-money-icon--stack .hud-coin--back,
+.hud-player-money-icon--stack .hud-coin--middle {
+  right: 0.02rem;
+  width: 0.98rem;
+  height: 0.48rem;
+  transform: rotate(4deg);
+}
+
+.hud-player-money-icon--stack .hud-coin--back {
+  top: 0.4rem;
+  z-index: 1;
+}
+
+.hud-player-money-icon--stack .hud-coin--middle {
+  top: 0.24rem;
+  z-index: 2;
+}
+
+.hud-player-money-icon--stack .hud-coin--front {
+  left: 0.02rem;
+  top: 0.03rem;
+  z-index: 3;
+  width: 0.48rem;
+  height: 0.84rem;
+  transform: rotate(18deg);
+}
+
+.hud-player-money {
+  text-shadow: 0 0 0.45rem rgba(255, 214, 107, 0.42);
+}
+
+.hud-player-money-detail {
+  text-shadow: 0 0 0.55rem rgba(255, 214, 107, 0.48);
+}
+
+.hud-sparkle {
+  position: absolute;
+  z-index: 4;
+  display: block;
+  width: var(--spark-size);
+  height: var(--spark-size);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(0.08rem) scale(0.2);
+  transform-origin: center;
+  will-change: opacity, transform, filter;
+  animation-name: coin-sparkle-pulse;
+  animation-duration: var(--spark-duration, 1.5s);
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-delay: var(--spark-delay, 0s);
+  filter:
+    drop-shadow(0 0 0.08rem rgba(255, 255, 255, 0.95))
+    drop-shadow(0 0 0.22rem rgba(255, 255, 255, 0.62));
+}
+
+.hud-sparkle::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: #ffffff;
+  clip-path: polygon(50% 0, 58% 38%, 100% 50%, 58% 62%, 50% 100%, 42% 62%, 0 50%, 42% 38%);
+}
+
+.hud-sparkle--one {
+  --spark-size: 0.44rem;
+  --spark-duration: 2.45s;
+  right: -0.2rem;
+  top: -0.2rem;
+}
+
+.hud-sparkle--two {
+  --spark-size: 0.28rem;
+  --spark-duration: 2.1s;
+  --spark-delay: -1.05s;
+  left: -0.16rem;
+  top: 0.06rem;
+}
+
+.hud-sparkle--three {
+  --spark-size: 0.34rem;
+  --spark-duration: 2.75s;
+  --spark-delay: -1.65s;
+  right: 0.08rem;
+  bottom: -0.18rem;
+}
+
+.hud-sparkle--four {
+  --spark-size: 0.24rem;
+  --spark-duration: 2.3s;
+  --spark-delay: -0.45s;
+  left: 0.45rem;
+  top: -0.2rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--one {
+  right: -0.14rem;
+  top: 0.02rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--two {
+  left: 0.06rem;
+  top: -0.2rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--three {
+  right: 0.18rem;
+  bottom: -0.16rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--four {
+  left: -0.14rem;
+  top: 0.32rem;
 }
 
 .hud-player-panel.is-active-upgrade .hud-player-stat-button {
@@ -1611,6 +1774,10 @@ body {
   border-bottom: 1px solid var(--hud-line);
 }
 
+.hud-player-stat-panel header > div:not(.hud-player-money-detail) {
+  min-width: 0;
+}
+
 .hud-player-stat-panel small {
   color: #7f8ba4;
   font-size: 0.65rem;
@@ -1618,8 +1785,33 @@ body {
 
 .hud-player-stat-panel h2 {
   margin: 1px 0 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: 1.12rem;
   color: #ffffff;
+}
+
+@keyframes coin-sparkle-pulse {
+  0%, 100% {
+    opacity: 0;
+    transform: translateY(0.12rem) scale(0.15) rotate(-6deg);
+  }
+
+  24% {
+    opacity: 1;
+    transform: translateY(0) scale(1) rotate(0deg);
+  }
+
+  44% {
+    opacity: 0.82;
+    transform: translateY(-0.03rem) scale(1.22) rotate(5deg);
+  }
+
+  72% {
+    opacity: 0;
+    transform: translateY(0.1rem) scale(0.5) rotate(9deg);
+  }
 }
 
 .hud-player-health {

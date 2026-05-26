@@ -43,6 +43,7 @@ export class HudController {
     private readonly unsubscribers: Array<() => void> = [];
     private readonly waveTransitionTimeoutIds: number[] = [];
     private readonly playerPanelEls = new Map<PlayerId, HTMLElement>();
+    private readonly playerPanelHtml = new Map<PlayerId, string>();
 
     private currentPlayers: EntityData[] = [];
     private activePreviewModifiers: StatModifiers | null = null;
@@ -369,6 +370,7 @@ export class HudController {
             if (!activeIds.has(playerId)) {
                 this.playerPanelEls.get(playerId)?.remove();
                 this.playerPanelEls.delete(playerId);
+                this.playerPanelHtml.delete(playerId);
             }
         }
 
@@ -383,7 +385,11 @@ export class HudController {
                 this.statsRootEl.appendChild(panel);
             }
             panel.style.setProperty('--player-color', this.colorToHex(player.color));
-            panel.innerHTML = this.getPlayerPanelHtml(player);
+            const html = this.getPlayerPanelHtml(player);
+            if (this.playerPanelHtml.get(playerId) !== html) {
+                panel.innerHTML = html;
+                this.playerPanelHtml.set(playerId, html);
+            }
         }
 
         this.syncPlayerPanelState();
@@ -425,7 +431,7 @@ export class HudController {
                 <span class="hud-player-level">LV ${player.level ?? 1}</span>
                 <span class="hud-player-button-xp-track"><span style="width:${(xpRatio * 100).toFixed(2)}%"></span></span>
                 <span class="hud-player-xp-brief">${this.fmt0(player.currentXp ?? 0)}/${this.fmt0(player.xpToNextLevel ?? 100)} XP</span>
-                <span class="hud-player-money"><span class="hud-player-money-icon"></span><strong>${this.fmt0(player.coins ?? 0)}</strong></span>
+                <span class="hud-player-money">${this.getCoinIconHtml('pair')}<strong>${this.fmt0(player.coins ?? 0)}</strong></span>
             </button>
             <div class="hud-player-stat-panel">
                 <header>
@@ -434,6 +440,7 @@ export class HudController {
                         <small>${PLAYER_SLOT_LABELS[playerId]}  ${tierLabel}</small>
                         <h2>${this.escapeHtml(player.name ?? PLAYER_SLOT_LABELS[playerId])}</h2>
                     </div>
+                    <div class="hud-player-money-detail">${this.getCoinIconHtml('stack')}<strong>${this.fmt0(player.coins ?? 0)}</strong></div>
                 </header>
                 <div class="hud-player-health">
                     <div><span>Vida</span><strong>${this.fmt0(player.health)} / ${this.fmt0(stats.maxHealth)}</strong></div>
@@ -444,10 +451,17 @@ export class HudController {
                     <span class="hud-player-xp-track"><span style="width:${(xpRatio * 100).toFixed(2)}%"></span></span>
                     <strong>${this.fmt0(player.currentXp ?? 0)} / ${this.fmt0(player.xpToNextLevel ?? 100)} XP</strong>
                 </div>
-                <div class="hud-player-money-detail"><span class="hud-player-money-icon"></span><strong>${this.fmt0(player.coins ?? 0)}</strong></div>
                 <ul>${STAT_ROWS.map((row) => this.getStatRowHtml(row, stats, previewStats, colorDef)).join('')}</ul>
             </div>
         `;
+    }
+
+    private getCoinIconHtml(variant: 'pair' | 'stack'): string {
+        const coins = variant === 'stack'
+            ? '<span class="hud-coin hud-coin--back"></span><span class="hud-coin hud-coin--middle"></span><span class="hud-coin hud-coin--front"></span>'
+            : '<span class="hud-coin hud-coin--back"></span><span class="hud-coin hud-coin--front"></span>';
+
+        return `<span class="hud-player-money-icon hud-player-money-icon--${variant}" aria-hidden="true">${coins}<span class="hud-sparkle hud-sparkle--one"></span><span class="hud-sparkle hud-sparkle--two"></span><span class="hud-sparkle hud-sparkle--three"></span><span class="hud-sparkle hud-sparkle--four"></span></span>`;
     }
 
     private getStatRowHtml(
