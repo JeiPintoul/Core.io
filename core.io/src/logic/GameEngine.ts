@@ -16,6 +16,7 @@ import {
     type PlayerInputPayload,
     type ProjectileFaction,
     type RunConfiguration,
+    type ShopItemData,
     type EnemyType,
     type UpgradeRollOption
 } from '../shared/Types';
@@ -35,6 +36,7 @@ import {
     DEFAULT_RUN_CONFIGURATION,
     PLAYER_DEFAULT_COLOR_HEX,
     PLAYER_DEFAULT_COLORS,
+    calculateCoinDrop,
     getDifficultyProfile,
     type DifficultyProfile
 } from './constants/GameBalance';
@@ -42,6 +44,7 @@ import { EngineState } from './EngineState';
 import { MathRng, type Rng } from './Rng';
 import { EnemyFactory, type EnemyFactoryHost } from './spawn/EnemyFactory';
 import { EncounterDirector, type EncounterDirectorHost } from './spawn/EncounterDirector';
+import { ShopManager } from './shop/ShopManager';
 
 export class GameEngine {
     private player: Player;
@@ -50,6 +53,7 @@ export class GameEngine {
     private projectiles: Projectile[] = [];
     private readonly arenaSize: { width: number; height: number };
     private readonly upgradeManager: UpgradeManager;
+    private readonly shopManager: ShopManager;
     private readonly missionManager: MissionManager;
     private readonly factory: EnemyFactory;
     private readonly director: EncounterDirector;
@@ -77,15 +81,20 @@ export class GameEngine {
 
     private totalEnemiesKilledInRun = 0;
     private totalAnomaliesMetInRun = 0;
+    private coins = 0;
     private runConfiguration: RunConfiguration = structuredClone(DEFAULT_RUN_CONFIGURATION);
     private upgradeSelectionQueue: PlayerId[] = [];
     private activeUpgradePlayerId: PlayerId | null = null;
     private activeUpgradeOptions: UpgradeRollOption[] = [];
     private deferredUpgradePlayerIds = new Set<PlayerId>();
     private reopenedUpgradeReturnState: EngineState | null = null;
+    private shopCharge: { itemId: string; playerId: PlayerId; startedAtMs: number } | null = null;
+    private shopCardSelection: { playerId: PlayerId; options: UpgradeRollOption[] } | null = null;
+    private readonly shopPurchaseChargeMs = 500;
 
     constructor() {
         this.upgradeManager = new UpgradeManager(this.rng);
+        this.shopManager = new ShopManager(this.upgradeManager);
         this.missionManager = new MissionManager((rewardUpgrades) => {
             for (const player of this.getPlayers()) {
                 player.pendingUpgrades += rewardUpgrades;
@@ -146,6 +155,8 @@ export class GameEngine {
             isUpgradeSelectionActive: () => this.activeUpgradePlayerId !== null,
             enterUpgradePhase: (now) => this.enterUpgradePhase(now),
             clearUpgradeSelectionState: () => this.clearUpgradeSelectionState(),
+            openShop: (centerX, centerY) => this.shopManager.openShop(centerX, centerY),
+            closeShop: () => this.closeShop(),
 
             missionStartBoss: (now) => this.missionManager.startBossMission(now),
             missionStartAnomaly: (now) => {
@@ -233,9 +244,12 @@ export class GameEngine {
                 if (this.processedEnemyDeathIds.has(enemy.id)) return;
 
                 this.processedEnemyDeathIds.add(enemy.id);
+                const coinDropped = calculateCoinDrop(enemy.xpDrop);
+                this.coins += coinDropped;
                 emitGameEvent(GameEvents.ENEMY_DESTROYED, {
                     id: enemy.id,
                     xpDropped: enemy.xpDrop,
+                    coinDropped,
                     x: enemy.x,
                     y: enemy.y,
                     radius: enemy.radius
@@ -340,8 +354,20 @@ export class GameEngine {
         this.upgradeSelectionQueue = [];
         this.activeUpgradePlayerId = null;
         this.activeUpgradeOptions = [];
+        this.shopCardSelection = null;
         this.reopenedUpgradeReturnState = null;
         this.setPlayersUpgradingState(false);
+    }
+
+    private closeShop(): void {
+        this.shopManager.reset();
+        this.shopCharge = null;
+        this.shopCardSelection = null;
+        if (this.engineState === EngineState.SHOP) {
+            this.activeUpgradePlayerId = null;
+            this.setPlayersUpgradingState(false);
+            emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+        }
     }
 
     public start(): void {
@@ -398,6 +424,20 @@ export class GameEngine {
     public debugSpawnEnemy(): void { this.director.debugSpawnEnemy(performance.now()); }
     public debugSpawnBoss(): void { this.director.debugSpawnBoss(performance.now()); }
     public debugSpawnAnomaly(): void { this.director.debugSpawnAnomaly(performance.now()); }
+
+    public debugGrantCoins(amount = 500): void {
+        this.coins = Math.max(0, this.coins + amount);
+        this.emitStateUpdate();
+    }
+
+    public debugKillAllEnemies(): void {
+        const enemiesToDestroy = [...this.enemies];
+        for (const enemy of enemiesToDestroy) {
+            emitGameEvent(GameEvents.ENTITY_DESTROYED, { id: enemy.id });
+        }
+        this.enemies = [];
+        this.emitStateUpdate();
+    }
 
     public debugLevelUpPlayer(): void {
         for (const player of this.getPlayers()) {
@@ -469,10 +509,14 @@ export class GameEngine {
         this.projectileIdCounter = 0;
         this.isPaused = false;
         this.pauseStartedAtMs = 0;
+        this.coins = 0;
 
         this.engineState = EngineState.COLOR_SELECTION;
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.director.reset();
+        this.shopManager.reset();
+        this.shopCharge = null;
+        this.shopCardSelection = null;
         this.director.primeTimers(now);
         this.missionManager.reset();
         this.clearUpgradeSelectionState();
@@ -531,19 +575,21 @@ export class GameEngine {
             return;
         }
 
-        const playerLockedForUpgrade = this.engineState === EngineState.UPGRADE_PHASE && this.activeUpgradePlayerId !== null;
-        if (playerLockedForUpgrade) {
-            return;
-        }
+        const playerLockedForUpgrade = (
+            this.activeUpgradePlayerId !== null &&
+            (this.engineState === EngineState.UPGRADE_PHASE || this.engineState === EngineState.SHOP)
+        );
 
-        for (const player of this.getPlayers()) {
-            if (player.health <= 0) continue;
-            const playerId = player.id as PlayerId;
-            const input = this.currentInputs[playerId];
-            const playerStats = playerStatsById.get(playerId);
-            if (!input || !playerStats) continue;
-            this.updatePlayerMovement(player, input, dt);
-            this.tryPlayerShoot(player, input, currentTime, playerStats);
+        if (!playerLockedForUpgrade) {
+            for (const player of this.getPlayers()) {
+                if (player.health <= 0) continue;
+                const playerId = player.id as PlayerId;
+                const input = this.currentInputs[playerId];
+                const playerStats = playerStatsById.get(playerId);
+                if (!input || !playerStats) continue;
+                this.updatePlayerMovement(player, input, dt);
+                this.tryPlayerShoot(player, input, currentTime, playerStats);
+            }
         }
 
         this.updateEnemies(dt, currentTime);
@@ -554,6 +600,7 @@ export class GameEngine {
         this.updateProjectiles(dt);
 
         this.director.tickSpawn(currentTime);
+        this.handleShopPurchases(currentTime);
 
         this.missionManager.update(currentTime);
         this.checkCollisions(currentTime);
@@ -590,11 +637,13 @@ export class GameEngine {
             arena: this.arenaSize,
             arenaOffset: { x: this.currentArena.x, y: this.currentArena.y },
             isBossFight: this.director.isBossFight(),
+            isShop: this.engineState === EngineState.SHOP,
             isAnomalyEncounter: this.director.isAnomalyEncounter(),
             currentWave: this.director.getCurrentWave(),
             waveType: this.director.getCurrentWaveType(),
             remainingToKill: this.director.getRemainingToKill(),
             activeEnemyCount: this.enemies.length,
+            coins: this.coins,
             surviveTimeRemainingSeconds: this.director.getSurviveTimeRemaining(currentTimeMs),
             isPaused: this.isPaused,
             objective: this.missionManager.getObjectiveState(),
@@ -602,6 +651,8 @@ export class GameEngine {
             autoSpin: this.currentInputs.player_1.autoSpin,
             isCoop: playersData.length > 1,
             bossExitPortal: this.director.isBossExitPortal() ? this.director.getBossExitPortal() : null,
+            shopItems: this.getShopItemsForState(currentTimeMs),
+            shopMerchant: this.shopManager.getMerchant(),
         };
 
         emitGameEvent(GameEvents.STATE_UPDATE, exportState);
@@ -981,6 +1032,73 @@ export class GameEngine {
         return Math.hypot(ax - bx, ay - by) < (aRadius + bRadius);
     }
 
+    private getShopItemsForState(currentTimeMs: number): ShopItemData[] {
+        const items = this.shopManager.getItems();
+        if (!this.shopCharge) return items;
+
+        const progress = Math.max(0, Math.min(1, (currentTimeMs - this.shopCharge.startedAtMs) / this.shopPurchaseChargeMs));
+        return items.map((item) => item.id === this.shopCharge?.itemId ? { ...item, purchaseProgress: progress } : item);
+    }
+
+    private handleShopPurchases(currentTime: number): void {
+        if (this.engineState !== EngineState.SHOP || this.activeUpgradePlayerId) return;
+
+        const availableItems = this.shopManager.getItems().filter((item) => !item.sold);
+        if (availableItems.length === 0) {
+            this.shopCharge = null;
+            return;
+        }
+
+        for (const player of this.getPlayers()) {
+            if (player.health <= 0) continue;
+
+            for (const item of availableItems) {
+                if (!this.checkCircularCollision(player.x, player.y, player.radius, item.x, item.y, item.radius)) continue;
+                if (this.coins < item.price) {
+                    this.shopCharge = null;
+                    continue;
+                }
+
+                const playerId = player.id as PlayerId;
+                if (this.shopCharge?.itemId !== item.id || this.shopCharge.playerId !== playerId) {
+                    this.shopCharge = { itemId: item.id, playerId, startedAtMs: currentTime };
+                    return;
+                }
+
+                if (currentTime - this.shopCharge.startedAtMs < this.shopPurchaseChargeMs) return;
+
+                const result = this.shopManager.purchase(item.id, this.coins);
+                this.shopCharge = null;
+                if (!result.ok) return;
+
+                this.coins = Math.max(0, this.coins - result.item.price);
+                if (result.item.kind === 'HEAL') {
+                    player.health = player.maxHealth;
+                } else if (result.item.rarity) {
+                    this.openShopCardSelection(playerId, result.item.rarity);
+                }
+                return;
+            }
+        }
+
+        this.shopCharge = null;
+    }
+
+    private openShopCardSelection(playerId: PlayerId, rarity: NonNullable<ShopItemData['rarity']>): void {
+        const activePlayer = this.getPlayerById(playerId);
+        if (!activePlayer) return;
+
+        const options = this.shopManager.rollCardOptions(rarity, 3);
+        this.shopCardSelection = { playerId, options };
+        this.activeUpgradePlayerId = playerId;
+        this.setPlayersUpgradingState(true);
+
+        emitGameEvent(GameEvents.SHOW_UPGRADE_MODAL, {
+            playerId,
+            upgradesRemaining: 1
+        });
+    }
+
     private enterUpgradePhase(currentTime: number): void {
         this.engineState = EngineState.UPGRADE_PHASE;
         this.clearUpgradeSelectionState();
@@ -1005,6 +1123,15 @@ export class GameEngine {
 
     private handleUpgradeModalRequested(): void {
         queueMicrotask(() => {
+            if (this.engineState === EngineState.SHOP && this.shopCardSelection && this.activeUpgradePlayerId) {
+                emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
+                    playerId: this.shopCardSelection.playerId,
+                    upgradesRemaining: 1,
+                    options: this.shopCardSelection.options
+                });
+                return;
+            }
+
             if (this.engineState !== EngineState.UPGRADE_PHASE || !this.activeUpgradePlayerId) return;
             const activePlayer = this.getPlayerById(this.activeUpgradePlayerId);
             if (!activePlayer || activePlayer.pendingUpgrades <= 0) { this.advanceUpgradeSelection(); return; }
@@ -1015,6 +1142,24 @@ export class GameEngine {
     private handleCardSelected(selection: CardSelectedPayload): void {
         if (!this.activeUpgradePlayerId || selection.playerId !== this.activeUpgradePlayerId) return;
         const activePlayer = this.getPlayerById(selection.playerId);
+        if (this.engineState === EngineState.SHOP && this.shopCardSelection) {
+            if (!activePlayer) return;
+            const selectedOption = this.shopCardSelection.options.find((option) => option.card.id === selection.cardId);
+            if (!selectedOption) return;
+
+            const colorHex = normalizeColorHex(selection.colorHex, selectedOption.card.paintColor);
+            activePlayer.applyStatModifiers(selectedOption.card.modifiers);
+            activePlayer.applyUpgradeColorBuff(colorHex);
+            activePlayer.applyUpgradeColor(colorHex);
+            this.syncPlayerCoreStats(activePlayer);
+
+            this.shopCardSelection = null;
+            this.activeUpgradePlayerId = null;
+            this.setPlayersUpgradingState(false);
+            emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+            return;
+        }
+
         if (!activePlayer || activePlayer.pendingUpgrades <= 0) { this.advanceUpgradeSelection(); return; }
 
         const selectedCard = this.upgradeManager.getCardById(selection.cardId);
@@ -1071,6 +1216,35 @@ export class GameEngine {
 
     private handleCardRerollRequested(payload: CardRerollRequestedPayload): void {
         if (!this.activeUpgradePlayerId || payload.playerId !== this.activeUpgradePlayerId) return;
+        if (this.engineState === EngineState.SHOP && this.shopCardSelection) {
+            const currentOptions = this.shopCardSelection.options;
+            const firstOption = currentOptions[0];
+            if (!firstOption) return;
+
+            const nextOptions = [...currentOptions];
+            const lockedIndexes = new Set(
+                payload.lockedOptionIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < nextOptions.length)
+            );
+            if (lockedIndexes.size >= nextOptions.length) return;
+
+            const excludedIds = new Set(currentOptions.map((option) => option.card.id));
+            for (let index = 0; index < nextOptions.length; index++) {
+                if (lockedIndexes.has(index)) continue;
+                const card = this.shopManager.rollCardOptions(firstOption.card.rarity, 1, excludedIds)[0]?.card;
+                if (!card) continue;
+                nextOptions[index] = { card, colorHex: card.paintColor };
+                excludedIds.add(card.id);
+            }
+
+            this.shopCardSelection = { playerId: payload.playerId, options: nextOptions };
+            emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
+                playerId: payload.playerId,
+                upgradesRemaining: 1,
+                options: nextOptions
+            });
+            return;
+        }
+
         const activePlayer = this.getPlayerById(payload.playerId);
         if (!activePlayer || activePlayer.pendingUpgrades <= 0) return;
         if (this.activeUpgradeOptions.length === 0) return;
@@ -1099,6 +1273,8 @@ export class GameEngine {
 
     private handleUpgradeDeferred(playerId: PlayerId): void {
         if (!this.activeUpgradePlayerId || playerId !== this.activeUpgradePlayerId) return;
+        if (this.engineState === EngineState.SHOP && this.shopCardSelection) return;
+
         const activePlayer = this.getPlayerById(playerId);
         if (activePlayer && activePlayer.pendingUpgrades > 0) {
             this.deferredUpgradePlayerIds.add(playerId);

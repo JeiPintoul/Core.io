@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
+import type { CardRarity, EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
 import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
 import { COLORS, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
@@ -21,11 +21,11 @@ interface EntityRenderSnapshot {
 }
 
 export class GameRenderer {
-    private healthBarRenderer: HealthBarRenderer;
-    private minimapRenderer: MinimapRenderer;
-    private particleManager: ParticleManager;
-    private enemyVisualRenderer: EnemyVisualRenderer;
-    private projectileVisualRenderer: ProjectileVisualRenderer;
+    private readonly healthBarRenderer: HealthBarRenderer;
+    private readonly minimapRenderer: MinimapRenderer;
+    private readonly particleManager: ParticleManager;
+    private readonly enemyVisualRenderer: EnemyVisualRenderer;
+    private readonly projectileVisualRenderer: ProjectileVisualRenderer;
     private readonly entitySnapshots = new Map<string, EntityRenderSnapshot>();
     private currentPlayerId: string | null = null;
     private isPlayerDeathAnimating = false;
@@ -35,14 +35,15 @@ export class GameRenderer {
     private readonly enemyBarrelRetractions = new Map<string, { value: number }>();
     private readonly enemyRecoilTweens = new Map<string, Phaser.Tweens.Tween>();
     private playerRecoilTween: Phaser.Tweens.Tween | null = null;
+    private readonly shopLabelTexts = new Map<string, Phaser.GameObjects.Text>();
 
     constructor(
-        private scene: Phaser.Scene,
-        private camera: Phaser.Cameras.Scene2D.Camera,
-        private gfxWorld: Phaser.GameObjects.Graphics,
-        private gfxGame: Phaser.GameObjects.Graphics,
-        private gfxPlayer: Phaser.GameObjects.Graphics,
-        private gfxHud: Phaser.GameObjects.Graphics
+        private readonly scene: Phaser.Scene,
+        private readonly camera: Phaser.Cameras.Scene2D.Camera,
+        private readonly gfxWorld: Phaser.GameObjects.Graphics,
+        private readonly gfxGame: Phaser.GameObjects.Graphics,
+        private readonly gfxPlayer: Phaser.GameObjects.Graphics,
+        private readonly gfxHud: Phaser.GameObjects.Graphics
     ) {
         this.healthBarRenderer = new HealthBarRenderer(scene, gfxGame);
         this.minimapRenderer = new MinimapRenderer(scene, camera, gfxHud);
@@ -67,12 +68,14 @@ export class GameRenderer {
         }
 
         this.drawProjectiles(state, playerColorById);
+        this.drawShop(state);
         this.drawPortal(state);
         this.drawEnemies(state, activeEntityIds);
         this.drawPlayers(players, activeEntityIds);
         this.updatePlayerNames(players);
         this.minimapRenderer.draw(players, state.bossExitPortal ?? null);
         this.pruneEnemyBarrelRetraction(activeEntityIds);
+        this.pruneShopLabels(state);
 
         this.healthBarRenderer.pruneWorldHealthBars(activeEntityIds);
         this.pruneEntitySnapshots();
@@ -448,6 +451,128 @@ export class GameRenderer {
         }
     }
 
+    private drawShop(state: GameState): void {
+        const merchant = state.shopMerchant;
+        if (merchant) {
+            this.gfxGame.fillStyle(0x151b26, 0.95);
+            this.gfxGame.fillRoundedRect(merchant.x - 34, merchant.y + merchant.radius - 4, 68, 92, 14);
+            this.gfxGame.lineStyle(3, 0x3a465a, 0.9);
+            this.gfxGame.strokeRoundedRect(merchant.x - 34, merchant.y + merchant.radius - 4, 68, 92, 14);
+            this.gfxGame.lineStyle(2, 0xffd66b, 0.85);
+            this.gfxGame.beginPath();
+            this.gfxGame.moveTo(merchant.x - 18, merchant.y + merchant.radius + 12);
+            this.gfxGame.lineTo(merchant.x, merchant.y + merchant.radius + 50);
+            this.gfxGame.lineTo(merchant.x + 18, merchant.y + merchant.radius + 12);
+            this.gfxGame.strokePath();
+
+            this.gfxGame.fillStyle(0x1f2d3f, 0.95);
+            this.gfxGame.lineStyle(3, 0xffd66b, 0.9);
+            this.gfxGame.fillCircle(merchant.x, merchant.y, merchant.radius);
+            this.gfxGame.strokeCircle(merchant.x, merchant.y, merchant.radius);
+            this.gfxGame.fillStyle(0x0b111c, 1);
+            this.gfxGame.fillRect(merchant.x - merchant.radius - 18, merchant.y - merchant.radius - 3, merchant.radius * 2 + 36, 12);
+            this.gfxGame.fillRoundedRect(merchant.x - 30, merchant.y - merchant.radius - 38, 60, 40, 8);
+            this.gfxGame.lineStyle(2, 0x2f3b50, 0.95);
+            this.gfxGame.strokeRect(merchant.x - merchant.radius - 18, merchant.y - merchant.radius - 3, merchant.radius * 2 + 36, 12);
+            this.gfxGame.strokeRoundedRect(merchant.x - 30, merchant.y - merchant.radius - 38, 60, 40, 8);
+            this.gfxGame.fillStyle(0xffd66b, 0.95);
+            this.gfxGame.fillCircle(merchant.x - merchant.radius * 0.28, merchant.y - 6, 4);
+            this.gfxGame.fillCircle(merchant.x + merchant.radius * 0.28, merchant.y - 6, 4);
+            this.updateShopLabel(`merchant_${merchant.label}`, merchant.x, merchant.y - merchant.radius - 12, merchant.label, '#ffd66b');
+        }
+
+        const items = state.shopItems ?? [];
+        for (const item of items) {
+            const color = item.kind === 'HEAL'
+                ? 0x66e6a6
+                : this.getShopRarityColor(item.rarity);
+            const alpha = item.sold ? 0.22 : 0.88;
+
+            this.gfxGame.fillStyle(color, alpha * 0.22);
+            this.gfxGame.fillCircle(item.x, item.y, item.radius * 1.28);
+            this.gfxGame.lineStyle(2.5, color, alpha);
+            this.gfxGame.strokeCircle(item.x, item.y, item.radius);
+            this.drawShopPurchaseProgress(item);
+
+            if (item.kind === 'HEAL') {
+                this.gfxGame.lineStyle(6, color, alpha);
+                this.gfxGame.beginPath();
+                this.gfxGame.moveTo(item.x - 16, item.y);
+                this.gfxGame.lineTo(item.x + 16, item.y);
+                this.gfxGame.moveTo(item.x, item.y - 16);
+                this.gfxGame.lineTo(item.x, item.y + 16);
+                this.gfxGame.strokePath();
+            } else {
+                this.gfxGame.fillStyle(color, alpha * 0.72);
+                this.gfxGame.fillRoundedRect(item.x - 20, item.y - 28, 40, 56, 5);
+                this.gfxGame.lineStyle(2, 0xf4efff, alpha);
+                this.gfxGame.strokeRoundedRect(item.x - 20, item.y - 28, 40, 56, 5);
+                this.gfxGame.fillStyle(0xf4efff, alpha);
+                this.gfxGame.fillCircle(item.x, item.y, 5);
+            }
+
+            const status = item.sold ? 'Vendido' : `${item.label} - ${item.price}`;
+            this.updateShopLabel(`item_${item.id}`, item.x, item.y + item.radius + 24, status, item.sold ? '#8792a8' : '#ffffff');
+        }
+    }
+
+    private drawShopPurchaseProgress(item: NonNullable<GameState['shopItems']>[number]): void {
+        const progress = Phaser.Math.Clamp(item.purchaseProgress ?? 0, 0, 1);
+        if (progress <= 0 || item.sold) return;
+
+        const radius = item.radius * 1.48;
+        this.gfxGame.lineStyle(6, 0xffffff, 0.9);
+        this.gfxGame.beginPath();
+        this.gfxGame.arc(item.x, item.y, radius, -Math.PI / 2, -Math.PI / 2 + (Math.PI * 2 * progress), false);
+        this.gfxGame.strokePath();
+        this.gfxGame.lineStyle(2, 0x091225, 0.8);
+        this.gfxGame.strokeCircle(item.x, item.y, radius - 6);
+    }
+
+    private getShopRarityColor(rarity?: CardRarity): number {
+        switch (rarity) {
+            case 'COMMON': return 0xd9e3f0;
+            case 'UNCOMMON': return 0x66e6a6;
+            case 'RARE': return 0x59a7ff;
+            case 'EPIC': return 0xb388ff;
+            case 'LEGENDARY': return 0xffd66b;
+            default: return 0xffffff;
+        }
+    }
+
+    private updateShopLabel(id: string, x: number, y: number, text: string, color: string): void {
+        let label = this.shopLabelTexts.get(id);
+        if (!label) {
+            label = this.scene.add.text(0, 0, '', {
+                fontFamily: 'Trebuchet MS, sans-serif',
+                fontSize: '15px',
+                color,
+                stroke: '#091225',
+                strokeThickness: 4,
+                align: 'center'
+            });
+            label.setOrigin(0.5, 0.5);
+            label.setDepth(9);
+            this.shopLabelTexts.set(id, label);
+        }
+
+        label.setText(text);
+        label.setColor(color);
+        label.setPosition(x, y);
+        label.setVisible(this.isInCameraView(x, y, 30, 150));
+    }
+
+    private pruneShopLabels(state: GameState): void {
+        const activeIds = new Set<string>();
+        if (state.shopMerchant) activeIds.add(`merchant_${state.shopMerchant.label}`);
+        for (const item of state.shopItems ?? []) activeIds.add(`item_${item.id}`);
+
+        for (const [id, label] of this.shopLabelTexts.entries()) {
+            if (activeIds.has(id)) continue;
+            label.setVisible(false);
+        }
+    }
+
     /**
      * Desenha todos os projéteis
      */
@@ -760,6 +885,55 @@ export class GameRenderer {
             text.destroy();
         }
         this.playerNameTexts.clear();
+
+        for (const text of this.shopLabelTexts.values()) {
+            text.destroy();
+        }
+        this.shopLabelTexts.clear();
+    }
+
+    public drawShopWorld(arenaX: number, arenaY: number, arenaWidth: number, arenaHeight: number): void {
+        this.gfxWorld.clear();
+
+        const abyssPadding = 400;
+        const floorColor = 0x111827;
+        const counterColor = 0x1f2937;
+        const trimColor = 0xffd66b;
+        const edgeSize = 120;
+
+        this.gfxWorld.fillStyle(0x05070d);
+        this.gfxWorld.fillRect(
+            arenaX - abyssPadding, arenaY - abyssPadding,
+            arenaWidth + abyssPadding * 2, arenaHeight + abyssPadding * 2
+        );
+
+        this.gfxWorld.fillStyle(floorColor);
+        this.gfxWorld.fillRect(arenaX, arenaY, arenaWidth, arenaHeight);
+
+        this.gfxWorld.fillStyle(counterColor, 0.72);
+        this.gfxWorld.fillRect(arenaX, arenaY, arenaWidth, edgeSize);
+        this.gfxWorld.fillRect(arenaX, arenaY + arenaHeight - edgeSize, arenaWidth, edgeSize);
+        this.gfxWorld.fillRect(arenaX + 210, arenaY + 260, arenaWidth - 420, 130);
+
+        const step = VISUAL.GRID_STEP;
+        this.gfxWorld.lineStyle(VISUAL.STROKE.gridLine, 0x4b5d78, 0.42);
+        for (let x = arenaX; x <= arenaX + arenaWidth; x += step) {
+            this.gfxWorld.beginPath();
+            this.gfxWorld.moveTo(x, arenaY);
+            this.gfxWorld.lineTo(x, arenaY + arenaHeight);
+            this.gfxWorld.strokePath();
+        }
+        for (let y = arenaY; y <= arenaY + arenaHeight; y += step) {
+            this.gfxWorld.beginPath();
+            this.gfxWorld.moveTo(arenaX, y);
+            this.gfxWorld.lineTo(arenaX + arenaWidth, y);
+            this.gfxWorld.strokePath();
+        }
+
+        this.gfxWorld.lineStyle(3, trimColor, 0.9);
+        this.gfxWorld.strokeRect(arenaX, arenaY, arenaWidth, arenaHeight);
+        this.gfxWorld.lineStyle(2, trimColor, 0.55);
+        this.gfxWorld.strokeRect(arenaX + 210, arenaY + 260, arenaWidth - 420, 130);
     }
 
     public drawBossWorld(arenaX: number, arenaY: number, arenaWidth: number, arenaHeight: number): void {

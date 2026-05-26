@@ -35,6 +35,7 @@ export const GameEvents = {
     OBJECTIVE_COMPLETED: 'objective_completed',
     AUDIO_SETTINGS_CHANGED: 'audio_settings_changed',
     AUDIO_RESTART_REQUESTED: 'audio_restart_requested',
+    SHOP_ENTERED: 'shop_entered',
     BOSS_FIGHT_START: 'boss_fight_start',
     BOSS_DEFEATED: 'boss_defeated',
     BOSS_EXIT_PORTAL_USED: 'boss_exit_portal_used',

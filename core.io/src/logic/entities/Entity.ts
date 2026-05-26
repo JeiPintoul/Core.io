@@ -33,12 +33,12 @@ export class Entity {
         lifespanMultiplier: 1
     };
 
-    constructor(id: string, x: number, y: number, health: number, maxHealth: number, speed: number, radius = 24) {
+    constructor(id: string, x: number, y: number, health: number, maxHealthValue: number, speed: number, radius = 24) {
         this.id = id;
         this.x = x;
         this.y = y;
         this.health = health;
-        this.maxHealth = maxHealth;
+        this.maxHealth = maxHealthValue;
         this.speed = speed;
         this.radius = radius;
         this.knockbackVelocity = { x: 0, y: 0 };

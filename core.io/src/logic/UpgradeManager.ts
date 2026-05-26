@@ -4,6 +4,8 @@ import { MathRng, type Rng } from './Rng';
 
 type RarityWeights = Record<CardRarity, number>;
 
+export const CARD_RARITIES: CardRarity[] = ['COMMON', 'UNCOMMON', 'RARE', 'EPIC', 'LEGENDARY'];
+
 const LEVEL_RARITY_WEIGHTS: Array<{ maxLevel: number; weights: RarityWeights }> = [
     {
         maxLevel: 4,
@@ -51,6 +53,10 @@ export class UpgradeManager {
 
     public getCardById(cardId: string): UpgradeCard | undefined {
         return UPGRADE_CARDS.find((card) => card.id === cardId);
+    }
+
+    public rollCardByRarity(rarity: CardRarity, excludedIds: Set<string> = new Set()): UpgradeCard {
+        return this.rollCard(rarity, excludedIds);
     }
 
     private getWeightsForLevel(playerLevel: number): RarityWeights {

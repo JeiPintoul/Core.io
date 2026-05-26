@@ -60,6 +60,18 @@ export class GodMode {
                 title: 'Upar nivel',
                 description: 'Concede um nivel extra e um aprimoramento pendente',
                 action: () => this.engine.debugLevelUpPlayer()
+            },
+            {
+                key: 'M',
+                title: 'Adicionar dinheiro',
+                description: 'Adiciona 500 moedas ao saldo atual',
+                action: () => this.engine.debugGrantCoins(500)
+            },
+            {
+                key: 'K',
+                title: 'Matar inimigos',
+                description: 'Elimina todos os inimigos vivos',
+                action: () => this.engine.debugKillAllEnemies()
             }
         ];
 
