@@ -86,6 +86,15 @@ export interface CardSelectedPayload {
     colorHex: string;
 }
 
+export interface CardRerollRequestedPayload {
+    playerId: PlayerId;
+    lockedOptionIndexes: number[];
+}
+
+export interface UpgradeDeferredPayload {
+    playerId: PlayerId;
+}
+
 export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'SKIRMISHER' | 'BRUTE' | 'ANOMALY' | 'ANOMALY_DECOY' | 'DREADNOUGHT';
 export type ProjectileFaction = 'player' | 'enemy';
 
@@ -138,6 +147,10 @@ export interface EntityData {
     ownerEnemyId?: string | null;
     spawnedAtMs?: number;
     dreadnoughtSummonProgress?: number;
+    level?: number;
+    currentXp?: number;
+    xpToNextLevel?: number;
+    pendingUpgrades?: number;
 }
 
 export interface ProjectileData {
@@ -313,6 +326,9 @@ export interface GameEventPayloads {
     update_upgrade_modal: UpgradeModalOptionsPayload;
     hide_upgrade_modal: undefined;
     card_selected: CardSelectedPayload;
+    card_reroll_requested: CardRerollRequestedPayload;
+    upgrade_deferred: UpgradeDeferredPayload;
+    upgrade_reopen_requested: undefined;
     game_over: GameOverPayload;
     entity_damage: EntityDamagePayload;
     entity_destroyed: EntityDestroyedPayload;

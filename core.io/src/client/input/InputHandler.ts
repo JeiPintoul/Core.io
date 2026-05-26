@@ -216,9 +216,10 @@ export class InputHandler {
         const allowArrowKeysForP1 = !p2KeyboardActive;
 
         if (playerId === 'player_1') {
+            const pointer = this.scene.input.activePointer;
             const worldPoint = this.camera.getWorldPoint(
-                this.scene.input.activePointer.x,
-                this.scene.input.activePointer.y
+                pointer.x,
+                pointer.y
             );
 
             return {
@@ -228,7 +229,7 @@ export class InputHandler {
                 right: k.d.isDown || (allowArrowKeysForP1 && k.right.isDown),
                 targetX: worldPoint.x,
                 targetY: worldPoint.y,
-                isShooting: this.scene.input.activePointer.isDown,
+                isShooting: pointer.isDown && !this.isPointerOverGameplayUi(pointer.x, pointer.y),
                 autoFire: this.autoFireEnabledByPlayer.player_1,
                 autoSpin: this.autoSpinEnabledByPlayer.player_1,
             };
@@ -300,6 +301,12 @@ export class InputHandler {
             autoFire: false,
             autoSpin: false,
         };
+    }
+
+    private isPointerOverGameplayUi(x: number, y: number): boolean {
+        const element = document.elementFromPoint(x, y);
+        if (!element) return false;
+        return !!element.closest('button, input, .hud-player-panel, #upgrade-modal, #pause-menu');
     }
 
     private getPlayerWorldPosition(state: GameState | null, playerId: PlayerId): { x: number; y: number } {

@@ -89,15 +89,27 @@ export class HealthBarRenderer {
         const ratio = this.resolveSmoothedRatio(state, targetRatio);
         const barColor = targetRatio > 0.4 ? COLORS.HEALTH_BAR : COLORS.HEALTH_LOW;
         const halfW = width / 2;
-        const height = VISUAL.HEALTH_BAR.height;
+        const height = Math.max(5, VISUAL.HEALTH_BAR.height);
+        const segmentGap = 2;
+        const segmentCount = Math.max(4, Math.min(16, Math.ceil(maxHealth / 20)));
+        const segmentWidth = (width - (segmentGap * (segmentCount - 1))) / segmentCount;
+        const filledSegments = ratio * segmentCount;
 
-        // Background
-        this.gfxGame.fillStyle(COLORS.HEALTH_BG);
-        this.gfxGame.fillRect(cx - halfW, y, width, height);
+        for (let index = 0; index < segmentCount; index++) {
+            const x = cx - halfW + index * (segmentWidth + segmentGap);
+            const segmentFill = Phaser.Math.Clamp(filledSegments - index, 0, 1);
 
-        // Health fill
-        this.gfxGame.fillStyle(barColor);
-        this.gfxGame.fillRect(cx - halfW, y, width * ratio, height);
+            this.gfxGame.fillStyle(COLORS.HEALTH_BG, 0.78);
+            this.gfxGame.fillRect(x, y, segmentWidth, height);
+
+            if (segmentFill > 0) {
+                this.gfxGame.fillStyle(barColor, 0.96);
+                this.gfxGame.fillRect(x, y, segmentWidth * segmentFill, height);
+            }
+
+            this.gfxGame.lineStyle(1, 0xffffff, 0.18);
+            this.gfxGame.strokeRect(x, y, segmentWidth, height);
+        }
     }
 
     /**

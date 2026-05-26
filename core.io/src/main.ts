@@ -1,31 +1,23 @@
 import './style.css';
 import './client/lobby/lobby.css';
-import { createIcons, Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X } from 'lucide';
+import { createIcons, Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X, Play, RotateCcw, Lock, Unlock } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
-import {
-    MODIFIER_META,
-    RARITY_LABELS_PTBR,
-    formatModifierValue,
-    getUpgradeCardFlavor,
-    getUpgradeCardSymbol
-} from './client/hud/UpgradePresentation';
+import { UpgradeModalController, type UpgradeGamepadActionKey, type UpgradeGamepadActionState, type UpgradeUiMode } from './client/hud/UpgradeModalController';
 import { GodMode } from './debug/GodMode';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
-import { PLAYER_IDS, type EntityStats, type PlayerId, type RunConfiguration, type UpgradeRollOption } from './shared/Types';
+import { PLAYER_IDS, type PlayerId, type RunConfiguration } from './shared/Types';
 import { DEATH_ANIMATION_DURATION_MS } from './client/constants/GameConstants';
 import { LobbyController } from './client/lobby/LobbyController';
 import { HelpModal } from './client/lobby/HelpModal';
-
-console.log('Inicializando Core.io...');
 
 const engine = new GameEngine();
 createPhaserGame();
 const hudController = new HudController();
 new GodMode(engine);
 
-type UiMode = 'INITIAL_MENU' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
+type UiMode = UpgradeUiMode;
 
 const hudLayerEl = document.getElementById('hud-layer');
 const lobbyRootEl = document.getElementById('lobby');
@@ -41,20 +33,12 @@ const pauseMenu = document.getElementById('pause-menu');
 const btnResume = document.getElementById('btn-resume') as HTMLButtonElement | null;
 const btnRestart = document.getElementById('btn-restart') as HTMLButtonElement | null;
 const btnHomePause = document.getElementById('btn-home-pause') as HTMLButtonElement | null;
-const upgradeModal = document.getElementById('upgrade-modal');
-const upgradeTitleEl = upgradeModal?.querySelector('h2') as HTMLHeadingElement | null;
-const upgradeRemainingEl = document.getElementById('upgrade-remaining');
-const upgradeCardsEl = document.getElementById('upgrade-cards');
 const hudStatsEl = document.getElementById('hud-stats');
 
 let gameOverUiTimeoutId: number | null = null;
-let waitingUpgradeSelection = false;
-let activeUpgradePlayerId: PlayerId | null = null;
 let uiMode: UiMode = lobbyRootEl ? 'INITIAL_MENU' : 'IN_GAME';
 let previousUiMode: UiMode | null = null;
-let upgradeGamepadCardIndex = 0;
 let pauseMenuGamepadFocusIndex = 0;
-let activeUpgradeOptions: UpgradeRollOption[] = [];
 let gamepadUiPollFrameId: number | null = null;
 let activeRunConfiguration: RunConfiguration | null = null;
 
@@ -62,7 +46,6 @@ type UiGamepadActionKey = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel
 type UiGamepadActionState = Record<UiGamepadActionKey, boolean>;
 
 const GAMEPAD_NAV_AXIS_THRESHOLD = 0.55;
-const UPGRADE_GAMEPAD_GRID_COLUMNS = 3;
 
 const gamepadActionLatchByPadIndex = new Map<number, UiGamepadActionState>();
 const _initialAudio = hudController.getInitialAudioPrefs();
@@ -73,8 +56,15 @@ const helpModal = new HelpModal();
 const lobby = new LobbyController({
     onStart: ({ runConfiguration }) => startRun(runConfiguration),
     onOpenHelp: () => helpModal.open(),
-    onOpenSettings: () => { /* placeholder — settings has no behaviour yet */ },
+    onOpenSettings: () => toggleSettingsPanel(),
     onToggleAudioPanel: () => toggleSettingsPanel(),
+});
+const upgradeModalController = new UpgradeModalController({
+    hudController,
+    getPlayerName: (playerId) => getConfiguredPlayerName(playerId),
+    getUiMode: () => uiMode,
+    setUiMode: (mode) => setUiMode(mode),
+    isPauseMenuVisible: () => isPauseMenuVisible()
 });
 
 function toggleSettingsPanel(): void {
@@ -90,7 +80,7 @@ function setUiMode(nextMode: UiMode): void {
     }
 
     if (nextMode !== 'UPGRADE') {
-        clearUpgradeGamepadSelectionVisual();
+        upgradeModalController.clearGamepadSelectionVisual();
     }
 
     applyUiModeEffects();
@@ -169,148 +159,18 @@ function togglePauseFromUi(): void {
 
     if (isPaused) {
         previousUiMode = uiMode;
+        hudController.setStatsPinned(true, 'pause');
         setUiMode('PAUSED');
     } else {
         const returnMode = previousUiMode ?? 'IN_GAME';
         previousUiMode = null;
+        hudController.setStatsPinned(returnMode === 'UPGRADE', 'upgrade');
         setUiMode(returnMode);
     }
 }
 
-function setUpgradeModalVisible(visible: boolean): void {
-    upgradeModal?.classList.toggle('is-visible', visible);
-}
-
-function setUpgradesRemaining(value: number): void {
-    if (upgradeRemainingEl) upgradeRemainingEl.textContent = `Aprimoramentos Restantes: ${Math.max(0, value)}`;
-}
-
 function getConfiguredPlayerName(playerId: PlayerId): string {
     return activeRunConfiguration?.players[playerId]?.name ?? 'Jogador';
-}
-
-function setUpgradeSelectionOwner(playerId: PlayerId | null): void {
-    activeUpgradePlayerId = playerId;
-    if (!upgradeTitleEl) return;
-    upgradeTitleEl.textContent = playerId ? `Escolha de ${getConfiguredPlayerName(playerId)}` : 'Escolha um Aprimoramento';
-}
-
-function clearUpgradeCards(): void {
-    upgradeCardsEl?.replaceChildren();
-}
-
-function setUpgradeCardsDisabled(disabled: boolean): void {
-    if (!upgradeCardsEl) return;
-    for (const cardButton of upgradeCardsEl.querySelectorAll('button')) cardButton.disabled = disabled;
-}
-
-function renderModifierBadges(modifiers: UpgradeRollOption['card']['modifiers']): HTMLElement {
-    const container = document.createElement('div');
-    container.className = 'upgrade-card-modifiers';
-
-    for (const [statKey, value] of Object.entries(modifiers) as Array<[keyof EntityStats, number]>) {
-        if (value === 0) continue;
-
-        const meta = MODIFIER_META[statKey];
-        const badge = document.createElement('div');
-        badge.className = `upgrade-modifier upgrade-modifier--${meta.tone}`;
-
-        const icon = document.createElement('span');
-        icon.className = 'upgrade-modifier-icon';
-        icon.textContent = meta.icon;
-
-        const label = document.createElement('span');
-        label.className = 'upgrade-modifier-label';
-        label.textContent = meta.label;
-
-        const amount = document.createElement('strong');
-        amount.className = 'upgrade-modifier-value';
-        amount.textContent = formatModifierValue(statKey, value);
-
-        badge.append(icon, label, amount);
-        container.appendChild(badge);
-    }
-
-    return container;
-}
-
-function renderUpgradeCards(options: UpgradeRollOption[]): void {
-    if (!upgradeCardsEl) return;
-
-    activeUpgradeOptions = options;
-    clearUpgradeCards();
-
-    for (const [index, option] of options.entries()) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.className = 'upgrade-card';
-        button.style.setProperty('--upgrade-card-color', option.colorHex);
-        button.dataset.optionIndex = index.toString();
-
-        const rarityEl = document.createElement('span');
-        rarityEl.className = 'upgrade-card-rarity';
-        rarityEl.textContent = RARITY_LABELS_PTBR[option.card.rarity];
-
-        const nameEl = document.createElement('h3');
-        nameEl.className = 'upgrade-card-name';
-        nameEl.textContent = option.card.name;
-
-        const artEl = document.createElement('div');
-        artEl.className = 'upgrade-card-art';
-
-        const symbolEl = document.createElement('span');
-        symbolEl.className = 'upgrade-card-art-symbol';
-        symbolEl.textContent = getUpgradeCardSymbol(option.card.id);
-
-        const flavorEl = document.createElement('p');
-        flavorEl.className = 'upgrade-card-art-flavor';
-        flavorEl.textContent = getUpgradeCardFlavor(option.card.id);
-
-        artEl.append(symbolEl, flavorEl);
-
-        const descriptionEl = document.createElement('p');
-        descriptionEl.className = 'upgrade-card-description';
-        descriptionEl.textContent = option.card.description;
-
-        const footerEl = document.createElement('div');
-        footerEl.className = 'upgrade-card-footer';
-        footerEl.textContent = 'TOQUE PARA ESCOLHER';
-
-        button.append(rarityEl, nameEl, artEl, descriptionEl, renderModifierBadges(option.card.modifiers), footerEl);
-
-        button.addEventListener('mouseenter', () => {
-            if (waitingUpgradeSelection) return;
-            upgradeGamepadCardIndex = index;
-            applyUpgradeGamepadSelectionVisual();
-            hudController.previewStatModifiers(option.card.modifiers);
-        });
-
-        button.addEventListener('mouseleave', () => {
-            if (waitingUpgradeSelection) return;
-            hudController.clearStatPreview();
-        });
-
-        button.addEventListener('click', () => {
-            if (waitingUpgradeSelection || !activeUpgradePlayerId) return;
-
-            waitingUpgradeSelection = true;
-            setUpgradeCardsDisabled(true);
-            hudController.clearStatPreview();
-
-            emitGameEvent(GameEvents.CARD_SELECTED, {
-                playerId: activeUpgradePlayerId,
-                cardId: option.card.id,
-                colorHex: option.colorHex
-            });
-        });
-
-        upgradeCardsEl.appendChild(button);
-    }
-
-    if (options.length > 0) {
-        upgradeGamepadCardIndex = Math.max(0, Math.min(upgradeGamepadCardIndex, options.length - 1));
-        applyUpgradeGamepadSelectionVisual();
-    }
 }
 
 function isButtonPressed(button: GamepadButton | undefined): boolean {
@@ -429,31 +289,11 @@ function adjustRangeInputValue(inputEl: HTMLInputElement, direction: -1 | 1): vo
     inputEl.dispatchEvent(new Event('input', { bubbles: true }));
 }
 
-function applyUpgradeGamepadSelectionVisual(): void {
-    if (!upgradeCardsEl || activeUpgradeOptions.length === 0) return;
-
-    const buttons = Array.from(upgradeCardsEl.querySelectorAll<HTMLButtonElement>('button.upgrade-card'));
-    if (buttons.length === 0) return;
-
-    upgradeGamepadCardIndex = (upgradeGamepadCardIndex + buttons.length) % buttons.length;
-    for (const [index, button] of buttons.entries()) {
-        button.classList.toggle('is-gamepad-selected', index === upgradeGamepadCardIndex);
-    }
-
-    const selectedOption = activeUpgradeOptions[upgradeGamepadCardIndex];
-    if (selectedOption && !waitingUpgradeSelection) {
-        hudController.previewStatModifiers(selectedOption.card.modifiers);
-    }
-}
-
-function clearUpgradeGamepadSelectionVisual(): void {
-    upgradeCardsEl?.querySelectorAll('button.upgrade-card.is-gamepad-selected').forEach((b) => b.classList.remove('is-gamepad-selected'));
-}
-
 function resolveUiNavigationGamepad(connectedGamepads: Gamepad[]): Gamepad | null {
     if (connectedGamepads.length === 0) return null;
 
     if (uiMode === 'UPGRADE') {
+        const activeUpgradePlayerId = upgradeModalController.getActivePlayerId();
         if (activeUpgradePlayerId && activeRunConfiguration?.players[activeUpgradePlayerId].control === 'GAMEPAD') {
             return resolvePlayerAssignedGamepad(activeUpgradePlayerId, connectedGamepads) ?? connectedGamepads[0];
         }
@@ -515,23 +355,10 @@ function handlePauseGamepadNavigation(gamepadIndex: number, actions: UiGamepadAc
 }
 
 function handleUpgradeGamepadNavigation(gamepadIndex: number, actions: UiGamepadActionState): void {
-    if (!upgradeModal?.classList.contains('is-visible') || waitingUpgradeSelection || activeUpgradeOptions.length === 0 || !upgradeCardsEl) return;
-
-    const cardButtons = Array.from(upgradeCardsEl.querySelectorAll<HTMLButtonElement>('button.upgrade-card'));
-    if (cardButtons.length === 0) return;
-
-    let nextIndex = upgradeGamepadCardIndex;
-    if (consumeGamepadAction(gamepadIndex, 'left', actions.left)) nextIndex -= 1;
-    if (consumeGamepadAction(gamepadIndex, 'right', actions.right)) nextIndex += 1;
-    if (consumeGamepadAction(gamepadIndex, 'up', actions.up)) nextIndex -= UPGRADE_GAMEPAD_GRID_COLUMNS;
-    if (consumeGamepadAction(gamepadIndex, 'down', actions.down)) nextIndex += UPGRADE_GAMEPAD_GRID_COLUMNS;
-
-    if (nextIndex !== upgradeGamepadCardIndex) {
-        upgradeGamepadCardIndex = ((nextIndex % cardButtons.length) + cardButtons.length) % cardButtons.length;
-        applyUpgradeGamepadSelectionVisual();
-    }
-
-    if (consumeGamepadAction(gamepadIndex, 'confirm', actions.confirm)) cardButtons[upgradeGamepadCardIndex]?.click();
+    upgradeModalController.handleGamepadNavigation(
+        actions as UpgradeGamepadActionState,
+        (actionKey: UpgradeGamepadActionKey, pressed) => consumeGamepadAction(gamepadIndex, actionKey, pressed)
+    );
 }
 
 function canTogglePauseWithGamepad(): boolean {
@@ -554,7 +381,6 @@ function pollGamepadUiNavigation(): void {
     const activeGamepad = resolveUiNavigationGamepad(connectedGamepads);
 
     if (!activeGamepad) {
-        // Drain latches for any connected pad so a press at idle time doesn't fire later.
         for (const pad of connectedGamepads) {
             const a = readGamepadUiActions(pad);
             getEdgeActions(pad.index, a);
@@ -593,12 +419,7 @@ function clearPendingGameOverUiTimeout(): void {
 function startRun(runConfiguration: RunConfiguration): void {
     clearPendingGameOverUiTimeout();
     setPauseMenuVisible(false);
-    setUpgradeModalVisible(false);
-    setUpgradeSelectionOwner(null);
-    clearUpgradeCards();
-    hudController.clearStatPreview();
-    hudController.setStatsPinned(false);
-    waitingUpgradeSelection = false;
+    upgradeModalController.resetForRun();
     applyPauseUi(false);
 
     activeRunConfiguration = runConfiguration;
@@ -615,43 +436,30 @@ function startRun(runConfiguration: RunConfiguration): void {
     engine.start();
     emitGameEvent(GameEvents.START_RUN_WITH_COLOR, { playerColors });
 
-    createIcons({ icons: { Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X } });
+    createIcons({ icons: { Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X, Play, RotateCcw, Lock, Unlock } });
     setUiMode('IN_GAME');
 }
 
 function goToMainMenu(): void {
     clearPendingGameOverUiTimeout();
 
-    // Emit GAME_OVER to flush run stats, then suppress its UI side-effect.
     const summary = engine.getRunSummary();
     emitGameEvent(GameEvents.GAME_OVER, summary);
     clearPendingGameOverUiTimeout();
 
     engine.stop();
     setPauseMenuVisible(false);
-    setUpgradeModalVisible(false);
-    setUpgradeSelectionOwner(null);
-    clearUpgradeCards();
-    hudController.clearStatPreview();
-    hudController.setStatsPinned(false);
-    waitingUpgradeSelection = false;
+    upgradeModalController.close();
     applyPauseUi(false);
 
     setUiMode('INITIAL_MENU');
 }
 
 onGameEvent(GameEvents.GAME_OVER, () => {
-    console.log('Game Over!');
-
     engine.stop();
     setPauseMenuVisible(false);
     applyPauseUi(false);
-    setUpgradeModalVisible(false);
-    setUpgradeSelectionOwner(null);
-    clearUpgradeCards();
-    hudController.clearStatPreview();
-    hudController.setStatsPinned(false);
-    waitingUpgradeSelection = false;
+    upgradeModalController.close();
 
     if (gameOverUiTimeoutId === null) {
         gameOverUiTimeoutId = window.setTimeout(() => {
@@ -690,7 +498,6 @@ if (musicVolumeInput) {
 if (musicVolumeGlobalInput) {
     musicVolumeGlobalInput.addEventListener('input', () => {
         musicVolume = Math.max(0, Math.min(100, Number(musicVolumeGlobalInput.value))) / 100;
-        // Moving the slider above zero implicitly unmutes.
         if (musicVolume > 0) musicMuted = false;
         updateAudioHud();
         emitAudioSettings();
@@ -722,48 +529,6 @@ if (btnRestart) {
     });
 }
 
-onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, ({ playerId, upgradesRemaining }) => {
-    setUpgradeModalVisible(true);
-    setUpgradeSelectionOwner(playerId);
-    hudController.setStatsPinned(true);
-    hudStatsEl?.classList.remove('is-user-collapsed');
-    hudController.clearStatPreview();
-    setUpgradesRemaining(upgradesRemaining);
-    waitingUpgradeSelection = false;
-    upgradeGamepadCardIndex = 0;
-    setUiMode('UPGRADE');
-});
-
-onGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, ({ playerId, upgradesRemaining, options }) => {
-    setUpgradeModalVisible(true);
-    setUpgradeSelectionOwner(playerId);
-    hudController.setStatsPinned(true);
-    hudStatsEl?.classList.remove('is-user-collapsed');
-    hudController.clearStatPreview();
-    setUpgradesRemaining(upgradesRemaining);
-    waitingUpgradeSelection = false;
-    upgradeGamepadCardIndex = 0;
-    renderUpgradeCards(options);
-    setUpgradeCardsDisabled(false);
-    setUiMode('UPGRADE');
-});
-
-onGameEvent(GameEvents.HIDE_UPGRADE_MODAL, () => {
-    setUpgradeModalVisible(false);
-    setUpgradeSelectionOwner(null);
-    clearUpgradeCards();
-    hudController.clearStatPreview();
-    hudController.setStatsPinned(false);
-    hudStatsEl?.classList.remove('is-user-collapsed');
-    waitingUpgradeSelection = false;
-    activeUpgradeOptions = [];
-    upgradeGamepadCardIndex = 0;
-    clearUpgradeGamepadSelectionVisual();
-
-    if (uiMode === 'GAME_OVER' || uiMode === 'INITIAL_MENU') return;
-    setUiMode(isPauseMenuVisible() ? 'PAUSED' : 'IN_GAME');
-});
-
 window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.repeat) return;
     if (helpModal.isOpen()) return;
@@ -771,16 +536,9 @@ window.addEventListener('keydown', (event) => {
     togglePauseFromUi();
 });
 
-if (hudStatsEl) {
-    hudStatsEl.addEventListener('click', () => {
-        if (uiMode !== 'UPGRADE') return;
-        hudStatsEl.classList.toggle('is-user-collapsed');
-    });
-}
-
 applyUiModeEffects();
 gamepadUiPollFrameId = window.requestAnimationFrame(pollGamepadUiNavigation);
-createIcons({ icons: { Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X } });
+createIcons({ icons: { Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X, Play, RotateCcw, Lock, Unlock } });
 updateAudioHud();
 emitAudioSettings();
 
@@ -823,5 +581,6 @@ window.addEventListener('beforeunload', () => {
         gamepadUiPollFrameId = null;
     }
     engine.destroy();
+    upgradeModalController.destroy();
     hudController.destroy();
 });

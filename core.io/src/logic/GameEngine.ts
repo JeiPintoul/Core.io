@@ -7,6 +7,7 @@ import {
 } from '../shared/ProjectileVisuals';
 import {
     PLAYER_IDS,
+    type CardRerollRequestedPayload,
     type CardSelectedPayload,
     type EntityStats,
     type GameState,
@@ -15,7 +16,8 @@ import {
     type PlayerInputPayload,
     type ProjectileFaction,
     type RunConfiguration,
-    type EnemyType
+    type EnemyType,
+    type UpgradeRollOption
 } from '../shared/Types';
 import { Entity } from './entities/Entity';
 import { HostileEntity, type EnemyUpdateContext } from './entities/enemies/HostileEntity';
@@ -78,9 +80,12 @@ export class GameEngine {
     private runConfiguration: RunConfiguration = structuredClone(DEFAULT_RUN_CONFIGURATION);
     private upgradeSelectionQueue: PlayerId[] = [];
     private activeUpgradePlayerId: PlayerId | null = null;
+    private activeUpgradeOptions: UpgradeRollOption[] = [];
+    private deferredUpgradePlayerIds = new Set<PlayerId>();
+    private reopenedUpgradeReturnState: EngineState | null = null;
 
     constructor() {
-        this.upgradeManager = new UpgradeManager();
+        this.upgradeManager = new UpgradeManager(this.rng);
         this.missionManager = new MissionManager((rewardUpgrades) => {
             for (const player of this.getPlayers()) {
                 player.pendingUpgrades += rewardUpgrades;
@@ -178,6 +183,24 @@ export class GameEngine {
         this.eventUnsubscribers.push(
             onGameEvent(GameEvents.CARD_SELECTED, (selection) => {
                 this.handleCardSelected(selection);
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.CARD_REROLL_REQUESTED, (payload) => {
+                this.handleCardRerollRequested(payload);
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.UPGRADE_DEFERRED, ({ playerId }) => {
+                this.handleUpgradeDeferred(playerId);
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.UPGRADE_REOPEN_REQUESTED, () => {
+                this.reopenDeferredUpgrades();
             })
         );
 
@@ -316,6 +339,8 @@ export class GameEngine {
     private clearUpgradeSelectionState(): void {
         this.upgradeSelectionQueue = [];
         this.activeUpgradePlayerId = null;
+        this.activeUpgradeOptions = [];
+        this.reopenedUpgradeReturnState = null;
         this.setPlayersUpgradingState(false);
     }
 
@@ -451,6 +476,7 @@ export class GameEngine {
         this.director.primeTimers(now);
         this.missionManager.reset();
         this.clearUpgradeSelectionState();
+        this.deferredUpgradePlayerIds.clear();
 
         this.totalEnemiesKilledInRun = 0;
         this.totalAnomaliesMetInRun = 0;
@@ -506,17 +532,18 @@ export class GameEngine {
         }
 
         const playerLockedForUpgrade = this.engineState === EngineState.UPGRADE_PHASE && this.activeUpgradePlayerId !== null;
+        if (playerLockedForUpgrade) {
+            return;
+        }
 
-        if (!playerLockedForUpgrade) {
-            for (const player of this.getPlayers()) {
-                if (player.health <= 0) continue;
-                const playerId = player.id as PlayerId;
-                const input = this.currentInputs[playerId];
-                const playerStats = playerStatsById.get(playerId);
-                if (!input || !playerStats) continue;
-                this.updatePlayerMovement(player, input, dt);
-                this.tryPlayerShoot(player, input, currentTime, playerStats);
-            }
+        for (const player of this.getPlayers()) {
+            if (player.health <= 0) continue;
+            const playerId = player.id as PlayerId;
+            const input = this.currentInputs[playerId];
+            const playerStats = playerStatsById.get(playerId);
+            if (!input || !playerStats) continue;
+            this.updatePlayerMovement(player, input, dt);
+            this.tryPlayerShoot(player, input, currentTime, playerStats);
         }
 
         this.updateEnemies(dt, currentTime);
@@ -540,6 +567,10 @@ export class GameEngine {
             health: player.health, isDead: player.health <= 0,
             radius: player.radius, color: player.color, name: player.name,
             stats: player.currentStats, aimAngle: player.aimAngle,
+            level: player.level,
+            currentXp: player.currentXp,
+            xpToNextLevel: player.xpToNextLevel,
+            pendingUpgrades: player.pendingUpgrades,
         }));
 
         const exportState: GameState = {
@@ -995,6 +1026,9 @@ export class GameEngine {
         activePlayer.applyUpgradeColorBuff(colorHex);
         activePlayer.applyUpgradeColor(colorHex);
         activePlayer.consumePendingUpgrade();
+        if (activePlayer.pendingUpgrades <= 0) {
+            this.deferredUpgradePlayerIds.delete(selection.playerId);
+        }
         this.syncPlayerCoreStats(activePlayer);
 
         if (activePlayer.pendingUpgrades > 0) {
@@ -1020,13 +1054,85 @@ export class GameEngine {
             return;
         }
 
+        const returnState = this.reopenedUpgradeReturnState;
         this.clearUpgradeSelectionState();
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+
+        if (returnState) {
+            this.engineState = returnState;
+        }
     }
 
     private emitUpgradeOptions(playerId: PlayerId, upgradesRemaining: number, playerLevel: number): void {
         const options = this.upgradeManager.rollUpgradeOptions(playerLevel);
+        this.activeUpgradeOptions = options;
         emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, { playerId, upgradesRemaining, options });
+    }
+
+    private handleCardRerollRequested(payload: CardRerollRequestedPayload): void {
+        if (!this.activeUpgradePlayerId || payload.playerId !== this.activeUpgradePlayerId) return;
+        const activePlayer = this.getPlayerById(payload.playerId);
+        if (!activePlayer || activePlayer.pendingUpgrades <= 0) return;
+        if (this.activeUpgradeOptions.length === 0) return;
+
+        const nextOptions = [...this.activeUpgradeOptions];
+        const lockedIndexes = new Set(
+            payload.lockedOptionIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < nextOptions.length)
+        );
+        if (lockedIndexes.size >= nextOptions.length) return;
+
+        const excludedIds = new Set(this.activeUpgradeOptions.map((option) => option.card.id));
+
+        for (let index = 0; index < nextOptions.length; index++) {
+            if (lockedIndexes.has(index)) continue;
+            nextOptions[index] = this.upgradeManager.rerollUpgradeOption(activePlayer.level, Array.from(excludedIds));
+            excludedIds.add(nextOptions[index].card.id);
+        }
+
+        this.activeUpgradeOptions = nextOptions;
+        emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
+            playerId: payload.playerId,
+            upgradesRemaining: activePlayer.pendingUpgrades,
+            options: nextOptions
+        });
+    }
+
+    private handleUpgradeDeferred(playerId: PlayerId): void {
+        if (!this.activeUpgradePlayerId || playerId !== this.activeUpgradePlayerId) return;
+        const activePlayer = this.getPlayerById(playerId);
+        if (activePlayer && activePlayer.pendingUpgrades > 0) {
+            this.deferredUpgradePlayerIds.add(playerId);
+        }
+        this.activeUpgradePlayerId = null;
+        this.activeUpgradeOptions = [];
+        this.setPlayersUpgradingState(false);
+
+        if (this.reopenedUpgradeReturnState) {
+            this.engineState = this.reopenedUpgradeReturnState;
+            this.reopenedUpgradeReturnState = null;
+            this.upgradeSelectionQueue = [];
+            emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+            return;
+        }
+
+        if (this.upgradeSelectionQueue.length > 0) {
+            this.advanceUpgradeSelection();
+            return;
+        }
+
+        emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+    }
+
+    private reopenDeferredUpgrades(): void {
+        if (this.activeUpgradePlayerId) return;
+        const deferredPlayers = this.getPlayers()
+            .filter((player) => player.pendingUpgrades > 0 && this.deferredUpgradePlayerIds.has(player.id as PlayerId));
+        if (deferredPlayers.length === 0) return;
+
+        this.reopenedUpgradeReturnState = this.engineState;
+        this.engineState = EngineState.UPGRADE_PHASE;
+        this.upgradeSelectionQueue = deferredPlayers.map((player) => player.id as PlayerId);
+        this.advanceUpgradeSelection();
     }
 
     private reviveDefeatedPlayers(): void {

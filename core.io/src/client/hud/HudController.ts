@@ -1,6 +1,6 @@
 import { onGameEvent, GameEvents } from '../../shared/EventBus';
 import { calculatePlayerShotCooldownSeconds } from '../../shared/CombatMath';
-import { type EntityStats, type GameState, type ObjectiveState, type StatModifiers } from '../../shared/Types';
+import { PLAYER_IDS, type EntityData, type EntityStats, type GameState, type ObjectiveState, type PlayerId, type StatModifiers } from '../../shared/Types';
 import { type ColorDefinition, getColorDefinition } from '../../logic/constants/ColorConfig';
 
 interface StoredStats {
@@ -10,7 +10,6 @@ interface StoredStats {
 }
 
 const EMPTY_STATS: StoredStats = { maxWave: 0, totalKills: 0, totalAnomalies: 0 };
-
 const DEFAULT_PLAYER_STATS: EntityStats = {
     maxHealth: 0,
     healthRegen: 0,
@@ -22,53 +21,67 @@ const DEFAULT_PLAYER_STATS: EntityStats = {
     movementSpeed: 0
 };
 
+const PLAYER_SLOT_LABELS: Record<PlayerId, string> = {
+    player_1: 'P1',
+    player_2: 'P2',
+    player_3: 'P3',
+    player_4: 'P4'
+};
+
+const STAT_ROWS: Array<{ key: keyof EntityStats; label: string }> = [
+    { key: 'maxHealth', label: 'Vida Maxima' },
+    { key: 'healthRegen', label: 'Regeneracao' },
+    { key: 'bodyDamage', label: 'Dano Contato' },
+    { key: 'bulletDamage', label: 'Dano Projetil' },
+    { key: 'bulletSpeed', label: 'Vel. Projetil' },
+    { key: 'bulletPenetration', label: 'Penetracao' },
+    { key: 'reloadPoints', label: 'Recarga' },
+    { key: 'movementSpeed', label: 'Velocidade' }
+];
+
 export class HudController {
     private readonly unsubscribers: Array<() => void> = [];
     private readonly waveTransitionTimeoutIds: number[] = [];
+    private readonly playerPanelEls = new Map<PlayerId, HTMLElement>();
 
-    private currentLevel = 1;
-    private currentXp = 0;
-    private xpRequired = 100;
-    private currentPlayerHealth = 0;
-    private currentPlayerStats: EntityStats = { ...DEFAULT_PLAYER_STATS };
+    private currentPlayers: EntityData[] = [];
     private activePreviewModifiers: StatModifiers | null = null;
+    private activeStatsPlayerId: PlayerId = 'player_1';
+    private activeUpgradePlayerId: PlayerId | null = null;
+    private openedStatsPlayerId: PlayerId | null = null;
+    private readonly closedUpgradeStatsPlayerIds = new Set<PlayerId>();
+    private statsInteractionMode: 'wave' | 'pause' | 'upgrade' = 'wave';
+    private toastTimeoutId: number | null = null;
 
     private readonly waveInfoTitleEl = this.getEl<HTMLElement>('hud-wave-info-title');
     private readonly waveInfoSubEl = this.getEl<HTMLElement>('hud-wave-info-sub');
     private readonly waveTransitionEl = this.getEl<HTMLElement>('hud-wave-transition');
     private readonly enemyCounterEl = this.getEl<HTMLElement>('hud-enemy-counter');
     private readonly objectiveEl = this.getEl<HTMLElement>('hud-objective');
-    private readonly statsTriggerEl = this.getEl<HTMLElement>('hud-stats');
+    private readonly objectiveLabelEl = this.getEl<HTMLElement>('hud-objective-label');
+    private readonly objectiveFillEl = this.getEl<HTMLElement>('hud-objective-fill');
+    private readonly bossBarEl = this.getEl<HTMLElement>('hud-boss-bar');
+    private readonly bossNameEl = this.getEl<HTMLElement>('hud-boss-name');
+    private readonly bossFillEl = this.getEl<HTMLElement>('hud-boss-fill');
+    private readonly bossValueEl = this.getEl<HTMLElement>('hud-boss-value');
+    private readonly statsRootEl = this.getEl<HTMLElement>('hud-stats');
     private readonly levelLabelEl = this.getEl<HTMLElement>('hud-level-label');
     private readonly xpProgressEl = this.getEl<HTMLElement>('hud-xp-progress');
     private readonly xpFillEl = this.getEl<HTMLElement>('hud-xp-fill');
-
-    private readonly statHealthEl = this.getEl<HTMLElement>('stat-health');
-    private readonly statHealthRegenEl = this.getEl<HTMLElement>('stat-health-regen');
-    private readonly statBodyDamageEl = this.getEl<HTMLElement>('stat-body-damage');
-    private readonly statBulletDamageEl = this.getEl<HTMLElement>('stat-bullet-damage');
-    private readonly statBulletSpeedEl = this.getEl<HTMLElement>('stat-bullet-speed');
-    private readonly statBulletPenetrationEl = this.getEl<HTMLElement>('stat-bullet-penetration');
-    private readonly statReloadEl = this.getEl<HTMLElement>('stat-reload');
-    private readonly statMoveSpeedEl = this.getEl<HTMLElement>('stat-move-speed');
-
+    private readonly upgradeBankEl = this.getEl<HTMLButtonElement>('hud-upgrade-bank');
     private readonly globalMaxWaveEl = this.getEl<HTMLElement>('stat-max-wave');
     private readonly globalTotalKillsEl = this.getEl<HTMLElement>('stat-total-kills');
     private readonly globalTotalAnomaliesEl = this.getEl<HTMLElement>('stat-total-anomalies');
     private readonly toastEl = this.getEl<HTMLElement>('hud-toast');
-    private readonly colorBadgeEl = this.getEl<HTMLElement>('hud-color-badge');
-    private toastTimeoutId: number | null = null;
-    private activeColorDef: ColorDefinition | null = null;
 
     constructor() {
         this.bindEvents();
-        this.renderLevel();
+        this.bindStatsRoot();
         this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
-        this.renderXpBar();
-        this.renderXpProgress();
         this.renderEnemyCount(0);
         this.renderObjective(null);
-        this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
+        this.renderBossBar(null);
+        this.renderPrimaryXp(null);
         this.renderGlobalStats(this.loadStats());
     }
 
@@ -87,162 +100,151 @@ export class HudController {
     }
 
     public resetForNewRun(): void {
-        this.currentLevel = 1;
-        this.currentXp = 0;
-        this.xpRequired = 100;
-        this.currentPlayerHealth = 0;
-        this.currentPlayerStats = { ...DEFAULT_PLAYER_STATS };
-        this.activeColorDef = null;
-        this.updateColorBadge();
-
+        this.currentPlayers = [];
+        this.activePreviewModifiers = null;
+        this.activeStatsPlayerId = 'player_1';
+        this.activeUpgradePlayerId = null;
+        this.openedStatsPlayerId = null;
+        this.closedUpgradeStatsPlayerIds.clear();
         this.clearWaveTransitionTimers();
         this.hideWaveTransition();
         this.setStatsPinned(false);
-        this.clearStatPreview();
-        this.renderLevel();
         this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
-        this.renderXpBar();
-        this.renderXpProgress();
         this.renderEnemyCount(0);
         this.renderObjective(null);
-        this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
+        this.renderBossBar(null);
+        this.renderPrimaryXp(null);
+        this.renderPlayerPanels([]);
     }
 
     public destroy(): void {
         this.clearWaveTransitionTimers();
-
-        for (const unsubscribe of this.unsubscribers) {
-            unsubscribe();
-        }
-
+        for (const unsubscribe of this.unsubscribers) unsubscribe();
         this.unsubscribers.length = 0;
     }
 
-    public setStatsPinned(pinned: boolean): void {
-        this.statsTriggerEl?.classList.toggle('is-pinned', pinned);
+    public setStatsPinned(pinned: boolean, mode: 'pause' | 'upgrade' = 'pause'): void {
+        this.statsInteractionMode = pinned ? mode : 'wave';
+        this.statsRootEl?.classList.toggle('is-pinned-mode', pinned);
+        this.statsRootEl?.classList.toggle('is-upgrade-mode', this.statsInteractionMode === 'upgrade');
+        this.statsRootEl?.classList.toggle('is-pause-mode', this.statsInteractionMode === 'pause');
+        if (!pinned || mode === 'pause') {
+            this.openedStatsPlayerId = null;
+        }
+        this.syncPlayerPanelState();
+    }
+
+    public setActiveUpgradePlayer(playerId: PlayerId | null): void {
+        const previousPlayerId = this.activeUpgradePlayerId;
+        this.activeUpgradePlayerId = playerId;
+        if (playerId) {
+            this.activeStatsPlayerId = playerId;
+            if (previousPlayerId !== playerId) {
+                this.closedUpgradeStatsPlayerIds.delete(playerId);
+            }
+            this.openedStatsPlayerId = this.closedUpgradeStatsPlayerIds.has(playerId) ? null : playerId;
+        } else {
+            this.openedStatsPlayerId = null;
+            this.closedUpgradeStatsPlayerIds.clear();
+        }
+        this.syncPlayerPanelState();
     }
 
     public previewStatModifiers(modifiers: StatModifiers): void {
         this.activePreviewModifiers = { ...modifiers };
-        this.renderStatsPreview(this.activePreviewModifiers);
+        this.renderPlayerPanels(this.currentPlayers);
     }
 
     public clearStatPreview(): void {
         this.activePreviewModifiers = null;
-        this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
+        this.renderPlayerPanels(this.currentPlayers);
     }
 
     private bindEvents(): void {
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.STATE_UPDATE, (state) => {
-                this.handleStateUpdate(state);
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.STATE_UPDATE, (state) => this.handleStateUpdate(state)));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.XP_UPDATE, ({ currentXp, requires }) => {
-                this.currentXp = Math.max(0, currentXp);
-                this.xpRequired = Math.max(1, requires);
-                this.renderXpBar();
-                this.renderXpProgress();
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, ({ waveCleared, durationMs }) => {
+            this.playWaveMessage(`ONDA ${waveCleared} CONCLUIDA`, true, durationMs);
+        }));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.LEVEL_UP, ({ newLevel }) => {
-                this.currentLevel = Math.max(1, newLevel);
-                this.renderLevel();
-                this.renderXpProgress();
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, ({ wave, waveType, durationMs }) => {
+            const kindLabel = waveType === 'BOSS' ? 'BOSS' : waveType === 'SURVIVE' ? 'SOBREVIVENCIA' : 'ELIMINACAO';
+            this.playWaveMessage(`ONDA ${wave} - ${kindLabel}`, waveType === 'BOSS', durationMs);
+        }));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.WAVE_CLEAR_ANIMATION_START, ({ waveCleared, nextWave, durationMs }) => {
-                this.playWaveMessage(`ONDA ${waveCleared} CONCLUIDA`, true, durationMs);
-                void nextWave;
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, () => {
+            this.playWaveMessage('ANOMALIA DETECTADA', true, 1800);
+        }));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.WAVE_STARTING_ANIMATION_START, ({ wave, waveType, durationMs }) => {
-                const kindLabel = waveType === 'BOSS'
-                    ? 'BOSS'
-                    : waveType === 'SURVIVE'
-                        ? 'SOBREVIVENCIA'
-                        : 'ELIMINACAO';
-                this.playWaveMessage(`ONDA ${wave} - ${kindLabel}`, waveType === 'BOSS', durationMs);
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, () => this.hideWaveTransition()));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, () => {
-                this.playWaveMessage('ANOMALIA DETECTADA', true, 1800);
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, (prefs) => {
+            localStorage.setItem('coreio_audio', JSON.stringify(prefs));
+        }));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.WAVE_SPAWNING_RESUMED, () => {
-                this.hideWaveTransition();
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.GAME_OVER, ({ waveReached, enemiesKilled, anomaliesMet }) => {
+            this.clearWaveTransitionTimers();
+            this.hideWaveTransition();
+            this.setStatsPinned(false);
+            this.clearStatPreview();
+            this.renderObjective(null);
+            this.renderBossBar(null);
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.AUDIO_SETTINGS_CHANGED, (prefs) => {
-                localStorage.setItem('coreio_audio', JSON.stringify(prefs));
-            })
-        );
+            const current = this.loadStats();
+            this.saveStats({
+                maxWave: Math.max(current.maxWave, waveReached),
+                totalKills: current.totalKills + enemiesKilled,
+                totalAnomalies: current.totalAnomalies + anomaliesMet,
+            });
+        }));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.GAME_OVER, ({ waveReached, enemiesKilled, anomaliesMet }) => {
-                this.clearWaveTransitionTimers();
-                this.hideWaveTransition();
-                this.setStatsPinned(false);
-                this.clearStatPreview();
-                this.renderObjective(null);
+        this.unsubscribers.push(onGameEvent(GameEvents.OBJECTIVE_COMPLETED, ({ title, rewardUpgrades }) => {
+            this.playWaveMessage(`${title}: +${rewardUpgrades} aprimoramento`, false, 1600);
+        }));
 
-                const current = this.loadStats();
-                const updated: StoredStats = {
-                    maxWave: Math.max(current.maxWave, waveReached),
-                    totalKills: current.totalKills + enemiesKilled,
-                    totalAnomalies: current.totalAnomalies + anomaliesMet,
-                };
-                this.saveStats(updated);
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.AUTO_FIRE_TOGGLED, ({ enabled }) => {
+            this.showToast(enabled ? 'Auto-Fire ON' : 'Auto-Fire OFF');
+        }));
 
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.OBJECTIVE_COMPLETED, ({ title, rewardUpgrades }) => {
-                this.playWaveMessage(`${title}: +${rewardUpgrades} aprimoramento`, false, 1600);
-            })
-        );
-
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.AUTO_FIRE_TOGGLED, ({ enabled }) => {
-                this.showToast(enabled ? 'Auto-Fire ON' : 'Auto-Fire OFF');
-            })
-        );
-
-        this.unsubscribers.push(
-            onGameEvent(GameEvents.AUTO_SPIN_TOGGLED, ({ enabled }) => {
-                this.showToast(enabled ? 'Auto-Spin ON' : 'Auto-Spin OFF');
-            })
-        );
+        this.unsubscribers.push(onGameEvent(GameEvents.AUTO_SPIN_TOGGLED, ({ enabled }) => {
+            this.showToast(enabled ? 'Auto-Spin ON' : 'Auto-Spin OFF');
+        }));
     }
 
-    private handleStateUpdate(state: GameState): void {
-        this.currentPlayerHealth = state.player.health;
-        this.currentPlayerStats = { ...state.player.stats };
+    private bindStatsRoot(): void {
+        this.statsRootEl?.addEventListener('pointerdown', (event) => {
+            if (this.statsInteractionMode === 'wave') return;
+            const button = (event.target as HTMLElement).closest<HTMLElement>('.hud-player-stat-button');
+            if (!button?.dataset.playerId) return;
+            event.preventDefault();
+            event.stopPropagation();
+            this.toggleStatsPanel(button.dataset.playerId as PlayerId);
+        });
+    }
 
-        if (state.player.color !== undefined) {
-            const colorHex = `#${state.player.color.toString(16).padStart(6, '0')}`;
-            const colorDef = getColorDefinition(colorHex) ?? null;
-            if (colorDef !== this.activeColorDef) {
-                this.activeColorDef = colorDef;
-                this.updateColorBadge();
+    private toggleStatsPanel(playerId: PlayerId): void {
+        this.activeStatsPlayerId = playerId;
+
+        if (this.openedStatsPlayerId === playerId) {
+            this.openedStatsPlayerId = null;
+            if (this.statsInteractionMode === 'upgrade') {
+                this.closedUpgradeStatsPlayerIds.add(playerId);
+            }
+        } else {
+            this.openedStatsPlayerId = playerId;
+            this.closedUpgradeStatsPlayerIds.delete(playerId);
+            if (this.statsInteractionMode === 'upgrade' && this.activeUpgradePlayerId && playerId !== this.activeUpgradePlayerId) {
+                this.closedUpgradeStatsPlayerIds.add(this.activeUpgradePlayerId);
             }
         }
 
-        this.renderLevel();
+        this.syncPlayerPanelState();
+    }
+
+    private handleStateUpdate(state: GameState): void {
+        this.currentPlayers = state.players?.length ? state.players : [state.player];
+        document.documentElement.style.setProperty('--hud-primary-color', this.colorToHex(this.currentPlayers[0]?.color));
+        document.documentElement.classList.toggle('is-local-coop', this.currentPlayers.length > 1);
         this.renderWaveInfo(
             state.currentWave,
             state.waveType,
@@ -250,22 +252,15 @@ export class HudController {
             state.surviveTimeRemainingSeconds,
             state.isAnomalyEncounter ?? false
         );
-        this.renderXpBar();
-        this.renderXpProgress();
         this.renderEnemyCount(state.activeEnemyCount);
         this.renderObjective(state.objective);
+        this.renderPrimaryXp(this.currentPlayers[0] ?? null);
+        this.renderBossBar(state);
+        this.renderPlayerPanels(this.currentPlayers);
+        this.renderUpgradeBank(this.currentPlayers);
 
-        if (this.activePreviewModifiers) {
-            this.renderStatsPreview(this.activePreviewModifiers);
-            return;
-        }
-
-        this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
-    }
-
-    private renderLevel(): void {
-        if (!this.levelLabelEl) return;
-        this.levelLabelEl.textContent = `Nivel ${this.currentLevel}`;
+        if (this.statsInteractionMode === 'upgrade' && this.activeUpgradePlayerId && !this.openedStatsPlayerId && !this.closedUpgradeStatsPlayerIds.has(this.activeUpgradePlayerId)) this.openedStatsPlayerId = this.activeUpgradePlayerId;
+        this.syncPlayerPanelState();
     }
 
     private renderWaveInfo(
@@ -275,203 +270,221 @@ export class HudController {
         surviveTimeRemaining: number,
         isAnomalyEncounter: boolean
     ): void {
-        if (this.waveInfoTitleEl) {
-            const typeLabel = isAnomalyEncounter
-                ? 'Anomalia'
-                : waveType === 'BOSS'
+        const typeLabel = isAnomalyEncounter
+            ? 'Anomalia'
+            : waveType === 'BOSS'
                 ? 'Boss'
                 : waveType === 'SURVIVE'
-                    ? 'Sobrevivência'
-                    : 'Eliminação';
-            this.waveInfoTitleEl.textContent = `Onda ${wave} — ${typeLabel}`;
+                    ? 'Sobrevivencia'
+                    : 'Eliminacao';
+        this.setText(this.waveInfoTitleEl, `Onda ${wave.toString().padStart(2, '0')}  ${typeLabel}`);
+
+        if (isAnomalyEncounter) {
+            this.setText(this.waveInfoSubEl, 'Identifique a anomalia');
+            this.waveInfoSubEl?.classList.add('is-danger');
+            return;
         }
 
-        if (this.waveInfoSubEl) {
-            if (isAnomalyEncounter) {
-                this.waveInfoSubEl.textContent = 'Identifique e neutralize a anomalia';
-                this.waveInfoSubEl.classList.add('is-danger');
-            } else if (waveType === 'BOSS') {
-                this.waveInfoSubEl.textContent = 'Derrote o boss';
-                this.waveInfoSubEl.classList.remove('is-danger');
-            } else if (waveType === 'SURVIVE') {
-                this.waveInfoSubEl.textContent = `Tempo: ${this.formatCountdown(surviveTimeRemaining)}`;
-                this.waveInfoSubEl.classList.toggle('is-danger', surviveTimeRemaining <= 10);
-            } else {
-                this.waveInfoSubEl.textContent = `Restam: ${Math.max(0, remainingToKill)}`;
-                this.waveInfoSubEl.classList.remove('is-danger');
-            }
+        if (waveType === 'BOSS') {
+            this.setText(this.waveInfoSubEl, 'Derrote o boss');
+            this.waveInfoSubEl?.classList.remove('is-danger');
+            return;
         }
-    }
 
-    private renderXpBar(): void {
-        if (!this.xpFillEl) return;
-        const ratio = this.currentXp / Math.max(1, this.xpRequired);
-        const clampedRatio = Math.max(0, Math.min(1, ratio));
-        this.xpFillEl.style.width = `${(clampedRatio * 100).toFixed(2)}%`;
-    }
+        if (waveType === 'SURVIVE') {
+            this.setText(this.waveInfoSubEl, `Tempo ${this.formatCountdown(surviveTimeRemaining)}`);
+            this.waveInfoSubEl?.classList.toggle('is-danger', surviveTimeRemaining <= 10);
+            return;
+        }
 
-    private renderXpProgress(): void {
-        if (!this.xpProgressEl) return;
-        this.xpProgressEl.textContent = `Nivel ${this.currentLevel} - ${this.fmt0(this.currentXp)}/${this.fmt0(this.xpRequired)} XP`;
+        this.setText(this.waveInfoSubEl, `${Math.max(0, remainingToKill)} restantes`);
+        this.waveInfoSubEl?.classList.remove('is-danger');
     }
 
     private renderEnemyCount(activeCount: number): void {
-        if (!this.enemyCounterEl) return;
-        this.enemyCounterEl.textContent = `Inimigos: ${Math.max(0, activeCount)}`;
+        this.setText(this.enemyCounterEl, `Inimigos  ${Math.max(0, activeCount).toString().padStart(2, '0')}`);
     }
 
     private renderObjective(objective: ObjectiveState | null): void {
-        if (!this.objectiveEl) return;
-
         if (!objective) {
-            this.objectiveEl.textContent = 'Objetivo: --';
-            this.objectiveEl.classList.remove('is-complete', 'is-failed');
+            this.setText(this.objectiveLabelEl ?? this.objectiveEl, 'Objetivo --');
+            this.objectiveFillEl?.style.setProperty('width', '0%');
+            this.objectiveEl?.classList.remove('is-complete', 'is-failed');
             return;
         }
 
-        const progressText = `${Math.floor(objective.progress)}/${Math.floor(objective.target)}`;
-        this.objectiveEl.textContent = `Objetivo: ${objective.description} (${progressText})`;
-        this.objectiveEl.classList.toggle('is-complete', objective.completed);
-        this.objectiveEl.classList.toggle('is-failed', objective.failed);
+        const progress = Math.max(0, Math.min(1, objective.progress / Math.max(1, objective.target)));
+        this.setText(
+            this.objectiveLabelEl ?? this.objectiveEl,
+            `${objective.description}  ${Math.floor(objective.progress)}/${Math.floor(objective.target)}`
+        );
+        this.objectiveFillEl?.style.setProperty('width', `${(progress * 100).toFixed(2)}%`);
+        this.objectiveEl?.classList.toggle('is-complete', objective.completed);
+        this.objectiveEl?.classList.toggle('is-failed', objective.failed);
     }
 
-    private renderStats(health: number, stats: EntityStats): void {
-        this.clearStatRowHighlights();
+    private renderBossBar(state: GameState | null): void {
+        const boss = state?.enemies.find((enemy) => enemy.enemyType === 'DREADNOUGHT' && !enemy.isDead) ?? null;
+        if (!this.bossBarEl) return;
 
-        this.setText(this.statHealthEl, `${this.fmt0(health)} / ${this.fmt0(stats.maxHealth)}`);
-        this.setText(this.statHealthRegenEl, this.fmt1(stats.healthRegen));
-        this.setText(this.statBodyDamageEl, this.fmt1(stats.bodyDamage));
-        this.setText(this.statBulletDamageEl, this.fmt1(stats.bulletDamage));
-        this.setText(this.statBulletSpeedEl, this.fmt1(stats.bulletSpeed));
-        this.setText(this.statBulletPenetrationEl, this.fmt1(stats.bulletPenetration));
-        this.setText(this.statReloadEl, this.formatReloadValue(stats.reloadPoints));
-        this.setText(this.statMoveSpeedEl, this.fmt1(stats.movementSpeed));
+        this.bossBarEl.hidden = !boss;
+        if (!boss) return;
 
-        this.renderColorBuffHighlights();
+        const ratio = Math.max(0, Math.min(1, boss.health / Math.max(1, boss.stats.maxHealth)));
+        this.setText(this.bossNameEl, 'DREADNOUGHT');
+        this.setText(this.bossValueEl, `${this.fmt0(boss.health)} / ${this.fmt0(boss.stats.maxHealth)}`);
+        this.bossFillEl?.style.setProperty('width', `${(ratio * 100).toFixed(2)}%`);
     }
 
-    private renderColorBuffHighlights(): void {
-        if (!this.activeColorDef) return;
+    private renderPrimaryXp(player: EntityData | null): void {
+        const level = player?.level ?? 1;
+        const currentXp = player?.currentXp ?? 0;
+        const xpRequired = Math.max(1, player?.xpToNextLevel ?? 100);
+        const ratio = Math.max(0, Math.min(1, currentXp / xpRequired));
 
-        const statElementMap: Partial<Record<keyof EntityStats, HTMLElement | null>> = {
-            maxHealth: this.statHealthEl,
-            healthRegen: this.statHealthRegenEl,
-            bodyDamage: this.statBodyDamageEl,
-            bulletDamage: this.statBulletDamageEl,
-            bulletSpeed: this.statBulletSpeedEl,
-            bulletPenetration: this.statBulletPenetrationEl,
-            reloadPoints: this.statReloadEl,
-            movementSpeed: this.statMoveSpeedEl,
-        };
+        this.setText(this.levelLabelEl, `NIVEL ${level.toString().padStart(2, '0')}`);
+        this.setText(this.xpProgressEl, `${this.fmt0(currentXp)} / ${this.fmt0(xpRequired)} XP`);
+        this.xpFillEl?.style.setProperty('width', `${(ratio * 100).toFixed(2)}%`);
+    }
 
-        for (const [stat, value] of Object.entries(this.activeColorDef.modifiers) as Array<[keyof EntityStats, number]>) {
-            if (value === 0) continue;
-            const el = statElementMap[stat];
-            const row = el?.parentElement;
-            if (!row) continue;
-            row.classList.add(value > 0 ? 'is-color-buff' : 'is-color-nerf');
+    private renderPlayerPanels(players: EntityData[]): void {
+        if (!this.statsRootEl) return;
+
+        const activeIds = new Set(players.map((player) => player.id as PlayerId));
+        for (const playerId of PLAYER_IDS) {
+            if (!activeIds.has(playerId)) {
+                this.playerPanelEls.get(playerId)?.remove();
+                this.playerPanelEls.delete(playerId);
+            }
+        }
+
+        for (const player of players) {
+            const playerId = player.id as PlayerId;
+            let panel = this.playerPanelEls.get(playerId);
+            if (!panel) {
+                panel = document.createElement('section');
+                panel.className = `hud-player-panel hud-player-panel--${playerId}`;
+                panel.dataset.playerId = playerId;
+                this.playerPanelEls.set(playerId, panel);
+                this.statsRootEl.appendChild(panel);
+            }
+            panel.style.setProperty('--player-color', this.colorToHex(player.color));
+            panel.innerHTML = this.getPlayerPanelHtml(player);
+        }
+
+        this.syncPlayerPanelState();
+    }
+
+    private renderUpgradeBank(players: EntityData[]): void {
+        if (!this.upgradeBankEl) return;
+        const pendingPlayers = players.filter((player) => Math.max(0, player.pendingUpgrades ?? 0) > 0);
+        const totalPending = pendingPlayers.reduce((total, player) => total + Math.max(0, player.pendingUpgrades ?? 0), 0);
+        const ownerColor = this.colorToHex(players[0]?.color);
+        this.upgradeBankEl.hidden = pendingPlayers.length === 0 || this.activeUpgradePlayerId !== null;
+        this.upgradeBankEl.classList.toggle('is-coop-bank', players.length > 1);
+        this.upgradeBankEl.innerHTML = players.length > 1
+            ? `<span class="hud-upgrade-bank-label">MELHORIAS</span>${pendingPlayers.map((player, index) => {
+                const playerId = player.id as PlayerId;
+                const separator = index === 0 ? '' : '<span class="hud-upgrade-bank-separator">|</span>';
+                return `${separator}<span class="hud-upgrade-bank-item" style="--player-color:${this.colorToHex(player.color)}"><small>${this.escapeHtml(player.name ?? PLAYER_SLOT_LABELS[playerId])}</small><strong>${player.pendingUpgrades ?? 0}</strong></span>`;
+            }).join('')}`
+            : `<span class="hud-upgrade-bank-label">MELHORIAS</span><span class="hud-upgrade-bank-count">${totalPending}</span>`;
+        this.upgradeBankEl.title = `Abrir ${totalPending} melhoria${totalPending === 1 ? '' : 's'} pendente${totalPending === 1 ? '' : 's'}`;
+        this.upgradeBankEl.dataset.tooltip = `${totalPending} carta${totalPending === 1 ? '' : 's'} para escolher`;
+        this.upgradeBankEl.style.setProperty('--player-color', ownerColor);
+    }
+
+    private getPlayerPanelHtml(player: EntityData): string {
+        const playerId = player.id as PlayerId;
+        const stats = player.stats ?? DEFAULT_PLAYER_STATS;
+        const healthRatio = Math.max(0, Math.min(1, player.health / Math.max(1, stats.maxHealth)));
+        const xpRatio = Math.max(0, Math.min(1, (player.currentXp ?? 0) / Math.max(1, player.xpToNextLevel ?? 100)));
+        const colorDef = this.getColorDefinition(player);
+        const tierLabel = colorDef ? this.getTierLabel(colorDef) : 'BASE';
+        const previewStats = this.getPreviewStats(player, stats);
+
+        return `
+            <button class="hud-player-stat-button" type="button" data-player-id="${playerId}">
+                <span class="hud-player-dot"></span>
+                <span class="hud-player-id">${PLAYER_SLOT_LABELS[playerId]}</span>
+                <strong>${this.escapeHtml(player.name ?? PLAYER_SLOT_LABELS[playerId])}</strong>
+                <span class="hud-player-level">LV ${player.level ?? 1}</span>
+                <span class="hud-player-button-xp-track"><span style="width:${(xpRatio * 100).toFixed(2)}%"></span></span>
+                <span class="hud-player-xp-brief">${this.fmt0(player.currentXp ?? 0)}/${this.fmt0(player.xpToNextLevel ?? 100)} XP</span>
+            </button>
+            <div class="hud-player-stat-panel">
+                <header>
+                    <span class="hud-player-dot"></span>
+                    <div>
+                        <small>${PLAYER_SLOT_LABELS[playerId]}  ${tierLabel}</small>
+                        <h2>${this.escapeHtml(player.name ?? PLAYER_SLOT_LABELS[playerId])}</h2>
+                    </div>
+                </header>
+                <div class="hud-player-health">
+                    <div><span>Vida</span><strong>${this.fmt0(player.health)} / ${this.fmt0(stats.maxHealth)}</strong></div>
+                    <span class="hud-player-health-track"><span style="width:${(healthRatio * 100).toFixed(2)}%"></span></span>
+                </div>
+                <div class="hud-player-xp">
+                    <span>Nivel ${player.level ?? 1}</span>
+                    <span class="hud-player-xp-track"><span style="width:${(xpRatio * 100).toFixed(2)}%"></span></span>
+                    <strong>${this.fmt0(player.currentXp ?? 0)} / ${this.fmt0(player.xpToNextLevel ?? 100)} XP</strong>
+                </div>
+                <ul>${STAT_ROWS.map((row) => this.getStatRowHtml(row, stats, previewStats, colorDef)).join('')}</ul>
+            </div>
+        `;
+    }
+
+    private getStatRowHtml(
+        row: { key: keyof EntityStats; label: string },
+        stats: EntityStats,
+        previewStats: EntityStats | null,
+        colorDef: ColorDefinition | null
+    ): string {
+        const value = stats[row.key];
+        const previewValue = previewStats?.[row.key] ?? value;
+        const delta = previewStats ? previewValue - value : 0;
+        const buff = colorDef?.modifiers[row.key] ?? 0;
+        const classes = [
+            delta > 0 ? 'is-preview-positive' : delta < 0 ? 'is-preview-negative' : '',
+            buff > 0 ? 'is-color-buff' : buff < 0 ? 'is-color-nerf' : ''
+        ].filter(Boolean).join(' ');
+        const displayValue = row.key === 'reloadPoints' ? this.formatReloadValue(value) : this.fmt1(value);
+        const previewText = delta === 0 ? '' : ` <em>${delta > 0 ? '+' : ''}${this.fmt1(delta)}</em>`;
+
+        return `<li class="${classes}"><span>${row.label}</span><strong>${displayValue}${previewText}</strong></li>`;
+    }
+
+    private syncPlayerPanelState(): void {
+        for (const [playerId, panel] of this.playerPanelEls) {
+            panel.classList.toggle('is-open', playerId === this.openedStatsPlayerId);
+            panel.classList.toggle('is-active-upgrade', playerId === this.activeUpgradePlayerId);
+            panel.classList.toggle('is-selected', playerId === this.activeStatsPlayerId);
         }
     }
 
-    private updateColorBadge(): void {
-        if (!this.colorBadgeEl) return;
-
-        if (!this.activeColorDef) {
-            this.colorBadgeEl.textContent = '';
-            this.colorBadgeEl.removeAttribute('style');
-            this.colorBadgeEl.removeAttribute('title');
-            this.colorBadgeEl.classList.remove('is-visible');
-            return;
-        }
-
-        const tierLabel = this.activeColorDef.tier === 'PRIMARY'
-            ? 'Base'
-            : this.activeColorDef.tier === 'SECONDARY'
-                ? 'Core'
-                : 'Prime';
-
-        this.colorBadgeEl.textContent = `${this.activeColorDef.name} ${tierLabel}`;
-        this.colorBadgeEl.style.setProperty('--badge-color', this.activeColorDef.hex);
-        this.colorBadgeEl.title = this.activeColorDef.effects.join(' • ');
-        this.colorBadgeEl.classList.add('is-visible');
-    }
-
-    private renderStatsPreview(modifiers: StatModifiers): void {
-        const previewStats = this.getPreviewStats(modifiers);
-
-        this.setPreviewHealth(modifiers.maxHealth ?? 0, previewStats.maxHealth);
-        this.setPreviewNumber(this.statHealthRegenEl, this.currentPlayerStats.healthRegen, previewStats.healthRegen, modifiers.healthRegen ?? 0);
-        this.setPreviewNumber(this.statBodyDamageEl, this.currentPlayerStats.bodyDamage, previewStats.bodyDamage, modifiers.bodyDamage ?? 0);
-        this.setPreviewNumber(this.statBulletDamageEl, this.currentPlayerStats.bulletDamage, previewStats.bulletDamage, modifiers.bulletDamage ?? 0);
-        this.setPreviewNumber(this.statBulletSpeedEl, this.currentPlayerStats.bulletSpeed, previewStats.bulletSpeed, modifiers.bulletSpeed ?? 0);
-        this.setPreviewNumber(this.statBulletPenetrationEl, this.currentPlayerStats.bulletPenetration, previewStats.bulletPenetration, modifiers.bulletPenetration ?? 0);
-        this.setPreviewReload(modifiers.reloadPoints ?? 0, previewStats.reloadPoints);
-        this.setPreviewNumber(this.statMoveSpeedEl, this.currentPlayerStats.movementSpeed, previewStats.movementSpeed, modifiers.movementSpeed ?? 0);
-    }
-
-    private setPreviewHealth(maxHealthDelta: number, previewMaxHealth: number): void {
-        if (!this.statHealthEl) return;
-
-        const baseText = `${this.fmt0(this.currentPlayerHealth)} / ${this.fmt0(this.currentPlayerStats.maxHealth)}`;
-        if (maxHealthDelta === 0) {
-            this.statHealthEl.textContent = baseText;
-            this.applyPreviewStyle(this.statHealthEl, 0);
-            return;
-        }
-
-        const signedDelta = maxHealthDelta > 0
-            ? `+${maxHealthDelta.toFixed(0)}`
-            : maxHealthDelta.toFixed(0);
-
-        this.statHealthEl.textContent = `${this.fmt0(this.currentPlayerHealth)} / ${this.fmt0(previewMaxHealth)} (${signedDelta} max)`;
-        this.applyPreviewStyle(this.statHealthEl, maxHealthDelta);
-    }
-
-    private setPreviewNumber(
-        element: HTMLElement | null,
-        currentValue: number,
-        previewValue: number,
-        delta: number
-    ): void {
-        if (!element) return;
-
-        if (delta === 0) {
-            element.textContent = this.fmt1(currentValue);
-            this.applyPreviewStyle(element, 0);
-            return;
-        }
-
-        const sign = delta > 0 ? '+' : '';
-        element.textContent = `${this.fmt1(previewValue)} (${sign}${this.fmt1(delta)})`;
-        this.applyPreviewStyle(element, delta);
-    }
-
-    private setPreviewReload(delta: number, previewReloadPoints: number): void {
-        if (!this.statReloadEl) return;
-
-        if (delta === 0) {
-            this.statReloadEl.textContent = this.formatReloadValue(this.currentPlayerStats.reloadPoints);
-            this.applyPreviewStyle(this.statReloadEl, 0);
-            return;
-        }
-
-        const previewCooldown = calculatePlayerShotCooldownSeconds(previewReloadPoints);
-        const sign = delta > 0 ? '+' : '';
-        this.statReloadEl.textContent = `${this.fmt1(previewReloadPoints)} pts (${this.fmt2(previewCooldown)}s) (${sign}${this.fmt1(delta)} pts)`;
-        this.applyPreviewStyle(this.statReloadEl, delta);
-    }
-
-    private getPreviewStats(modifiers: StatModifiers): EntityStats {
+    private getPreviewStats(player: EntityData, stats: EntityStats): EntityStats | null {
+        if (!this.activePreviewModifiers || player.id !== this.activeUpgradePlayerId) return null;
         return {
-            maxHealth: this.currentPlayerStats.maxHealth + (modifiers.maxHealth ?? 0),
-            healthRegen: this.currentPlayerStats.healthRegen + (modifiers.healthRegen ?? 0),
-            bodyDamage: this.currentPlayerStats.bodyDamage + (modifiers.bodyDamage ?? 0),
-            bulletSpeed: this.currentPlayerStats.bulletSpeed + (modifiers.bulletSpeed ?? 0),
-            bulletPenetration: this.currentPlayerStats.bulletPenetration + (modifiers.bulletPenetration ?? 0),
-            bulletDamage: this.currentPlayerStats.bulletDamage + (modifiers.bulletDamage ?? 0),
-            reloadPoints: Math.max(0, this.currentPlayerStats.reloadPoints + (modifiers.reloadPoints ?? 0)),
-            movementSpeed: this.currentPlayerStats.movementSpeed + (modifiers.movementSpeed ?? 0)
+            maxHealth: stats.maxHealth + (this.activePreviewModifiers.maxHealth ?? 0),
+            healthRegen: stats.healthRegen + (this.activePreviewModifiers.healthRegen ?? 0),
+            bodyDamage: stats.bodyDamage + (this.activePreviewModifiers.bodyDamage ?? 0),
+            bulletSpeed: stats.bulletSpeed + (this.activePreviewModifiers.bulletSpeed ?? 0),
+            bulletPenetration: stats.bulletPenetration + (this.activePreviewModifiers.bulletPenetration ?? 0),
+            bulletDamage: stats.bulletDamage + (this.activePreviewModifiers.bulletDamage ?? 0),
+            reloadPoints: Math.max(0, stats.reloadPoints + (this.activePreviewModifiers.reloadPoints ?? 0)),
+            movementSpeed: stats.movementSpeed + (this.activePreviewModifiers.movementSpeed ?? 0)
         };
+    }
+
+    private getColorDefinition(player: EntityData): ColorDefinition | null {
+        if (player.color === undefined) return null;
+        return getColorDefinition(this.colorToHex(player.color)) ?? null;
+    }
+
+    private getTierLabel(colorDef: ColorDefinition): string {
+        if (colorDef.tier === 'PRIMARY') return `${colorDef.name} Base`;
+        if (colorDef.tier === 'SECONDARY') return `${colorDef.name} Core`;
+        return `${colorDef.name} Prime`;
     }
 
     private formatReloadValue(reloadPoints: number): string {
@@ -486,63 +499,18 @@ export class HudController {
         return `${m}:${rem.toString().padStart(2, '0')}`;
     }
 
-    private applyPreviewStyle(element: HTMLElement | null, delta: number): void {
-        if (!element) return;
-
-        const row = element.parentElement;
-        if (!row) return;
-
-        row.classList.remove('is-preview-positive', 'is-preview-negative');
-
-        if (delta > 0) {
-            row.classList.add('is-preview-positive');
-            return;
-        }
-
-        if (delta < 0) {
-            row.classList.add('is-preview-negative');
-        }
-    }
-
-    private clearStatRowHighlights(): void {
-        const statElements: Array<HTMLElement | null> = [
-            this.statHealthEl,
-            this.statHealthRegenEl,
-            this.statBodyDamageEl,
-            this.statBulletDamageEl,
-            this.statBulletSpeedEl,
-            this.statBulletPenetrationEl,
-            this.statReloadEl,
-            this.statMoveSpeedEl
-        ];
-
-        for (const element of statElements) {
-            element?.parentElement?.classList.remove(
-                'is-preview-positive', 'is-preview-negative',
-                'is-color-buff', 'is-color-nerf'
-            );
-        }
-    }
-
     private playWaveMessage(text: string, isDanger: boolean, durationMs: number): void {
         this.clearWaveTransitionTimers();
         this.showWaveTransition(text, isDanger);
-
-        this.waveTransitionTimeoutIds.push(
-            window.setTimeout(() => {
-                this.hideWaveTransition();
-            }, Math.max(250, durationMs))
-        );
+        this.waveTransitionTimeoutIds.push(window.setTimeout(() => this.hideWaveTransition(), Math.max(250, durationMs)));
     }
 
     private showWaveTransition(text: string, isDanger: boolean): void {
         if (!this.waveTransitionEl) return;
-
         this.waveTransitionEl.hidden = false;
         this.waveTransitionEl.textContent = text;
         this.waveTransitionEl.classList.toggle('is-danger', isDanger);
         this.waveTransitionEl.classList.remove('show');
-
         void this.waveTransitionEl.offsetWidth;
         this.waveTransitionEl.classList.add('show');
     }
@@ -555,17 +523,11 @@ export class HudController {
 
     private showToast(text: string): void {
         if (!this.toastEl) return;
-
-        if (this.toastTimeoutId !== null) {
-            window.clearTimeout(this.toastTimeoutId);
-            this.toastTimeoutId = null;
-        }
-
+        if (this.toastTimeoutId !== null) window.clearTimeout(this.toastTimeoutId);
         this.toastEl.textContent = text;
         this.toastEl.classList.remove('toast-visible');
         void this.toastEl.offsetWidth;
         this.toastEl.classList.add('toast-visible');
-
         this.toastTimeoutId = window.setTimeout(() => {
             this.toastEl?.classList.remove('toast-visible');
             this.toastTimeoutId = null;
@@ -573,9 +535,7 @@ export class HudController {
     }
 
     private clearWaveTransitionTimers(): void {
-        for (const timeoutId of this.waveTransitionTimeoutIds) {
-            window.clearTimeout(timeoutId);
-        }
+        for (const timeoutId of this.waveTransitionTimeoutIds) window.clearTimeout(timeoutId);
         this.waveTransitionTimeoutIds.length = 0;
     }
 
@@ -600,9 +560,23 @@ export class HudController {
         this.setText(this.globalTotalAnomaliesEl, String(stats.totalAnomalies));
     }
 
+    private colorToHex(color: number | undefined): string {
+        return `#${(color ?? 0x4488ff).toString(16).padStart(6, '0')}`;
+    }
+
+    private escapeHtml(value: string): string {
+        const replacements: Record<string, string> = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#039;'
+        };
+        return value.replace(/[&<>"']/g, (char) => replacements[char] ?? char);
+    }
+
     private setText(element: HTMLElement | null, value: string): void {
-        if (!element) return;
-        element.textContent = value;
+        if (element) element.textContent = value;
     }
 
     private getEl<T extends HTMLElement>(id: string): T | null {

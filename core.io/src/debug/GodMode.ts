@@ -64,7 +64,7 @@ export class GodMode {
         ];
 
         this.panel = this.createPanel();
-        document.body.appendChild(this.panel);
+        (document.getElementById('ui-layer') ?? document.body).appendChild(this.panel);
         globalThis.addEventListener('keydown', this.handleKeyDown);
     }
 
@@ -79,7 +79,7 @@ export class GodMode {
 
         const subtitle = document.createElement('div');
         subtitle.className = 'debug-mode-subtitle';
-        subtitle.textContent = 'Shift+G para abrir; Shift + Tecla para executar';
+        subtitle.textContent = 'Shift+G abre | Shift+tecla executa';
 
         this.statusLabel = document.createElement('div');
         this.statusLabel.className = 'debug-mode-status';
@@ -91,10 +91,6 @@ export class GodMode {
 
         const table = document.createElement('table');
         table.className = 'debug-mode-table';
-
-        const header = document.createElement('thead');
-        header.innerHTML = '<tr><th>Tecla</th><th>Comando</th></tr>';
-        table.appendChild(header);
 
         const body = document.createElement('tbody');
         for (const command of this.commands) {

@@ -372,7 +372,8 @@ export class GameRenderer {
                 enemyType
             );
 
-            if (!this.shouldHideEnemyHealthBar(enemyType, shouldMaskAnomalyHealth)) {
+            const shouldUseBossHudBar = state.isBossFight && enemyType === 'DREADNOUGHT';
+            if (!shouldUseBossHudBar && !this.shouldHideEnemyHealthBar(enemyType, shouldMaskAnomalyHealth)) {
                 this.healthBarRenderer.drawWorldHealthBar(
                     enemy.id,
                     x,

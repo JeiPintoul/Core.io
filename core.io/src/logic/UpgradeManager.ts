@@ -1,5 +1,6 @@
 import type { CardRarity, UpgradeRollOption } from '../shared/Types';
 import { UPGRADE_CARDS, UPGRADE_CARDS_BY_RARITY, type UpgradeCard } from './constants/CardsDatabase';
+import { MathRng, type Rng } from './Rng';
 
 type RarityWeights = Record<CardRarity, number>;
 
@@ -23,6 +24,8 @@ const LEVEL_RARITY_WEIGHTS: Array<{ maxLevel: number; weights: RarityWeights }> 
 ];
 
 export class UpgradeManager {
+    constructor(private readonly rng: Rng = new MathRng()) {}
+
     public rollUpgradeOptions(playerLevel: number): UpgradeRollOption[] {
         const options: UpgradeRollOption[] = [];
         const selectedCardIds = new Set<string>();
@@ -37,6 +40,13 @@ export class UpgradeManager {
         }
 
         return options;
+    }
+
+    public rerollUpgradeOption(playerLevel: number, excludedCardIds: readonly string[]): UpgradeRollOption {
+        const excludedIds = new Set(excludedCardIds);
+        const rarity = this.rollRarity(this.getWeightsForLevel(playerLevel));
+        const card = this.rollCard(rarity, excludedIds);
+        return { card, colorHex: card.paintColor };
     }
 
     public getCardById(cardId: string): UpgradeCard | undefined {
@@ -61,7 +71,7 @@ export class UpgradeManager {
             return 'COMMON';
         }
 
-        let roll = Math.random() * totalWeight;
+        let roll = this.rng.random() * totalWeight;
         for (const [rarity, weight] of entries) {
             roll -= Math.max(0, weight);
             if (roll <= 0) {
@@ -75,12 +85,12 @@ export class UpgradeManager {
     private rollCard(rarity: CardRarity, excludedIds: Set<string>): UpgradeCard {
         const rarityPool = UPGRADE_CARDS_BY_RARITY[rarity].filter((card) => !excludedIds.has(card.id));
         if (rarityPool.length > 0) {
-            return rarityPool[Math.floor(Math.random() * rarityPool.length)];
+            return rarityPool[Math.floor(this.rng.random() * rarityPool.length)];
         }
 
         const fallbackPool = UPGRADE_CARDS.filter((card) => !excludedIds.has(card.id));
         if (fallbackPool.length > 0) {
-            return fallbackPool[Math.floor(Math.random() * fallbackPool.length)];
+            return fallbackPool[Math.floor(this.rng.random() * fallbackPool.length)];
         }
 
         return UPGRADE_CARDS[0];

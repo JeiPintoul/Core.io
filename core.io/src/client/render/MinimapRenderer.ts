@@ -4,9 +4,7 @@ import { ARENA } from '../constants/GameConstants';
 
 export class MinimapRenderer {
     private readonly background = 0x060b1f;
-    private readonly border = 0x9cc8ff;
     private readonly grid = 0x38517c;
-    private readonly viewport = 0xd5e9ff;
     private readonly playerDot = 0xffffff;
     private readonly portalDot = 0xd7c3ff;
 
@@ -21,11 +19,12 @@ export class MinimapRenderer {
         const mapSize = metrics.size;
         const x = this.camera.width - mapSize - metrics.padding;
         const y = this.camera.height - mapSize - metrics.padding;
+        const accentColor = players[0]?.color ?? 0x9cc8ff;
 
-        this.drawFrame(x, y, mapSize);
-        this.drawViewport(x, y, mapSize);
+        this.drawFrame(x, y, mapSize, accentColor);
+        this.drawViewport(x, y, mapSize, accentColor);
         this.drawPortal(portal, x, y, mapSize);
-        this.drawPlayers(players, x, y, mapSize);
+        this.drawPlayers(players, x, y, mapSize, accentColor);
     }
 
     private getMetrics(): { size: number; padding: number } {
@@ -35,7 +34,7 @@ export class MinimapRenderer {
         return { size: 192, padding: 28 };
     }
 
-    private drawFrame(x: number, y: number, mapSize: number): void {
+    private drawFrame(x: number, y: number, mapSize: number, accentColor: number): void {
         const frameInset = 8;
         const borderWidth = 2;
 
@@ -43,10 +42,10 @@ export class MinimapRenderer {
         this.gfxHud.fillRoundedRect(x - frameInset, y - frameInset, mapSize + (frameInset * 2), mapSize + (frameInset * 2), 8);
         this.gfxHud.fillStyle(0x0f1b44, 0.98);
         this.gfxHud.fillRoundedRect(x, y, mapSize, mapSize, 5);
-        this.gfxHud.lineStyle(borderWidth, this.border, 0.95);
+        this.gfxHud.lineStyle(borderWidth, accentColor, 0.95);
         this.gfxHud.strokeRect(x, y, mapSize, mapSize);
         this.drawGrid(x, y, mapSize);
-        this.drawCorners(x, y, mapSize);
+        this.drawCorners(x, y, mapSize, accentColor);
     }
 
     private drawGrid(x: number, y: number, mapSize: number): void {
@@ -64,7 +63,7 @@ export class MinimapRenderer {
         this.gfxHud.strokePath();
     }
 
-    private drawCorners(x: number, y: number, mapSize: number): void {
+    private drawCorners(x: number, y: number, mapSize: number, accentColor: number): void {
         const cornerTick = 16;
         const cornerOffset = 5;
         const corners = [
@@ -74,7 +73,7 @@ export class MinimapRenderer {
             { x: x + mapSize - cornerOffset, y: y + mapSize - cornerOffset, dx: -1, dy: -1 }
         ];
 
-        this.gfxHud.lineStyle(2, this.border, 0.75);
+        this.gfxHud.lineStyle(2, accentColor, 0.75);
         this.gfxHud.beginPath();
 
         for (const corner of corners) {
@@ -87,7 +86,7 @@ export class MinimapRenderer {
         this.gfxHud.strokePath();
     }
 
-    private drawViewport(x: number, y: number, mapSize: number): void {
+    private drawViewport(x: number, y: number, mapSize: number, accentColor: number): void {
         const worldView = this.camera.worldView;
         const viewLeftRatio = Phaser.Math.Clamp(worldView.left / ARENA.width, 0, 1);
         const viewTopRatio = Phaser.Math.Clamp(worldView.top / ARENA.height, 0, 1);
@@ -98,13 +97,13 @@ export class MinimapRenderer {
         const viewWidth = Math.max(10, (viewRightRatio - viewLeftRatio) * mapSize);
         const viewHeight = Math.max(10, (viewBottomRatio - viewTopRatio) * mapSize);
 
-        this.gfxHud.fillStyle(this.viewport, 0.1);
+        this.gfxHud.fillStyle(accentColor, 0.1);
         this.gfxHud.fillRect(viewX, viewY, viewWidth, viewHeight);
-        this.gfxHud.lineStyle(1.2, this.viewport, 0.72);
+        this.gfxHud.lineStyle(1.2, accentColor, 0.72);
         this.gfxHud.strokeRect(viewX, viewY, viewWidth, viewHeight);
     }
 
-    private drawPlayers(players: GameState['players'], x: number, y: number, mapSize: number): void {
+    private drawPlayers(players: GameState['players'], x: number, y: number, mapSize: number, accentColor: number): void {
         for (const [index, player] of players.entries()) {
             if (player.isDead) {
                 continue;
@@ -116,7 +115,7 @@ export class MinimapRenderer {
 
             this.gfxHud.fillStyle(player.color ?? this.playerDot, 1);
             this.gfxHud.fillCircle(dotX, dotY, dotRadius);
-            this.gfxHud.lineStyle(1.1, this.border, 0.76);
+            this.gfxHud.lineStyle(1.1, accentColor, 0.76);
             this.gfxHud.strokeCircle(dotX, dotY, dotRadius + 0.8);
         }
     }

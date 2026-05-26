@@ -27,42 +27,37 @@
           <div id="hud-enemy-counter" class="hud-card">Inimigos: 0</div>
           <div id="hud-minimap-placeholder"></div>
         </div>
-        <div id="hud-objective" class="hud-card">Objetivo: --</div>
+        <div id="hud-objective" class="hud-card">
+          <span id="hud-objective-label">Objetivo: --</span>
+          <span id="hud-objective-track"><span id="hud-objective-fill"></span></span>
+        </div>
+
+        <div id="hud-boss-bar" class="hud-card" hidden>
+          <span id="hud-boss-name">DREADNOUGHT</span>
+          <span id="hud-boss-track"><span id="hud-boss-fill"></span></span>
+          <span id="hud-boss-value">0 / 0</span>
+        </div>
 
         <div id="hud-xp-panel" class="hud-card">
           <span id="hud-level-label">Nivel 1</span>
-          <span id="hud-xp-progress">Nivel 1 - 0/100 XP</span>
           <div id="hud-xp-track">
             <div id="hud-xp-fill"></div>
           </div>
+          <span id="hud-xp-progress">0 / 100 XP</span>
         </div>
+
+        <button id="hud-upgrade-bank" class="hud-card" type="button" hidden>UPGRADES 0</button>
       </div>
 
       <!-- Fora do hud-layer para ter z-index próprio acima do upgrade-modal -->
-      <div id="hud-stats" class="hud-card" role="button" tabindex="0" aria-label="Player stats">
-        <span class="hud-stats-icon">i</span>
-        <div id="hud-stats-panel" class="hud-stats-panel">
-          <h2>Status</h2>
-          <span id="hud-color-badge" class="hud-color-badge"></span>
-          <ul>
-            <li><span>Vida</span><strong id="stat-health">0 / 0</strong></li>
-            <li><span>Regeneracao</span><strong id="stat-health-regen">0</strong></li>
-            <li><span>Dano de Contato</span><strong id="stat-body-damage">0</strong></li>
-            <li><span>Dano de Projetil</span><strong id="stat-bullet-damage">0</strong></li>
-            <li><span>Velocidade de Projetil</span><strong id="stat-bullet-speed">0</strong></li>
-            <li><span>Penetracao</span><strong id="stat-bullet-penetration">0</strong></li>
-            <li><span>Recarga</span><strong id="stat-reload">0</strong></li>
-            <li><span>Velocidade</span><strong id="stat-move-speed">0</strong></li>
-          </ul>
-        </div>
-      </div>
+      <div id="hud-stats" aria-label="Player stats"></div>
 
       <div id="pause-menu">
         <h2>PAUSED</h2>
-        <button id="btn-resume">RESUME</button>
-        <button id="btn-restart">RESTART</button>
-        <button id="btn-audio">AUDIO</button>
+        <button id="btn-resume"><i data-lucide="play"></i> RESUME</button>
+        <button id="btn-restart"><i data-lucide="rotate-ccw"></i> RESTART</button>
         <button id="btn-home-pause" class="btn-home"><i data-lucide="home"></i> MENU</button>
+        <button id="btn-audio"><i data-lucide="volume-2"></i> AUDIO</button>
         <div id="pause-audio-panel">
           <button id="btn-mute" aria-label="Ativar ou desativar musica">Som: ON</button>
           <label for="music-volume">Volume</label>
@@ -72,9 +67,17 @@
 
       <div id="upgrade-modal" aria-live="polite">
         <div id="upgrade-modal-panel" class="hud-card">
-          <h2>Escolha um Aprimoramento</h2>
-          <p id="upgrade-remaining">Aprimoramentos Restantes: 0</p>
+          <div class="upgrade-modal-header">
+            <div>
+              <h2>Escolha um Aprimoramento</h2>
+              <p id="upgrade-remaining">Aprimoramentos Restantes: 0</p>
+            </div>
+            <button id="btn-upgrade-defer" type="button"><span>ESCOLHER DEPOIS</span><i data-lucide="arrow-right"></i></button>
+          </div>
           <div id="upgrade-cards" class="upgrade-cards"></div>
+          <div class="upgrade-modal-actions">
+            <button id="btn-upgrade-reroll" type="button"><i data-lucide="rotate-ccw"></i><span>REROLAR</span><strong>1</strong></button>
+          </div>
         </div>
       </div>
 
