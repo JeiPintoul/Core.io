@@ -55,6 +55,7 @@ export interface ProjectileSpawnRequest {
 
 export type StatModifiers = Partial<EntityStats>;
 export type CardRarity = 'COMMON' | 'UNCOMMON' | 'RARE' | 'EPIC' | 'LEGENDARY';
+export type ShopItemKind = 'HEAL' | 'CARD';
 
 export interface UpgradeCardData {
     id: string;
@@ -83,6 +84,20 @@ export interface CardSelectedPayload {
     playerId: PlayerId;
     cardId: string;
     colorHex: string;
+}
+
+export interface ShopItemData {
+    id: string;
+    kind: ShopItemKind;
+    x: number;
+    y: number;
+    radius: number;
+    price: number;
+    sold: boolean;
+    label: string;
+    rarity?: CardRarity;
+    stock?: number;
+    purchaseProgress?: number;
 }
 
 export type EnemyType = 'KAMIKAZE' | 'RANGED' | 'SENTINEL' | 'SKIRMISHER' | 'BRUTE' | 'ANOMALY' | 'ANOMALY_DECOY' | 'DREADNOUGHT';
@@ -156,6 +171,8 @@ export interface BossFightStartPayload {
     bossArenaHeight: number;
 }
 
+export type ShopEnteredPayload = BossFightStartPayload;
+
 export interface ObjectiveState {
     id: string;
     title: string;
@@ -176,16 +193,20 @@ export interface GameState {
     waveType: WaveType;
     remainingToKill: number;
     activeEnemyCount: number;
+    coins: number;
     surviveTimeRemainingSeconds: number;
     isPaused: boolean;
     objective: ObjectiveState | null;
     isBossFight?: boolean;
+    isShop?: boolean;
     isAnomalyEncounter?: boolean;
     arenaOffset?: { x: number; y: number };
     isColorSelection: boolean;
     autoSpin: boolean;
     isCoop: boolean;
     bossExitPortal?: { x: number; y: number; radius: number } | null;
+    shopItems?: ShopItemData[];
+    shopMerchant?: { x: number; y: number; radius: number; label: string } | null;
 }
 
 export interface InputState {
@@ -218,6 +239,7 @@ export interface EntityDestroyedPayload {
 export interface EnemyDestroyedPayload {
     id: string;
     xpDropped: number;
+    coinDropped: number;
     x: number;
     y: number;
     radius: number;
@@ -327,6 +349,7 @@ export interface GameEventPayloads {
     objective_completed: ObjectiveCompletedPayload;
     audio_settings_changed: AudioSettingsPayload;
     audio_restart_requested: undefined;
+    shop_entered: ShopEnteredPayload;
     boss_fight_start: BossFightStartPayload;
     boss_defeated: undefined;
     boss_exit_portal_used: undefined;
@@ -340,4 +363,3 @@ export interface GameEventPayloads {
     auto_spin_toggled: { enabled: boolean };
     run_config_changed: RunConfiguration;
 }
-

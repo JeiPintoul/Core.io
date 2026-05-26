@@ -37,6 +37,7 @@ export class HudController {
     private readonly waveInfoSubEl = this.getEl<HTMLElement>('hud-wave-info-sub');
     private readonly waveTransitionEl = this.getEl<HTMLElement>('hud-wave-transition');
     private readonly enemyCounterEl = this.getEl<HTMLElement>('hud-enemy-counter');
+    private readonly coinCounterEl = this.getEl<HTMLElement>('hud-coin-counter');
     private readonly objectiveEl = this.getEl<HTMLElement>('hud-objective');
     private readonly statsTriggerEl = this.getEl<HTMLElement>('hud-stats');
     private readonly levelLabelEl = this.getEl<HTMLElement>('hud-level-label');
@@ -78,10 +79,11 @@ export class HudController {
         this.bindColorSelectionScreen();
         this.bindEvents();
         this.renderLevel();
-        this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
+        this.renderWaveInfo(1, 'CLEAR', 0, 0, false, false);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
+        this.renderCoinCount(0);
         this.renderObjective(null);
         this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
         this.renderGlobalStats(this.loadStats());
@@ -214,10 +216,11 @@ export class HudController {
         this.setStatsPinned(false);
         this.clearStatPreview();
         this.renderLevel();
-        this.renderWaveInfo(1, 'CLEAR', 0, 0, false);
+        this.renderWaveInfo(1, 'CLEAR', 0, 0, false, false);
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(0);
+        this.renderCoinCount(0);
         this.renderObjective(null);
         this.renderStats(this.currentPlayerHealth, this.currentPlayerStats);
         this.selectedColorByPlayer = {};
@@ -374,11 +377,13 @@ export class HudController {
             state.waveType,
             state.remainingToKill,
             state.surviveTimeRemainingSeconds,
-            state.isAnomalyEncounter ?? false
+            state.isAnomalyEncounter ?? false,
+            state.isShop ?? false
         );
         this.renderXpBar();
         this.renderXpProgress();
         this.renderEnemyCount(state.activeEnemyCount);
+        this.renderCoinCount(state.coins);
         this.renderObjective(state.objective);
 
         if (this.activePreviewModifiers) {
@@ -399,11 +404,14 @@ export class HudController {
         waveType: 'CLEAR' | 'SURVIVE' | 'BOSS',
         remainingToKill: number,
         surviveTimeRemaining: number,
-        isAnomalyEncounter: boolean
+        isAnomalyEncounter: boolean,
+        isShop: boolean
     ): void {
         if (this.waveInfoTitleEl) {
             const typeLabel = isAnomalyEncounter
                 ? 'Anomalia'
+                : isShop
+                ? 'Loja'
                 : waveType === 'BOSS'
                 ? 'Boss'
                 : waveType === 'SURVIVE'
@@ -413,7 +421,10 @@ export class HudController {
         }
 
         if (this.waveInfoSubEl) {
-            if (isAnomalyEncounter) {
+            if (isShop) {
+                this.waveInfoSubEl.textContent = 'Compre melhorias antes do boss';
+                this.waveInfoSubEl.classList.remove('is-danger');
+            } else if (isAnomalyEncounter) {
                 this.waveInfoSubEl.textContent = 'Identifique e neutralize a anomalia';
                 this.waveInfoSubEl.classList.add('is-danger');
             } else if (waveType === 'BOSS') {
@@ -444,6 +455,11 @@ export class HudController {
     private renderEnemyCount(activeCount: number): void {
         if (!this.enemyCounterEl) return;
         this.enemyCounterEl.textContent = `Inimigos: ${Math.max(0, activeCount)}`;
+    }
+
+    private renderCoinCount(coins: number): void {
+        if (!this.coinCounterEl) return;
+        this.coinCounterEl.textContent = `Moedas: ${Math.max(0, coins)}`;
     }
 
     private renderObjective(objective: ObjectiveState | null): void {
