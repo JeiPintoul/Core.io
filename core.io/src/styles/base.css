@@ -1,0 +1,94 @@
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    --hud-bg: rgba(5, 10, 24, 0.82);
+    --hud-border: rgba(98, 126, 180, 0.46);
+    --hud-text: #eaf1ff;
+    --hud-muted: #9db4de;
+    --hud-accent: #59a7ff;
+    --hud-accent-strong: #9dd3ff;
+    --hud-danger: #ff7373;
+    --hud-positive: #66e6a6;
+    --hud-primary-color: #ff4d57;
+    --hud-line: rgba(130, 160, 215, 0.2);
+    --ui-scale: 1;
+    --hud-inset-right: 0px;
+    --hud-inset-bottom: 0px;
+    --hud-edge: 1rem;
+    --hud-panel-width: 18rem;
+    --minimap-size: 192px;
+    --minimap-padding: 28px;
+}
+
+body {
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    background-color: #1a1a1a;
+    color: white;
+    font-family: Bahnschrift, 'Segoe UI', sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+#game-container {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 1;
+}
+
+#ui-layer {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 10;
+    pointer-events: none;
+}
+
+@media (max-height: 1120px) {
+    :root {
+        --minimap-size: 168px;
+        --minimap-padding: 22px;
+    }
+}
+
+@media (max-height: 900px) {
+    :root {
+        --minimap-size: 148px;
+        --minimap-padding: 18px;
+    }
+}
+
+:root.is-compact-ui {
+    font-size: clamp(13px, 0.92vw, 14px);
+    --minimap-size: 132px;
+    --minimap-padding: 14px;
+    --hud-edge: 0.75rem;
+    --hud-panel-width: 14.5rem;
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    :root {
+        --minimap-size: 132px;
+        --minimap-padding: 14px;
+        --hud-edge: 0.75rem;
+        --hud-panel-width: 14.5rem;
+    }
+}
+
+@media (max-width: 1450px), (max-height: 800px) {
+    :root {
+        --minimap-size: 116px;
+        --minimap-padding: 10px;
+        --hud-panel-width: 13.25rem;
+    }
+}

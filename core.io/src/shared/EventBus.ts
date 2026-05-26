@@ -48,6 +48,7 @@ export const GameEvents = {
     AUTO_FIRE_TOGGLED: 'auto_fire_toggled',
     AUTO_SPIN_TOGGLED: 'auto_spin_toggled',
     RUN_CONFIG_CHANGED: 'run_config_changed',
+    CAMERA_VIEWPORT_CHANGED: 'camera_viewport_changed',
 } as const;
 
 export type GameEventName = keyof GameEventPayloads;

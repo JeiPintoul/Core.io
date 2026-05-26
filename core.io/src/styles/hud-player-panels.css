@@ -1,0 +1,688 @@
+#hud-wave-info-title,
+#hud-objective-label,
+#hud-boss-name,
+.hud-player-stat-panel small {
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+}
+
+#hud-objective-track,
+#hud-boss-track,
+.hud-player-health-track,
+.hud-player-xp-track {
+    display: block;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+#hud-objective-fill,
+#hud-boss-fill,
+.hud-player-health-track span,
+.hud-player-xp-track span {
+    display: block;
+    height: 100%;
+    width: 0%;
+    transition: width 140ms linear;
+}
+
+#hud-stats {
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: auto;
+    height: auto;
+    pointer-events: none;
+    z-index: 61;
+}
+
+#hud-stats.is-hidden {
+    display: none;
+}
+
+.hud-player-panel {
+    --player-color: #4488ff;
+    position: absolute;
+    width: var(--hud-panel-width);
+    pointer-events: auto;
+}
+
+.hud-player-panel--player_1 {
+    left: var(--hud-edge);
+    bottom: var(--hud-edge);
+}
+
+.hud-player-panel--player_2 {
+    right: calc(
+        var(--hud-inset-right, 0px) + var(--minimap-size) * var(--ui-scale, 1) +
+            46px
+    );
+    bottom: var(--hud-edge);
+}
+
+.hud-player-panel--player_3 {
+    left: var(--hud-edge);
+    top: 6.5rem;
+}
+
+.hud-player-panel--player_4 {
+    right: 5.45rem;
+    top: 1rem;
+}
+
+.hud-player-stat-button {
+    width: 100%;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: auto auto 1fr auto;
+    align-items: center;
+    column-gap: 0.5rem;
+    row-gap: 0.12rem;
+    padding: 0.36rem 0.55rem 0.34rem;
+    color: #eef3ff;
+    background: rgba(7, 12, 27, 0.78);
+    border: 1px solid
+        color-mix(in srgb, var(--player-color), var(--hud-border) 52%);
+    border-radius: 4px;
+    cursor: default;
+    font: inherit;
+    text-align: left;
+}
+
+.is-pinned-mode .hud-player-stat-button {
+    cursor: pointer;
+}
+
+.hud-player-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: var(--player-color);
+    box-shadow: 0 0 10px var(--player-color);
+}
+
+.hud-player-id,
+.hud-player-level {
+    font-family: 'JetBrains Mono', monospace;
+    color: #9eabc3;
+    font-size: 0.62rem;
+    font-weight: 800;
+}
+
+.hud-player-stat-button strong {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 0.88rem;
+}
+
+.hud-player-xp-brief {
+    grid-column: 4 / 5;
+    justify-self: end;
+    color: #8f9bb3;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    font-weight: 800;
+}
+
+.hud-player-button-xp-track {
+    display: none;
+    grid-column: 1 / 5;
+    width: 100%;
+    height: 0.18rem;
+    overflow: hidden;
+    background: rgba(255, 255, 255, 0.08);
+}
+
+.hud-player-button-xp-track span {
+    display: block;
+    width: 0%;
+    height: 100%;
+    background: var(--player-color);
+}
+
+.is-local-coop .hud-player-button-xp-track {
+    display: block;
+}
+
+.hud-player-money,
+.hud-player-money-detail {
+    display: none;
+    align-items: center;
+    gap: 0.35rem;
+    color: #ffd66b;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.62rem;
+    font-weight: 800;
+}
+
+.hud-player-money {
+    display: inline-flex;
+    grid-column: 1 / 5;
+    justify-self: start;
+    line-height: 1;
+    margin-top: -0.04rem;
+}
+
+.hud-player-money-detail {
+    display: inline-flex;
+    margin-left: auto;
+    align-self: flex-start;
+    line-height: 1;
+    padding-top: 0.1rem;
+}
+
+.hud-player-money-icon {
+    position: relative;
+    flex: 0 0 auto;
+    width: 0.78rem;
+    height: 0.7rem;
+    overflow: visible;
+}
+
+.hud-player-money-detail .hud-player-money-icon {
+    width: 1.42rem;
+    height: 0.92rem;
+}
+
+.hud-player-money-icon--pair .hud-coin {
+    width: 0.56rem;
+    height: 0.56rem;
+}
+
+.hud-player-money-icon--pair .hud-coin--back {
+    left: 0.03rem;
+    top: 0.15rem;
+    z-index: 1;
+}
+
+.hud-player-money-icon--pair .hud-coin--front {
+    left: 0.26rem;
+    top: 0.04rem;
+    z-index: 2;
+}
+
+.hud-player-money-icon--stack .hud-coin--back,
+.hud-player-money-icon--stack .hud-coin--middle {
+    right: 0.02rem;
+    width: 0.98rem;
+    height: 0.48rem;
+    transform: rotate(4deg);
+}
+
+.hud-player-money-icon--stack .hud-coin--back {
+    top: 0.4rem;
+    z-index: 1;
+}
+
+.hud-player-money-icon--stack .hud-coin--middle {
+    top: 0.24rem;
+    z-index: 2;
+}
+
+.hud-player-money-icon--stack .hud-coin--front {
+    left: 0.02rem;
+    top: 0.03rem;
+    z-index: 3;
+    width: 0.48rem;
+    height: 0.84rem;
+    transform: rotate(18deg);
+}
+
+.hud-player-money {
+    text-shadow: 0 0 0.45rem rgba(255, 214, 107, 0.42);
+}
+
+.hud-player-money-detail {
+    text-shadow: 0 0 0.55rem rgba(255, 214, 107, 0.48);
+}
+
+.hud-player-money-icon--pair .hud-sparkle--one {
+    right: -0.14rem;
+    top: 0.02rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--two {
+    left: 0.06rem;
+    top: -0.2rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--three {
+    right: 0.18rem;
+    bottom: -0.16rem;
+}
+
+.hud-player-money-icon--pair .hud-sparkle--four {
+    left: -0.14rem;
+    top: 0.32rem;
+}
+
+.hud-player-stat-panel {
+    position: absolute;
+    width: min(23.5rem, calc(100vw - 1.8rem));
+    margin-top: 0.5rem;
+    padding: 1.05rem;
+    color: #eef3ff;
+    background: rgba(7, 11, 25, 0.96);
+    border: 1px solid
+        color-mix(in srgb, var(--player-color), var(--hud-border) 45%);
+    border-radius: 4px;
+    box-shadow: 0 18px 42px rgba(0, 0, 0, 0.48);
+    opacity: 0;
+    transform: translateY(6px);
+    pointer-events: none;
+    transition:
+        opacity 140ms ease,
+        transform 140ms ease;
+}
+
+.hud-player-panel--player_1 .hud-player-stat-panel,
+.hud-player-panel--player_2 .hud-player-stat-panel {
+    bottom: calc(100% + 0.5rem);
+    margin-top: 0;
+}
+
+.hud-player-panel--player_1 .hud-player-stat-panel,
+.hud-player-panel--player_3 .hud-player-stat-panel {
+    left: 0;
+}
+
+.hud-player-panel--player_2 .hud-player-stat-panel,
+.hud-player-panel--player_4 .hud-player-stat-panel {
+    right: 0;
+}
+
+#hud-stats:not(.is-pinned-mode) .hud-player-panel:hover .hud-player-stat-panel,
+.hud-player-panel.is-open .hud-player-stat-panel {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+.hud-player-stat-panel header,
+.hud-player-health > div,
+.hud-player-xp,
+.hud-player-stat-panel li {
+    display: flex;
+    align-items: center;
+}
+
+.hud-player-stat-panel header {
+    gap: 0.7rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--hud-line);
+}
+
+.hud-player-stat-panel header > div:not(.hud-player-money-detail) {
+    min-width: 0;
+}
+
+.hud-player-stat-panel small {
+    color: #7f8ba4;
+    font-size: 0.7rem;
+}
+
+.hud-player-stat-panel h2 {
+    margin: 1px 0 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 1.2rem;
+    color: #ffffff;
+}
+
+@keyframes coin-sparkle-pulse {
+    0%,
+    100% {
+        opacity: 0;
+        transform: translateY(0.12rem) scale(0.15) rotate(-6deg);
+    }
+
+    24% {
+        opacity: 1;
+        transform: translateY(0) scale(1) rotate(0deg);
+    }
+
+    44% {
+        opacity: 0.82;
+        transform: translateY(-0.03rem) scale(1.22) rotate(5deg);
+    }
+
+    72% {
+        opacity: 0;
+        transform: translateY(0.1rem) scale(0.5) rotate(9deg);
+    }
+}
+
+.hud-player-health {
+    display: grid;
+    gap: 6px;
+    padding: 12px 0;
+}
+
+.hud-player-health > div,
+.hud-player-stat-panel li {
+    justify-content: space-between;
+}
+
+.hud-player-health span,
+.hud-player-stat-panel li span {
+    color: #93a0b8;
+    font-size: 0.84rem;
+    text-transform: uppercase;
+}
+
+.hud-player-health strong,
+.hud-player-stat-panel li strong {
+    color: #f5f7ff;
+    font-size: 0.9rem;
+}
+
+.hud-player-health-track {
+    height: 7px;
+}
+
+.hud-player-health-track span {
+    background: linear-gradient(90deg, #52e487, #b8ffca);
+}
+
+.hud-player-xp {
+    gap: 8px;
+    padding-bottom: 11px;
+    border-bottom: 1px solid var(--hud-line);
+}
+
+.hud-player-xp span:first-child,
+.hud-player-xp strong {
+    flex: 0 0 auto;
+    color: #9aa7bd;
+    font-size: 0.68rem;
+    font-family: 'JetBrains Mono', monospace;
+}
+
+.hud-player-xp-track {
+    flex: 1;
+    height: 4px;
+}
+
+.hud-player-xp-track span {
+    background: var(--player-color);
+}
+
+.hud-player-stat-panel ul {
+    list-style: none;
+    display: grid;
+    gap: 6px;
+    padding-top: 10px;
+}
+
+.hud-player-stat-panel li em {
+    color: #66e6a6;
+    font-style: normal;
+    margin-left: 4px;
+}
+
+.hud-player-stat-panel li.is-preview-negative em,
+.hud-player-stat-panel li.is-color-nerf strong {
+    color: #ff8b8b;
+}
+
+.hud-player-stat-panel li.is-color-buff strong {
+    color: #66e6a6;
+}
+
+@media (max-width: 980px), (max-height: 760px) {
+    .hud-player-panel {
+        width: 14rem;
+    }
+}
+
+@media (max-width: 980px), (max-height: 760px) {
+    .hud-player-panel--player_2 {
+        right: 12px;
+        bottom: calc(var(--minimap-size) * var(--ui-scale, 1) + 70px);
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-panel--player_1 {
+        left: 0.75rem;
+        bottom: 0.75rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-panel--player_2 {
+        right: calc(
+            var(--hud-inset-right, 0px) + var(--minimap-size) *
+                var(--ui-scale, 1) + 1rem
+        );
+        bottom: calc(
+            var(--hud-inset-bottom, 0px) + var(--minimap-size) *
+                var(--ui-scale, 1) + 3.9rem
+        );
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-panel--player_3 {
+        left: 0.75rem;
+        top: 5.55rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-panel--player_4 {
+        right: 4.35rem;
+        top: 0.75rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-stat-button {
+        min-height: 2.35rem;
+        padding: 0.38rem 0.5rem;
+        gap: 0.38rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-stat-button strong {
+        font-size: 0.78rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-id,
+    .hud-player-level,
+    .hud-player-xp-brief,
+    .hud-player-money {
+        font-size: 0.56rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-stat-panel {
+        width: min(15rem, calc(100vw - 1.5rem));
+        max-height: 44vh;
+        overflow-y: auto;
+        padding: 0.62rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-stat-panel h2 {
+        font-size: 0.9rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-health,
+    .hud-player-stat-panel ul {
+        gap: 4px;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-health {
+        padding: 0.55rem 0;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-xp {
+        padding-bottom: 0.5rem;
+    }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-health span,
+    .hud-player-stat-panel li span,
+    .hud-player-health strong,
+    .hud-player-stat-panel li strong {
+        font-size: 0.68rem;
+    }
+}
+
+@media (max-width: 1450px), (max-height: 800px) {
+    .hud-player-panel--player_2 {
+        bottom: calc(
+            var(--hud-inset-bottom, 0px) + var(--minimap-size) *
+                var(--ui-scale, 1) + 3.55rem
+        );
+    }
+}
+
+@media (max-width: 1450px), (max-height: 800px) {
+    .hud-player-panel--player_3 {
+        top: 5.15rem;
+    }
+}
+
+@media (max-width: 1450px), (max-height: 800px) {
+    .hud-player-panel--player_4 {
+        right: 3.9rem;
+    }
+}
+
+:root.is-compact-ui .hud-player-panel--player_2 {
+    right: calc(
+        var(--hud-inset-right, 0px) + var(--minimap-size) * var(--ui-scale, 1) +
+            0.9rem
+    );
+    bottom: var(--hud-edge);
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    .hud-player-panel--player_2 {
+        right: calc(
+            var(--hud-inset-right, 0px) + var(--minimap-size) *
+                var(--ui-scale, 1) + 0.9rem
+        );
+        bottom: var(--hud-edge);
+    }
+
+    .hud-player-stat-button {
+        padding: 0.34rem 0.48rem 0.32rem;
+        row-gap: 0.1rem;
+    }
+
+    .hud-player-stat-button strong {
+        font-size: 0.74rem;
+    }
+
+    .hud-player-id,
+    .hud-player-level,
+    .hud-player-xp-brief,
+    .hud-player-money {
+        font-size: 0.52rem;
+    }
+
+    .hud-player-stat-panel {
+        width: min(14.25rem, calc(100vw - 1.5rem));
+        max-height: 46vh;
+        padding: 0.62rem;
+    }
+
+    .hud-player-stat-panel header {
+        gap: 0.45rem;
+        padding-bottom: 0.45rem;
+    }
+
+    .hud-player-stat-panel h2 {
+        font-size: 0.88rem;
+    }
+
+    .hud-player-stat-panel small,
+    .hud-player-xp span:first-child,
+    .hud-player-xp strong {
+        font-size: 0.56rem;
+    }
+
+    .hud-player-health {
+        padding: 0.42rem 0;
+    }
+
+    .hud-player-xp {
+        gap: 0.35rem;
+        padding-bottom: 0.42rem;
+    }
+
+    .hud-player-stat-panel ul {
+        gap: 0.18rem;
+        padding-top: 0.42rem;
+    }
+
+    .hud-player-health span,
+    .hud-player-stat-panel li span,
+    .hud-player-health strong,
+    .hud-player-stat-panel li strong {
+        font-size: 0.64rem;
+    }
+}
+
+:root.is-compact-ui .hud-player-stat-panel {
+    width: min(23.5rem, calc(100vw - 1.5rem));
+    max-height: 62vh;
+    padding: 0.95rem;
+}
+
+:root.is-compact-ui .hud-player-stat-panel header {
+    gap: 0.68rem;
+    padding-bottom: 0.7rem;
+}
+
+:root.is-compact-ui .hud-player-stat-panel h2 {
+    font-size: 1.08rem;
+}
+
+:root.is-compact-ui .hud-player-stat-panel small,
+:root.is-compact-ui .hud-player-xp span:first-child,
+:root.is-compact-ui .hud-player-xp strong {
+    font-size: 0.68rem;
+}
+
+:root.is-compact-ui .hud-player-health {
+    padding: 0.72rem 0;
+}
+
+:root.is-compact-ui .hud-player-xp {
+    gap: 0.56rem;
+    padding-bottom: 0.68rem;
+}
+
+:root.is-compact-ui .hud-player-stat-panel ul {
+    gap: 0.38rem;
+    padding-top: 0.68rem;
+}
+
+:root.is-compact-ui .hud-player-health span,
+:root.is-compact-ui .hud-player-stat-panel li span,
+:root.is-compact-ui .hud-player-health strong,
+:root.is-compact-ui .hud-player-stat-panel li strong {
+    font-size: 0.82rem;
+}

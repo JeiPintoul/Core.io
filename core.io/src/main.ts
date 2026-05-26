@@ -1,9 +1,16 @@
-import './style.css';
+import './styles/base.css';
+import './styles/hud.css';
+import './styles/minimap.css';
+import './styles/hud-player-panels.css';
+import './styles/pause-menu.css';
+import './styles/upgrade-modal.css';
+import './styles/debug.css';
 import './client/lobby/lobby.css';
 import { createIcons, Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X, Play, RotateCcw, Lock, Unlock } from 'lucide';
 import { GameEngine } from './logic/GameEngine';
 import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
+import { MinimapHudController } from './client/hud/MinimapHudController';
 import { UpgradeModalController, type UpgradeGamepadActionKey, type UpgradeGamepadActionState, type UpgradeUiMode } from './client/hud/UpgradeModalController';
 import { GodMode } from './debug/GodMode';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
@@ -15,6 +22,7 @@ import { HelpModal } from './client/lobby/HelpModal';
 const engine = new GameEngine();
 createPhaserGame();
 const hudController = new HudController();
+const minimapHudController = new MinimapHudController();
 new GodMode(engine);
 
 type UiMode = UpgradeUiMode;
@@ -549,11 +557,12 @@ function syncCanvasLayout(): void {
     if (rect.width === 0 || rect.height === 0) return;
     const insetRight = Math.max(0, window.innerWidth - rect.right);
     const insetBottom = Math.max(0, window.innerHeight - rect.bottom);
-    const scale = rect.height / 1080;
+    const uiScale = Math.min(1, Math.max(0.74, Math.min(rect.width / 1920, rect.height / 1080)));
     const root = document.documentElement;
-    root.style.setProperty('--canvas-inset-right', `${Math.round(insetRight)}px`);
-    root.style.setProperty('--canvas-inset-bottom', `${Math.round(insetBottom)}px`);
-    root.style.setProperty('--canvas-scale', scale.toFixed(4));
+    root.style.setProperty('--hud-inset-right', `${Math.round(insetRight)}px`);
+    root.style.setProperty('--hud-inset-bottom', `${Math.round(insetBottom)}px`);
+    root.style.setProperty('--ui-scale', uiScale.toFixed(4));
+    root.classList.toggle('is-compact-ui', window.devicePixelRatio > 1.1 || rect.width < 1700 || rect.height < 900);
 }
 
 function attachCanvasSyncObserver(): void {
@@ -582,5 +591,6 @@ window.addEventListener('beforeunload', () => {
     }
     engine.destroy();
     upgradeModalController.destroy();
+    minimapHudController.destroy();
     hudController.destroy();
 });

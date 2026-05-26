@@ -3,7 +3,6 @@ import type { CardRarity, EnemyType, GameState, ProjectileFaction } from '../../
 import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
 import { COLORS, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
-import { MinimapRenderer } from './MinimapRenderer';
 import { ParticleManager } from './ParticleManager';
 import { EnemyVisualRenderer } from './entities/EnemyVisualRenderer';
 import { ProjectileVisualRenderer } from './projectiles/ProjectileVisualRenderer';
@@ -22,7 +21,6 @@ interface EntityRenderSnapshot {
 
 export class GameRenderer {
     private readonly healthBarRenderer: HealthBarRenderer;
-    private readonly minimapRenderer: MinimapRenderer;
     private readonly particleManager: ParticleManager;
     private readonly enemyVisualRenderer: EnemyVisualRenderer;
     private readonly projectileVisualRenderer: ProjectileVisualRenderer;
@@ -46,7 +44,6 @@ export class GameRenderer {
         private readonly gfxHud: Phaser.GameObjects.Graphics
     ) {
         this.healthBarRenderer = new HealthBarRenderer(scene, gfxGame);
-        this.minimapRenderer = new MinimapRenderer(scene, camera, gfxHud);
         this.particleManager = new ParticleManager(scene);
         this.enemyVisualRenderer = new EnemyVisualRenderer(gfxGame);
         this.projectileVisualRenderer = new ProjectileVisualRenderer(gfxGame);
@@ -73,7 +70,6 @@ export class GameRenderer {
         this.drawEnemies(state, activeEntityIds);
         this.drawPlayers(players, activeEntityIds);
         this.updatePlayerNames(players);
-        this.minimapRenderer.draw(players, state.bossExitPortal ?? null);
         this.pruneEnemyBarrelRetraction(activeEntityIds);
         this.pruneShopLabels(state);
 

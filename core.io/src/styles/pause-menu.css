@@ -1,0 +1,310 @@
+#btn-pause {
+  position: absolute;
+  top: clamp(12px, 1.5vh, 20px);
+  right: clamp(12px, 1.2vw, 20px);
+  width: clamp(40px, 2.45vw, 46px);
+  height: clamp(40px, 2.45vw, 46px);
+  border-radius: 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 0;
+  line-height: 1;
+  font-size: clamp(0.98rem, 0.85vw, 1.1rem);
+  font-weight: 800;
+  color: var(--hud-accent-strong);
+  cursor: pointer;
+  pointer-events: auto;
+  user-select: none;
+}
+
+#btn-pause.is-paused {
+  color: #c9ffd6;
+}
+
+#pause-audio-panel label {
+  font-size: 0.73rem;
+  color: var(--hud-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  margin-bottom: -4px;
+}
+
+#btn-mute {
+  width: 100%;
+  border: 1px solid rgba(157, 211, 255, 0.5);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: rgba(10, 18, 41, 0.9);
+  color: var(--hud-accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+}
+
+#btn-mute.is-muted {
+  color: #ffd0d0;
+  border-color: rgba(255, 139, 139, 0.55);
+}
+
+#music-volume {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  display: block;
+  accent-color: #59a7ff;
+  cursor: pointer;
+}
+
+@media (max-width: 980px), (max-height: 760px) {
+#btn-pause {
+    top: 12px;
+    right: 12px;
+    width: 42px;
+    height: 42px;
+  }
+}
+
+#pause-menu {
+  position: absolute;
+  inset: 0;
+  display: none;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  background-color: rgba(7, 10, 20, 0.56);
+  pointer-events: none;
+  backdrop-filter: blur(2px);
+  z-index: 55;
+}
+
+#pause-menu h2 {
+  font-size: 2.45rem;
+  letter-spacing: 3.3px;
+  color: #ffffff;
+  text-shadow: 0 0 14px rgba(89, 167, 255, 0.8);
+}
+
+#pause-menu > button {
+  width: min(320px, 72vw);
+  padding: 14px 18px;
+  font-size: 1.36rem;
+  font-weight: 700;
+  cursor: pointer;
+  color: #f0f6ff;
+  background: rgba(20, 34, 72, 0.92);
+  border: 1px solid rgba(157, 211, 255, 0.6);
+  border-radius: 8px;
+  transition: transform 120ms ease, box-shadow 120ms ease;
+  pointer-events: auto;
+}
+
+#pause-menu > button:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 0 14px rgba(96, 170, 255, 0.6);
+}
+
+#pause-audio-panel {
+  width: min(320px, 72vw);
+  max-width: 100%;
+  display: none;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(157, 211, 255, 0.35);
+  background: rgba(9, 16, 36, 0.92);
+  pointer-events: auto;
+}
+
+#pause-audio-panel.is-open {
+  display: flex;
+}
+
+#music-volume-global {
+  width: 100%;
+  display: block;
+  accent-color: #59a7ff;
+  cursor: pointer;
+}
+
+#btn-mute-global {
+  width: 100%;
+  border: 1px solid rgba(157, 211, 255, 0.5);
+  border-radius: 7px;
+  padding: 5px 8px;
+  background: rgba(10, 18, 41, 0.9);
+  color: var(--hud-accent-strong);
+  font-size: 0.78rem;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.btn-home {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #c8d8f0;
+  background: rgba(10, 18, 48, 0.8);
+  border: 1px solid rgba(157, 211, 255, 0.35);
+  border-radius: 8px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.8px;
+  cursor: pointer;
+  transition: color 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+
+.btn-home:hover {
+  color: #ff8888;
+  border-color: rgba(255, 120, 120, 0.55);
+  transform: translateY(-1px);
+}
+
+.btn-home svg {
+  width: 16px;
+  height: 16px;
+  stroke: currentColor;
+}
+
+#btn-home-pause {
+  width: min(320px, 72vw);
+  padding: 14px 18px;
+  font-size: 1.36rem;
+  pointer-events: auto;
+}
+
+#pause-menu > button.is-gamepad-focused,
+#pause-menu #pause-audio-panel button.is-gamepad-focused,
+#pause-menu #pause-audio-panel input.is-gamepad-focused {
+  border-color: rgba(178, 228, 255, 0.96);
+  box-shadow: 0 0 0 2px rgba(178, 228, 255, 0.3), 0 0 22px rgba(92, 170, 255, 0.58);
+  transform: translateY(-1px);
+}
+
+#pause-menu #pause-audio-panel input.is-gamepad-focused {
+  accent-color: #8ed4ff;
+}
+
+#btn-pause {
+  background: color-mix(in srgb, var(--hud-primary-color) 8%, rgba(5, 10, 24, 0.48));
+  border-color: color-mix(in srgb, var(--hud-primary-color), var(--hud-border) 55%);
+  color: color-mix(in srgb, var(--hud-primary-color), #ffffff 48%);
+}
+
+#btn-pause:hover {
+  box-shadow: 0 0 1.2rem color-mix(in srgb, var(--hud-primary-color), transparent 60%);
+}
+
+#pause-menu {
+  background: rgba(3, 6, 14, 0.58);
+  backdrop-filter: blur(6px);
+}
+
+#pause-menu::before {
+  content: '';
+  position: absolute;
+  width: min(430px, 86vw);
+  height: auto;
+  min-height: 420px;
+  border: 1px solid rgba(112, 141, 196, 0.5);
+  background: linear-gradient(180deg, rgba(10, 15, 33, 0.9), rgba(5, 9, 20, 0.92));
+  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.62);
+}
+
+#pause-menu h2,
+#pause-menu > button,
+#pause-audio-panel {
+  position: relative;
+  z-index: 1;
+}
+
+#pause-menu h2 {
+  width: min(320px, 72vw);
+  margin-bottom: 4px;
+  text-align: center;
+  font-size: 3rem;
+  letter-spacing: 0;
+  text-shadow: none;
+}
+
+#pause-menu > button,
+#btn-home-pause {
+  width: min(320px, 72vw);
+  padding: 12px 16px;
+  border-radius: 0;
+  border-color: rgba(99, 118, 160, 0.28);
+  border-left: 2px solid transparent;
+  background: transparent;
+  font-size: 0.9rem;
+  text-align: left;
+  justify-content: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+#pause-menu > button svg,
+#btn-home-pause svg {
+  width: 1rem;
+  height: 1rem;
+}
+
+#pause-menu > button:hover,
+#pause-menu > button.is-gamepad-focused {
+  transform: none;
+  border-left-color: var(--hud-primary-color);
+  background: linear-gradient(90deg, color-mix(in srgb, var(--hud-primary-color) 22%, transparent), rgba(255, 255, 255, 0.02));
+}
+
+#pause-audio-panel {
+  border-radius: 0;
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+#btn-pause {
+    top: 0.7rem;
+    right: 0.7rem;
+    width: 2.55rem;
+    height: 2.55rem;
+  }
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+  #pause-menu {
+    gap: 0.52rem;
+  }
+
+  #pause-menu::before {
+    width: min(22rem, 82vw);
+    min-height: 20.5rem;
+  }
+
+  #pause-menu h2 {
+    width: min(16.5rem, 70vw);
+    font-size: 2.05rem;
+  }
+
+  #pause-menu > button,
+  #btn-home-pause,
+  #pause-audio-panel {
+    width: min(16.5rem, 70vw);
+  }
+
+  #pause-menu > button,
+  #btn-home-pause {
+    padding: 0.72rem 0.9rem;
+    font-size: 0.74rem;
+    gap: 0.5rem;
+  }
+
+  #pause-menu > button svg,
+  #btn-home-pause svg {
+    width: 0.86rem;
+    height: 0.86rem;
+  }
+}

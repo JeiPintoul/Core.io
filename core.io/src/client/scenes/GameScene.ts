@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import { GameEvents, onGameEvent } from '../../shared/EventBus';
+import { emitGameEvent, GameEvents, onGameEvent } from '../../shared/EventBus';
 import type { GameState } from '../../shared/Types';
 import { GameRenderer } from '../render/GameRenderer';
 import { InputHandler } from '../input/InputHandler';
@@ -269,11 +269,13 @@ export class GameScene extends Phaser.Scene {
             );
             const nextZoom = Phaser.Math.Linear(this.cameras.main.zoom, this.cameraMaxZoom, this.cameraZoomLerp);
             this.cameras.main.setZoom(nextZoom);
+            this.emitCameraViewport();
             this.gameRenderer.renderFrame(state);
             return;
         }
 
         this.applyDynamicCameraFraming(state);
+        this.emitCameraViewport();
         this.inputHandler.handleInput(state);
 
         if (!state.isPaused) {
@@ -308,6 +310,16 @@ export class GameScene extends Phaser.Scene {
         this.cameraFollowTarget.setPosition(framing.x, framing.y);
         const nextZoom = Phaser.Math.Linear(this.cameras.main.zoom, framing.zoom, this.cameraZoomLerp);
         this.cameras.main.setZoom(nextZoom);
+    }
+
+    private emitCameraViewport(): void {
+        const view = this.cameras.main.worldView;
+        emitGameEvent(GameEvents.CAMERA_VIEWPORT_CHANGED, {
+            left: view.left,
+            top: view.top,
+            right: view.right,
+            bottom: view.bottom
+        });
     }
 
     private getDynamicCameraFraming(state: GameState): { x: number; y: number; zoom: number } {

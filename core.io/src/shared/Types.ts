@@ -186,6 +186,13 @@ export interface BossFightStartPayload {
     bossArenaHeight: number;
 }
 
+export interface CameraViewportPayload {
+    left: number;
+    top: number;
+    right: number;
+    bottom: number;
+}
+
 export type ShopEnteredPayload = BossFightStartPayload;
 
 export interface ObjectiveState {
@@ -380,4 +387,5 @@ export interface GameEventPayloads {
     auto_fire_toggled: { enabled: boolean };
     auto_spin_toggled: { enabled: boolean };
     run_config_changed: RunConfiguration;
+    camera_viewport_changed: CameraViewportPayload;
 }

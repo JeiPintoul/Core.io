@@ -1,0 +1,58 @@
+#hud-minimap-group {
+    position: absolute;
+    right: calc(
+        var(--hud-inset-right, 0px) + var(--minimap-padding) *
+            var(--ui-scale, 1)
+    );
+    bottom: calc(
+        var(--hud-inset-bottom, 0px) + var(--minimap-padding) *
+            var(--ui-scale, 1)
+    );
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 8px;
+    width: calc(var(--minimap-size) * var(--ui-scale, 1));
+}
+
+#hud-enemy-counter {
+    width: 100%;
+    text-align: center;
+    padding: 0.42rem 0.65rem;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.78rem;
+    letter-spacing: 0.2em;
+    text-transform: uppercase;
+    color: color-mix(in srgb, var(--hud-primary-color), #ffffff 48%);
+    border-color: color-mix(
+        in srgb,
+        var(--hud-primary-color),
+        var(--hud-border) 48%
+    );
+    box-shadow: 0 0 1rem
+        color-mix(in srgb, var(--hud-primary-color), transparent 78%);
+}
+
+#hud-minimap {
+    display: block;
+    width: 100%;
+    height: calc(var(--minimap-size) * var(--ui-scale, 1));
+    flex-shrink: 0;
+    pointer-events: none;
+}
+
+#hud-coin-counter {
+    display: none;
+}
+
+@media (max-width: 1700px), (max-height: 930px) {
+    #hud-minimap-group {
+        right: calc(var(--hud-inset-right, 0px) + 0.85rem);
+        bottom: calc(var(--hud-inset-bottom, 0px) + 0.85rem);
+    }
+
+    #hud-enemy-counter {
+        padding: 0.34rem 0.45rem;
+        font-size: 0.66rem;
+    }
+}
