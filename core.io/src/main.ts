@@ -4,6 +4,7 @@ import './styles/minimap.css';
 import './styles/hud-player-panels.css';
 import './styles/pause-menu.css';
 import './styles/upgrade-modal.css';
+import './styles/tank-evolution-modal.css';
 import './styles/debug.css';
 import './client/lobby/lobby.css';
 import { createIcons, Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X, Play, RotateCcw, Lock, Unlock } from 'lucide';
@@ -12,6 +13,7 @@ import { createPhaserGame } from './client/PhaserGame';
 import { HudController } from './client/hud/HudController';
 import { MinimapHudController } from './client/hud/MinimapHudController';
 import { UpgradeModalController, type UpgradeGamepadActionKey, type UpgradeGamepadActionState, type UpgradeUiMode } from './client/hud/UpgradeModalController';
+import { TankEvolutionModalController } from './client/hud/TankEvolutionModalController';
 import { GodMode } from './debug/GodMode';
 import { emitGameEvent, GameEvents, onGameEvent } from './shared/EventBus';
 import { PLAYER_IDS, type PlayerId, type RunConfiguration } from './shared/Types';
@@ -49,6 +51,8 @@ let previousUiMode: UiMode | null = null;
 let pauseMenuGamepadFocusIndex = 0;
 let gamepadUiPollFrameId: number | null = null;
 let activeRunConfiguration: RunConfiguration | null = null;
+let runStartTransitionTimeoutId: number | null = null;
+let tankEvolutionPausedEngine = false;
 
 type UiGamepadActionKey = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel' | 'pause';
 type UiGamepadActionState = Record<UiGamepadActionKey, boolean>;
@@ -74,6 +78,7 @@ const upgradeModalController = new UpgradeModalController({
     setUiMode: (mode) => setUiMode(mode),
     isPauseMenuVisible: () => isPauseMenuVisible()
 });
+const tankEvolutionModalController = new TankEvolutionModalController();
 
 function toggleSettingsPanel(): void {
     if (!settingsPanelEl) return;
@@ -425,6 +430,7 @@ function clearPendingGameOverUiTimeout(): void {
 }
 
 function startRun(runConfiguration: RunConfiguration): void {
+    playRunStartTransition();
     clearPendingGameOverUiTimeout();
     setPauseMenuVisible(false);
     upgradeModalController.resetForRun();
@@ -446,6 +452,21 @@ function startRun(runConfiguration: RunConfiguration): void {
 
     createIcons({ icons: { Home, Volume2, Volume1, VolumeX, Settings, HelpCircle, Users, ArrowRight, Keyboard, Gamepad2, Plus, X, Play, RotateCcw, Lock, Unlock } });
     setUiMode('IN_GAME');
+}
+
+function playRunStartTransition(): void {
+    const root = document.documentElement;
+    if (runStartTransitionTimeoutId !== null) {
+        window.clearTimeout(runStartTransitionTimeoutId);
+        runStartTransitionTimeoutId = null;
+    }
+    root.classList.remove('is-run-starting');
+    void root.offsetWidth;
+    root.classList.add('is-run-starting');
+    runStartTransitionTimeoutId = window.setTimeout(() => {
+        root.classList.remove('is-run-starting');
+        runStartTransitionTimeoutId = null;
+    }, 520);
 }
 
 function goToMainMenu(): void {
@@ -537,6 +558,37 @@ if (btnRestart) {
     });
 }
 
+onGameEvent(GameEvents.TANK_EVOLUTION_CHOICE_OPENED, () => {
+    if (uiMode === 'INITIAL_MENU' || uiMode === 'GAME_OVER' || uiMode === 'TANK_EVOLUTION') return;
+    tankEvolutionPausedEngine = false;
+    previousUiMode = uiMode;
+    if (uiMode !== 'PAUSED') {
+        tankEvolutionPausedEngine = engine.togglePause();
+        applyPauseUi(tankEvolutionPausedEngine);
+    }
+    setPauseMenuVisible(false);
+    hudController.setStatsPinned(true, 'pause');
+    setUiMode('TANK_EVOLUTION');
+});
+
+onGameEvent(GameEvents.TANK_EVOLUTION_CHOICE_CLOSED, () => {
+    if (uiMode !== 'TANK_EVOLUTION') return;
+    if (tankEvolutionPausedEngine) {
+        const isPaused = engine.togglePause();
+        applyPauseUi(isPaused);
+        tankEvolutionPausedEngine = false;
+    }
+    const returnMode = previousUiMode && previousUiMode !== 'TANK_EVOLUTION' ? previousUiMode : 'IN_GAME';
+    previousUiMode = null;
+    hudController.setStatsPinned(false);
+    setUiMode(returnMode);
+    if (returnMode === 'PAUSED') {
+        applyPauseUi(true);
+        setPauseMenuVisible(true);
+        hudController.setStatsPinned(true, 'pause');
+    }
+});
+
 window.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.repeat) return;
     if (helpModal.isOpen()) return;
@@ -591,6 +643,7 @@ window.addEventListener('beforeunload', () => {
     }
     engine.destroy();
     upgradeModalController.destroy();
+    tankEvolutionModalController.destroy();
     minimapHudController.destroy();
     hudController.destroy();
 });

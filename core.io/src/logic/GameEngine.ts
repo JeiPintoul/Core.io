@@ -12,12 +12,14 @@ import {
     type EntityStats,
     type GameState,
     type InputState,
+    type BarrelConfig,
     type PlayerId,
     type PlayerInputPayload,
     type ProjectileFaction,
     type RunConfiguration,
     type ShopItemData,
     type EnemyType,
+    type TankEvolutionSelectedPayload,
     type UpgradeRollOption
 } from '../shared/Types';
 import { Entity } from './entities/Entity';
@@ -64,7 +66,6 @@ export class GameEngine {
 
     private currentInputs: Record<PlayerId, InputState>;
     private lastTick: number;
-    private lastShotTimes: Record<PlayerId, number> = { player_1: 0, player_2: 0, player_3: 0, player_4: 0 };
     private projectileIdCounter = 0;
     private isRunning = false;
     private isPaused = false;
@@ -88,10 +89,14 @@ export class GameEngine {
     private activeUpgradePlayerId: PlayerId | null = null;
     private activeUpgradeOptions: UpgradeRollOption[] = [];
     private deferredUpgradePlayerIds = new Set<PlayerId>();
+    private readonly deferredUpgradeOptionsByPlayer = new Map<PlayerId, UpgradeRollOption[]>();
+    private readonly lockedUpgradeIndexesByPlayer = new Map<PlayerId, number[]>();
+    private readonly lastRerollGrantLevelByPlayer = new Map<PlayerId, number>();
     private reopenedUpgradeReturnState: EngineState | null = null;
     private shopCharge: { itemId: string; playerId: PlayerId; startedAtMs: number } | null = null;
     private shopCardSelection: { playerId: PlayerId; options: UpgradeRollOption[] } | null = null;
     private readonly shopPurchaseChargeMs = 500;
+    private readonly tankEvolutionPromptedKeys = new Set<string>();
 
     constructor() {
         this.upgradeManager = new UpgradeManager(this.rng);
@@ -105,6 +110,7 @@ export class GameEngine {
         this.arenaSize = { width: ARENA.width, height: ARENA.height };
         this.currentArena = { x: 0, y: 0, width: this.arenaSize.width, height: this.arenaSize.height };
         this.player = this.createPlayer('player_1', 'Jogador', 0, true, PLAYER_DEFAULT_COLORS.player_1);
+        this.lastRerollGrantLevelByPlayer.set('player_1', this.player.level);
         this.currentInputs = {
             player_1: this.createNeutralInputState(),
             player_2: this.createNeutralInputState(),
@@ -125,7 +131,6 @@ export class GameEngine {
 
         const now = performance.now();
         this.lastTick = now;
-        this.lastShotTimes = { player_1: now, player_2: now, player_3: now, player_4: now };
         this.director.primeTimers(now);
 
         this.setupListeners();
@@ -211,14 +216,35 @@ export class GameEngine {
         );
 
         this.eventUnsubscribers.push(
-            onGameEvent(GameEvents.UPGRADE_DEFERRED, ({ playerId }) => {
-                this.handleUpgradeDeferred(playerId);
+            onGameEvent(GameEvents.UPGRADE_DEFERRED, ({ playerId, lockedOptionIndexes }) => {
+                this.handleUpgradeDeferred(playerId, lockedOptionIndexes);
             })
         );
 
         this.eventUnsubscribers.push(
             onGameEvent(GameEvents.UPGRADE_REOPEN_REQUESTED, () => {
-                this.reopenDeferredUpgrades();
+                if (this.engineState !== EngineState.SHOP) return;
+                this.openPendingUpgradesFromCurrentState();
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.TANK_EVOLUTION_REOPEN_REQUESTED, () => {
+                this.openTankEvolutionModal();
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.TANK_EVOLUTION_SELECTED, (payload) => {
+                this.handleTankEvolutionSelected(payload);
+            })
+        );
+
+        this.eventUnsubscribers.push(
+            onGameEvent(GameEvents.SHOP_ENTERED, () => {
+                this.missionManager.reset();
+                this.emitRerollGrants(this.consumeRerollGrantPlayerIds(this.getPlayers()));
+                queueMicrotask(() => this.openPendingUpgradesFromCurrentState());
             })
         );
 
@@ -357,8 +383,73 @@ export class GameEngine {
         return stats;
     }
 
+    private promptAvailableTankEvolutions(): void {
+        if (this.engineState === EngineState.COLOR_SELECTION) return;
+        for (const player of this.getPlayers()) {
+            const playerId = player.id as PlayerId;
+            const promptKey = `${playerId}:${player.tankFormId}`;
+            if (this.tankEvolutionPromptedKeys.has(promptKey)) continue;
+            if (!player.tankFormManager.hasAvailableEvolution(player)) continue;
+            this.tankEvolutionPromptedKeys.add(promptKey);
+            this.emitTankEvolutionModal(playerId);
+            return;
+        }
+    }
+
+    private openTankEvolutionModal(): void {
+        const targetPlayer =
+            this.getPlayers().find((player) => player.tankFormManager.hasAvailableEvolution(player)) ??
+            this.getPlayers().find((player) => player.health > 0) ??
+            this.player;
+        this.emitTankEvolutionModal(targetPlayer.id as PlayerId);
+    }
+
+    private emitTankEvolutionModal(playerId: PlayerId): void {
+        const player = this.getPlayerById(playerId);
+        if (!player) return;
+        const payload = {
+            playerId,
+            currentFormId: player.tankFormId,
+            level: player.level,
+            options: player.tankFormManager.getEvolutionOptions(player)
+        };
+        emitGameEvent(GameEvents.SHOW_TANK_EVOLUTION_MODAL, payload);
+        emitGameEvent(GameEvents.UPDATE_TANK_EVOLUTION_MODAL, payload);
+    }
+
+    private handleTankEvolutionSelected(payload: TankEvolutionSelectedPayload): void {
+        const player = this.getPlayerById(payload.playerId);
+        if (!player) return;
+        if (!player.tankFormManager.applyForm(player, payload.formId)) return;
+        this.emitStateUpdate();
+        emitGameEvent(GameEvents.HIDE_TANK_EVOLUTION_MODAL, undefined);
+    }
+
     private setPlayersUpgradingState(isUpgrading: boolean): void {
         for (const player of this.getPlayers()) player.isUpgrading = isUpgrading;
+    }
+
+    private consumeRerollGrantPlayerIds(players: Player[]): PlayerId[] {
+        const playerIds: PlayerId[] = [];
+        for (const player of players) {
+            if (player.pendingUpgrades <= 0) continue;
+            const playerId = player.id as PlayerId;
+            const lastGrantedLevel = this.lastRerollGrantLevelByPlayer.get(playerId) ?? 1;
+            if (player.level <= lastGrantedLevel) continue;
+            playerIds.push(playerId);
+            this.lastRerollGrantLevelByPlayer.set(playerId, player.level);
+        }
+        return playerIds;
+    }
+
+    private emitRerollGrants(playerIds: PlayerId[]): void {
+        if (playerIds.length === 0) return;
+        const pendingUpgrades = this.getPlayers().reduce((total, player) => total + player.pendingUpgrades, 0);
+        emitGameEvent(GameEvents.UPGRADE_PHASE_STARTED, {
+            wave: this.director.getCurrentWave(),
+            pendingUpgrades,
+            rerollPlayerIds: playerIds
+        });
     }
 
     private clearUpgradeSelectionState(): void {
@@ -510,7 +601,6 @@ export class GameEngine {
 
         const now = performance.now();
         this.lastTick = now;
-        this.lastShotTimes = { player_1: now, player_2: now, player_3: now, player_4: now };
         this.currentInputs = {
             player_1: this.createNeutralInputState(),
             player_2: this.createNeutralInputState(),
@@ -531,11 +621,19 @@ export class GameEngine {
         this.missionManager.reset();
         this.clearUpgradeSelectionState();
         this.deferredUpgradePlayerIds.clear();
+        this.deferredUpgradeOptionsByPlayer.clear();
+        this.lockedUpgradeIndexesByPlayer.clear();
+        this.lastRerollGrantLevelByPlayer.clear();
+        for (const player of this.getPlayers()) {
+            this.lastRerollGrantLevelByPlayer.set(player.id as PlayerId, player.level);
+        }
+        this.tankEvolutionPromptedKeys.clear();
 
         this.totalEnemiesKilledInRun = 0;
         this.totalAnomaliesMetInRun = 0;
 
         emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+        emitGameEvent(GameEvents.HIDE_TANK_EVOLUTION_MODAL, undefined);
     }
 
     private scheduleNextTick(): void {
@@ -578,6 +676,7 @@ export class GameEngine {
         for (const player of this.getPlayers()) {
             playerStatsById.set(player.id as PlayerId, this.syncPlayerCoreStats(player));
         }
+        this.promptAvailableTankEvolutions();
 
         if (this.engineState === EngineState.COLOR_SELECTION) {
             for (const player of this.getPlayers()) player.updateRegeneration(dt, currentTime);
@@ -612,7 +711,9 @@ export class GameEngine {
         this.director.tickSpawn(currentTime);
         this.handleShopPurchases(currentTime);
 
-        this.missionManager.update(currentTime);
+        if (this.engineState !== EngineState.SHOP) {
+            this.missionManager.update(currentTime);
+        }
         this.checkCollisions(currentTime);
         this.director.tickBossExitPortal(currentTime);
         this.director.tickPhase(currentTime);
@@ -629,6 +730,9 @@ export class GameEngine {
             xpToNextLevel: player.xpToNextLevel,
             pendingUpgrades: player.pendingUpgrades,
             coins: player.coins,
+            barrels: player.barrels,
+            tankFormId: player.tankFormId,
+            lastFiredBarrelId: player.lastFiredBarrelId,
         }));
 
         const exportState: GameState = {
@@ -657,7 +761,7 @@ export class GameEngine {
             coins: playersData[0]?.coins ?? 0,
             surviveTimeRemainingSeconds: this.director.getSurviveTimeRemaining(currentTimeMs),
             isPaused: this.isPaused,
-            objective: this.missionManager.getObjectiveState(),
+            objective: this.engineState === EngineState.SHOP ? null : this.missionManager.getObjectiveState(),
             isColorSelection: this.engineState === EngineState.COLOR_SELECTION,
             autoSpin: this.currentInputs.player_1.autoSpin,
             isCoop: playersData.length > 1,
@@ -679,14 +783,11 @@ export class GameEngine {
     private tryPlayerShoot(player: Player, input: InputState, currentTime: number, playerStats: EntityStats): void {
         if (!input.isShooting && !input.autoFire) return;
 
-        const playerId = player.id as PlayerId;
-        const timeSinceLastShot = (currentTime - this.lastShotTimes[playerId]) / 1000;
-        const actualCooldown = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, playerStats.reloadPoints);
-        if (timeSinceLastShot < actualCooldown) return;
-
+        const actualCooldownMs = calculateCooldown(PLAYER_BASE_SHOT_COOLDOWN_SECONDS, playerStats.reloadPoints) * 1000;
         const aimAngle = Number.isFinite(player.aimAngle) ? player.aimAngle : 0;
-        this.spawnProjectiles(player, 'player', aimAngle, playerStats);
-        this.lastShotTimes[playerId] = currentTime;
+        const readyBarrels = player.tankFormManager.selectBarrelsForShot(player, currentTime, actualCooldownMs);
+        if (readyBarrels.length === 0) return;
+        this.spawnProjectiles(player, 'player', aimAngle, playerStats, readyBarrels);
     }
 
     private updateEnemies(dt: number, currentTime: number): void {
@@ -745,8 +846,8 @@ export class GameEngine {
         return this.getNearestAlivePlayer(enemy.x, enemy.y) ?? fallback;
     }
 
-    private spawnProjectiles(shooter: Entity, faction: ProjectileFaction, aimAngle: number, sourceStats: EntityStats): void {
-        const spawns = shooter.getProjectileSpawns(aimAngle, sourceStats);
+    private spawnProjectiles(shooter: Entity, faction: ProjectileFaction, aimAngle: number, sourceStats: EntityStats, barrels?: BarrelConfig[]): void {
+        const spawns = shooter.getProjectileSpawns(aimAngle, sourceStats, barrels);
         for (const spawn of spawns) {
             this.createProjectile(
                 shooter.id, faction,
@@ -1122,9 +1223,10 @@ export class GameEngine {
         this.activeUpgradePlayerId = playerId;
         this.setPlayersUpgradingState(true);
 
-        emitGameEvent(GameEvents.SHOW_UPGRADE_MODAL, {
+        emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
             playerId,
-            upgradesRemaining: 1
+            upgradesRemaining: 1,
+            options
         });
     }
 
@@ -1134,10 +1236,12 @@ export class GameEngine {
 
         const playersWithPendingUpgrades = this.getPlayers().filter((c) => c.pendingUpgrades > 0);
         const totalPendingUpgrades = playersWithPendingUpgrades.reduce((t, c) => t + c.pendingUpgrades, 0);
+        const rerollPlayerIds = this.consumeRerollGrantPlayerIds(playersWithPendingUpgrades);
 
         emitGameEvent(GameEvents.UPGRADE_PHASE_STARTED, {
             wave: this.director.getCurrentWave(),
-            pendingUpgrades: totalPendingUpgrades
+            pendingUpgrades: totalPendingUpgrades,
+            rerollPlayerIds
         });
 
         if (playersWithPendingUpgrades.length === 0) {
@@ -1164,6 +1268,12 @@ export class GameEngine {
             if (this.engineState !== EngineState.UPGRADE_PHASE || !this.activeUpgradePlayerId) return;
             const activePlayer = this.getPlayerById(this.activeUpgradePlayerId);
             if (!activePlayer || activePlayer.pendingUpgrades <= 0) { this.advanceUpgradeSelection(); return; }
+            const deferredOptions = this.deferredUpgradeOptionsByPlayer.get(this.activeUpgradePlayerId);
+            if (deferredOptions && deferredOptions.length > 0) {
+                this.activeUpgradeOptions = deferredOptions;
+                this.emitUpgradeOptionsPayload(this.activeUpgradePlayerId, activePlayer.pendingUpgrades, deferredOptions);
+                return;
+            }
             this.emitUpgradeOptions(this.activeUpgradePlayerId, activePlayer.pendingUpgrades, activePlayer.level);
         });
     }
@@ -1195,19 +1305,49 @@ export class GameEngine {
         if (!selectedCard) return;
 
         const colorHex = normalizeColorHex(selection.colorHex, '#4488ff');
+        const selectedOptionIndex = this.activeUpgradeOptions.findIndex((option) => option.card.id === selection.cardId);
+        const lockedOptionIndexes = this.sanitizeLockedOptionIndexes(selection.lockedOptionIndexes, this.activeUpgradeOptions.length);
+        const nextLockedOptionIndexes = lockedOptionIndexes.filter((index) => index !== selectedOptionIndex);
 
         activePlayer.applyStatModifiers(selectedCard.modifiers);
         activePlayer.applyUpgradeColorBuff(colorHex);
         activePlayer.applyUpgradeColor(colorHex);
         activePlayer.consumePendingUpgrade();
+        this.deferredUpgradeOptionsByPlayer.delete(selection.playerId);
         if (activePlayer.pendingUpgrades <= 0) {
             this.deferredUpgradePlayerIds.delete(selection.playerId);
         }
         this.syncPlayerCoreStats(activePlayer);
 
         if (activePlayer.pendingUpgrades > 0) {
-            this.emitUpgradeOptions(selection.playerId, activePlayer.pendingUpgrades, activePlayer.level);
+            const nextOptions = this.activeUpgradeOptions.length > 0
+                ? this.upgradeManager.rollReplacementOptions(
+                    activePlayer.level,
+                    this.activeUpgradeOptions,
+                    nextLockedOptionIndexes,
+                    selectedCard.id
+                )
+                : this.upgradeManager.rollUpgradeOptions(activePlayer.level);
+            this.activeUpgradeOptions = nextOptions;
+            this.deferredUpgradeOptionsByPlayer.set(selection.playerId, nextOptions);
+            if (nextLockedOptionIndexes.length > 0) this.lockedUpgradeIndexesByPlayer.set(selection.playerId, nextLockedOptionIndexes);
+            else this.lockedUpgradeIndexesByPlayer.delete(selection.playerId);
+            this.emitUpgradeOptionsPayload(selection.playerId, activePlayer.pendingUpgrades, nextOptions);
             return;
+        }
+
+        if (nextLockedOptionIndexes.length > 0 && this.activeUpgradeOptions.length > 0) {
+            const nextOptions = this.upgradeManager.rollReplacementOptions(
+                activePlayer.level,
+                this.activeUpgradeOptions,
+                nextLockedOptionIndexes,
+                selectedCard.id
+            );
+            this.deferredUpgradeOptionsByPlayer.set(selection.playerId, nextOptions);
+            this.lockedUpgradeIndexesByPlayer.set(selection.playerId, nextLockedOptionIndexes);
+        } else {
+            this.deferredUpgradeOptionsByPlayer.delete(selection.playerId);
+            this.lockedUpgradeIndexesByPlayer.delete(selection.playerId);
         }
         this.advanceUpgradeSelection();
     }
@@ -1221,10 +1361,13 @@ export class GameEngine {
 
             this.activeUpgradePlayerId = nextPlayerId;
             this.setPlayersUpgradingState(true);
-            emitGameEvent(GameEvents.SHOW_UPGRADE_MODAL, {
-                playerId: nextPlayerId,
-                upgradesRemaining: nextPlayer.pendingUpgrades
-            });
+            const deferredOptions = this.deferredUpgradeOptionsByPlayer.get(nextPlayerId);
+            if (deferredOptions && deferredOptions.length > 0) {
+                this.activeUpgradeOptions = deferredOptions;
+                this.emitUpgradeOptionsPayload(nextPlayerId, nextPlayer.pendingUpgrades, deferredOptions);
+            } else {
+                this.emitUpgradeOptions(nextPlayerId, nextPlayer.pendingUpgrades, nextPlayer.level);
+            }
             return;
         }
 
@@ -1238,9 +1381,30 @@ export class GameEngine {
     }
 
     private emitUpgradeOptions(playerId: PlayerId, upgradesRemaining: number, playerLevel: number): void {
-        const options = this.upgradeManager.rollUpgradeOptions(playerLevel);
+        const options = this.deferredUpgradeOptionsByPlayer.get(playerId) ?? this.upgradeManager.rollUpgradeOptions(playerLevel);
         this.activeUpgradeOptions = options;
-        emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, { playerId, upgradesRemaining, options });
+        this.emitUpgradeOptionsPayload(playerId, upgradesRemaining, options);
+    }
+
+    private emitUpgradeOptionsPayload(playerId: PlayerId, upgradesRemaining: number, options: UpgradeRollOption[]): void {
+        const lockedOptionIndexes = this.getLockedUpgradeIndexes(playerId, options.length);
+        emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, { playerId, upgradesRemaining, options, lockedOptionIndexes });
+    }
+
+    private getLockedUpgradeIndexes(playerId: PlayerId, optionCount: number): number[] {
+        const lockedOptionIndexes = this.sanitizeLockedOptionIndexes(
+            this.lockedUpgradeIndexesByPlayer.get(playerId) ?? [],
+            optionCount
+        );
+        if (lockedOptionIndexes.length > 0) this.lockedUpgradeIndexesByPlayer.set(playerId, lockedOptionIndexes);
+        else this.lockedUpgradeIndexesByPlayer.delete(playerId);
+        return lockedOptionIndexes;
+    }
+
+    private sanitizeLockedOptionIndexes(lockedOptionIndexes: readonly number[], optionCount: number): number[] {
+        return Array.from(new Set(
+            lockedOptionIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < optionCount)
+        )).sort((a, b) => a - b);
     }
 
     private handleCardRerollRequested(payload: CardRerollRequestedPayload): void {
@@ -1278,65 +1442,58 @@ export class GameEngine {
         if (!activePlayer || activePlayer.pendingUpgrades <= 0) return;
         if (this.activeUpgradeOptions.length === 0) return;
 
-        const nextOptions = [...this.activeUpgradeOptions];
         const lockedIndexes = new Set(
-            payload.lockedOptionIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < nextOptions.length)
+            payload.lockedOptionIndexes.filter((index) => Number.isInteger(index) && index >= 0 && index < this.activeUpgradeOptions.length)
         );
-        if (lockedIndexes.size >= nextOptions.length) return;
+        if (lockedIndexes.size >= this.activeUpgradeOptions.length) return;
 
-        const excludedIds = new Set(this.activeUpgradeOptions.map((option) => option.card.id));
-
-        for (let index = 0; index < nextOptions.length; index++) {
-            if (lockedIndexes.has(index)) continue;
-            nextOptions[index] = this.upgradeManager.rerollUpgradeOption(activePlayer.level, Array.from(excludedIds));
-            excludedIds.add(nextOptions[index].card.id);
-        }
+        const nextOptions = this.upgradeManager.rollReplacementOptions(activePlayer.level, this.activeUpgradeOptions, lockedIndexes);
 
         this.activeUpgradeOptions = nextOptions;
-        emitGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, {
-            playerId: payload.playerId,
-            upgradesRemaining: activePlayer.pendingUpgrades,
-            options: nextOptions
-        });
+        const lockedOptionIndexes = Array.from(lockedIndexes).sort((a, b) => a - b);
+        this.deferredUpgradeOptionsByPlayer.set(payload.playerId, nextOptions);
+        if (lockedOptionIndexes.length > 0) this.lockedUpgradeIndexesByPlayer.set(payload.playerId, lockedOptionIndexes);
+        else this.lockedUpgradeIndexesByPlayer.delete(payload.playerId);
+        this.emitUpgradeOptionsPayload(payload.playerId, activePlayer.pendingUpgrades, nextOptions);
     }
 
-    private handleUpgradeDeferred(playerId: PlayerId): void {
+    private handleUpgradeDeferred(playerId: PlayerId, lockedOptionIndexes: readonly number[]): void {
         if (!this.activeUpgradePlayerId || playerId !== this.activeUpgradePlayerId) return;
         if (this.engineState === EngineState.SHOP && this.shopCardSelection) return;
 
         const activePlayer = this.getPlayerById(playerId);
         if (activePlayer && activePlayer.pendingUpgrades > 0) {
             this.deferredUpgradePlayerIds.add(playerId);
+            if (this.activeUpgradeOptions.length > 0) {
+                this.deferredUpgradeOptionsByPlayer.set(playerId, this.activeUpgradeOptions);
+                const sanitizedLockedOptionIndexes = this.sanitizeLockedOptionIndexes(lockedOptionIndexes, this.activeUpgradeOptions.length);
+                if (sanitizedLockedOptionIndexes.length > 0) this.lockedUpgradeIndexesByPlayer.set(playerId, sanitizedLockedOptionIndexes);
+                else this.lockedUpgradeIndexesByPlayer.delete(playerId);
+            }
         }
         this.activeUpgradePlayerId = null;
-        this.activeUpgradeOptions = [];
         this.setPlayersUpgradingState(false);
 
         if (this.reopenedUpgradeReturnState) {
             this.engineState = this.reopenedUpgradeReturnState;
             this.reopenedUpgradeReturnState = null;
             this.upgradeSelectionQueue = [];
-            emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+            this.emitStateUpdate();
             return;
         }
 
-        if (this.upgradeSelectionQueue.length > 0) {
-            this.advanceUpgradeSelection();
-            return;
-        }
-
-        emitGameEvent(GameEvents.HIDE_UPGRADE_MODAL, undefined);
+        this.upgradeSelectionQueue = [];
+        this.emitStateUpdate();
     }
 
-    private reopenDeferredUpgrades(): void {
-        if (this.activeUpgradePlayerId) return;
-        const deferredPlayers = this.getPlayers()
-            .filter((player) => player.pendingUpgrades > 0 && this.deferredUpgradePlayerIds.has(player.id as PlayerId));
-        if (deferredPlayers.length === 0) return;
+    private openPendingUpgradesFromCurrentState(): void {
+        if (this.activeUpgradePlayerId || this.shopCardSelection) return;
+        const pendingPlayers = this.getPlayers().filter((player) => player.pendingUpgrades > 0);
+        if (pendingPlayers.length === 0) return;
 
         this.reopenedUpgradeReturnState = this.engineState;
         this.engineState = EngineState.UPGRADE_PHASE;
-        this.upgradeSelectionQueue = deferredPlayers.map((player) => player.id as PlayerId);
+        this.upgradeSelectionQueue = pendingPlayers.map((player) => player.id as PlayerId);
         this.advanceUpgradeSelection();
     }
 

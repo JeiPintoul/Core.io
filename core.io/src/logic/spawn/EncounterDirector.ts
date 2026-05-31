@@ -20,7 +20,8 @@ import {
     getWaveMilestone
 } from '../constants/WaveConfig';
 
-const ENCOUNTER_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+const BOSS_ENCOUNTER_ARENA = { x: 1500, y: 1500, width: 2000, height: 2000 };
+const ANOMALY_ENCOUNTER_ARENA = { x: 900, y: 900, width: 3200, height: 3200 };
 const SHOP_ARENA = { x: 1200, y: 1350, width: 2600, height: 2300 };
 const WAVE_TRANSITION_ANIMATION_DURATION_MS = 1500;
 const BOSS_EXIT_PORTAL_RADIUS = 62;
@@ -108,8 +109,8 @@ export class EncounterDirector {
 
     public getBossExitPortal(): { x: number; y: number; radius: number } {
         return this.activePortal ?? {
-            x: ENCOUNTER_ARENA.x + ENCOUNTER_ARENA.width / 2,
-            y: ENCOUNTER_ARENA.y + ENCOUNTER_ARENA.height / 2,
+            x: BOSS_ENCOUNTER_ARENA.x + BOSS_ENCOUNTER_ARENA.width / 2,
+            y: BOSS_ENCOUNTER_ARENA.y + BOSS_ENCOUNTER_ARENA.height / 2,
             radius: BOSS_EXIT_PORTAL_RADIUS,
         };
     }
@@ -573,27 +574,27 @@ export class EncounterDirector {
         });
     }
 
-    private setupEncounterArena(): { spawnX: number; spawnY: number } {
-        this.host.setArena({ ...ENCOUNTER_ARENA });
+    private setupEncounterArena(arena: { x: number; y: number; width: number; height: number }): { spawnX: number; spawnY: number } {
+        this.host.setArena({ ...arena });
         this.spawnQueue = [];
         this.enemiesSpawnedThisWave = 0;
         this.enemiesKilledThisWave = 0;
         this.host.clearUpgradeSelectionState();
         this.host.reviveDefeatedPlayers();
 
-        const centerX = ENCOUNTER_ARENA.x + ENCOUNTER_ARENA.width / 2;
-        const centerY = ENCOUNTER_ARENA.y + ENCOUNTER_ARENA.height / 2;
+        const centerX = arena.x + arena.width / 2;
+        const centerY = arena.y + arena.height / 2;
         this.host.positionPlayers(centerX, centerY);
 
-        return { spawnX: centerX, spawnY: ENCOUNTER_ARENA.y + 220 };
+        return { spawnX: centerX, spawnY: arena.y + 220 };
     }
 
-    private buildEncounterArenaPayload() {
+    private buildEncounterArenaPayload(arena: { x: number; y: number; width: number; height: number }) {
         return {
-            bossArenaX: ENCOUNTER_ARENA.x,
-            bossArenaY: ENCOUNTER_ARENA.y,
-            bossArenaWidth: ENCOUNTER_ARENA.width,
-            bossArenaHeight: ENCOUNTER_ARENA.height,
+            bossArenaX: arena.x,
+            bossArenaY: arena.y,
+            bossArenaWidth: arena.width,
+            bossArenaHeight: arena.height,
         };
     }
 
@@ -601,7 +602,7 @@ export class EncounterDirector {
         this.bossFightActive = true;
         this.currentWaveType = 'BOSS';
         this.bossEncounterCount += 1;
-        const { spawnX, spawnY } = this.setupEncounterArena();
+        const { spawnX, spawnY } = this.setupEncounterArena(BOSS_ENCOUNTER_ARENA);
 
         this.host.setEnemies([
             this.factory.createDreadnoughtBossWithCoopScaling('dreadnought_boss', spawnX, spawnY, this.bossEncounterCount),
@@ -609,7 +610,7 @@ export class EncounterDirector {
         this.host.setEngineState(EngineState.BOSS_FIGHT);
         this.host.missionStartBoss(now);
 
-        emitGameEvent(GameEvents.BOSS_FIGHT_START, this.buildEncounterArenaPayload());
+        emitGameEvent(GameEvents.BOSS_FIGHT_START, this.buildEncounterArenaPayload(BOSS_ENCOUNTER_ARENA));
     }
 
     private endBossFight(now: number): void {
@@ -642,14 +643,16 @@ export class EncounterDirector {
      */
     private enterAnomalyEncounter(now: number): void {
         this.anomalyEncounterActive = true;
-        const { spawnX } = this.setupEncounterArena();
-        const spawnY = ENCOUNTER_ARENA.y + ANOMALY_SPAWN_TOP_MARGIN;
+        this.setupEncounterArena(ANOMALY_ENCOUNTER_ARENA);
+        const spawnX = ANOMALY_ENCOUNTER_ARENA.x + ANOMALY_ENCOUNTER_ARENA.width / 2;
+        const spawnY = ANOMALY_ENCOUNTER_ARENA.y + ANOMALY_SPAWN_TOP_MARGIN;
+        this.host.positionPlayers(spawnX, ANOMALY_ENCOUNTER_ARENA.y + ANOMALY_ENCOUNTER_ARENA.height - 520);
 
         this.host.setEnemies(this.factory.buildAnomalyGroup(spawnX, spawnY, this.anomalySpawnCount));
         this.host.setEngineState(EngineState.ANOMALY_ENCOUNTER);
         this.host.missionStartAnomaly(now);
 
-        emitGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, this.buildEncounterArenaPayload());
+        emitGameEvent(GameEvents.ANOMALY_ENCOUNTER_START, this.buildEncounterArenaPayload(ANOMALY_ENCOUNTER_ARENA));
     }
 
     private endAnomalyEncounter(now: number): void {

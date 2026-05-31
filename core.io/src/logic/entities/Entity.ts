@@ -54,8 +54,8 @@ export class Entity {
         return 0;
     }
 
-    public getProjectileSpawns(aimAngle: number, sourceStats: EntityStats): ProjectileSpawnRequest[] {
-        const equippedBarrels = this.barrels.length > 0 ? this.barrels : [Entity.DEFAULT_BARREL];
+    public getProjectileSpawns(aimAngle: number, sourceStats: EntityStats, barrels?: BarrelConfig[]): ProjectileSpawnRequest[] {
+        const equippedBarrels = barrels ?? (this.barrels.length > 0 ? this.barrels : [Entity.DEFAULT_BARREL]);
 
         const baseForwardX = Math.cos(aimAngle);
         const baseForwardY = Math.sin(aimAngle);

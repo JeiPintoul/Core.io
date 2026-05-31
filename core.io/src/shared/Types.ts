@@ -7,6 +7,8 @@ export const PLAYER_IDS = ['player_1', 'player_2', 'player_3', 'player_4'] as co
 export type PlayerId = (typeof PLAYER_IDS)[number];
 export type PlayerCount = 1 | 2 | 3 | 4;
 export type ControlPreference = 'KEYBOARD' | 'GAMEPAD';
+export type TankFormId = 'basic' | 'twin';
+export type TankFireMode = 'ALL' | 'ALTERNATE';
 
 export interface PlayerRunConfiguration {
     name: string;
@@ -39,6 +41,15 @@ export interface BarrelConfig {
     damageMultiplier: number;
     speedMultiplier: number;
     lifespanMultiplier: number;
+}
+
+export interface TankEvolutionOption {
+    id: TankFormId;
+    name: string;
+    description: string;
+    requiredLevel: number;
+    parentId: TankFormId;
+    available: boolean;
 }
 
 export interface ProjectileSpawnRequest {
@@ -79,12 +90,14 @@ export interface UpgradeModalVisibilityPayload {
 
 export interface UpgradeModalOptionsPayload extends UpgradeModalVisibilityPayload {
     options: UpgradeRollOption[];
+    lockedOptionIndexes?: number[];
 }
 
 export interface CardSelectedPayload {
     playerId: PlayerId;
     cardId: string;
     colorHex: string;
+    lockedOptionIndexes: number[];
 }
 
 export interface CardRerollRequestedPayload {
@@ -94,6 +107,7 @@ export interface CardRerollRequestedPayload {
 
 export interface UpgradeDeferredPayload {
     playerId: PlayerId;
+    lockedOptionIndexes: number[];
 }
 
 export interface ShopItemData {
@@ -167,6 +181,9 @@ export interface EntityData {
     xpToNextLevel?: number;
     pendingUpgrades?: number;
     coins?: number;
+    barrels?: BarrelConfig[];
+    tankFormId?: TankFormId;
+    lastFiredBarrelId?: string | null;
 }
 
 export interface ProjectileData {
@@ -304,6 +321,7 @@ export interface WaveClearAnimationPayload extends WaveAnimationPayload {
 export interface UpgradePhaseStartedPayload {
     wave: number;
     pendingUpgrades: number;
+    rerollPlayerIds: PlayerId[];
 }
 
 export interface WaveSpawningResumedPayload {
@@ -348,6 +366,18 @@ export interface GameOverPayload {
     anomaliesMet: number;
 }
 
+export interface TankEvolutionModalPayload {
+    playerId: PlayerId;
+    currentFormId: TankFormId;
+    level: number;
+    options: TankEvolutionOption[];
+}
+
+export interface TankEvolutionSelectedPayload {
+    playerId: PlayerId;
+    formId: TankFormId;
+}
+
 export interface GameEventPayloads {
     player_input: PlayerInputPayload;
     state_update: GameState;
@@ -359,6 +389,13 @@ export interface GameEventPayloads {
     card_reroll_requested: CardRerollRequestedPayload;
     upgrade_deferred: UpgradeDeferredPayload;
     upgrade_reopen_requested: undefined;
+    show_tank_evolution_modal: TankEvolutionModalPayload;
+    update_tank_evolution_modal: TankEvolutionModalPayload;
+    hide_tank_evolution_modal: undefined;
+    tank_evolution_selected: TankEvolutionSelectedPayload;
+    tank_evolution_reopen_requested: undefined;
+    tank_evolution_choice_opened: undefined;
+    tank_evolution_choice_closed: undefined;
     game_over: GameOverPayload;
     entity_damage: EntityDamagePayload;
     entity_destroyed: EntityDestroyedPayload;

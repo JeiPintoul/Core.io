@@ -33,8 +33,8 @@ export interface SpawnInstanceOptions {
 
 const ANOMALY_GROUP_RING_RADIUS = 110;
 const OFFSCREEN_SPAWN_ATTEMPTS = 16;
-const ANOMALY_BODY_DAMAGE_MAX_HEALTH_CAP = 0.35;
-const ANOMALY_BULLET_DAMAGE_MAX_HEALTH_CAP = 0.30;
+const ANOMALY_HEALTH_SCALE = 4;
+const ANOMALY_DAMAGE_SCALE = 0.67;
 
 export class EnemyFactory {
     private static readonly VIEWPORT_SAFE_SPAWN_RADIUS = Math.max(1100, Math.hypot(1920 / 2, 1080 / 2) + 120);
@@ -143,21 +143,17 @@ export class EnemyFactory {
         const profile = this.host.getDifficultyProfile();
 
         const scaledStats = {
-            maxHealth: base.maxHealth * profile.bossMaxHealthScale,
+            maxHealth: base.maxHealth * ANOMALY_HEALTH_SCALE,
             healthRegen: base.healthRegen * profile.bossHealthRegenScale,
-            bodyDamage: base.bodyDamage * profile.bossBodyDamageScale,
+            bodyDamage: base.bodyDamage * ANOMALY_DAMAGE_SCALE,
             bulletSpeed: base.bulletSpeed * profile.bossBulletSpeedScale,
             bulletPenetration: base.bulletPenetration * profile.bossBulletPenetrationScale,
-            bulletDamage: base.bulletDamage * profile.bossBulletDamageScale,
+            bulletDamage: base.bulletDamage * ANOMALY_DAMAGE_SCALE,
             reloadPoints: base.reloadPoints + profile.bossReloadBonus,
             movementSpeed: base.movementSpeed * profile.bossMovementSpeedScale,
         };
 
-        return {
-            ...scaledStats,
-            bodyDamage: Math.min(scaledStats.bodyDamage, scaledStats.maxHealth * ANOMALY_BODY_DAMAGE_MAX_HEALTH_CAP),
-            bulletDamage: Math.min(scaledStats.bulletDamage, scaledStats.maxHealth * ANOMALY_BULLET_DAMAGE_MAX_HEALTH_CAP),
-        };
+        return scaledStats;
     }
 
     private buildMedianPlayerStats(players: Player[]): EntityStats {

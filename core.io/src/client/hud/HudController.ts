@@ -260,7 +260,8 @@ export class HudController {
         );
         this.renderEnemyCount(state.activeEnemyCount);
         this.renderCoinCount(state.coins);
-        this.renderObjective(state.objective);
+        if (this.objectiveEl) this.objectiveEl.hidden = state.isShop ?? false;
+        if (!(state.isShop ?? false)) this.renderObjective(state.objective);
         this.renderPrimaryXp(this.currentPlayers[0] ?? null);
         this.renderBossBar(state);
         this.renderPlayerPanels(this.currentPlayers);

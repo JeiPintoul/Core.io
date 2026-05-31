@@ -51,6 +51,30 @@ export class UpgradeManager {
         return { card, colorHex: card.paintColor };
     }
 
+    public rollReplacementOptions(
+        playerLevel: number,
+        currentOptions: UpgradeRollOption[],
+        lockedOptionIndexes: Iterable<number>,
+        selectedCardId?: string
+    ): UpgradeRollOption[] {
+        const nextOptions = [...currentOptions];
+        const lockedIndexes = this.normalizeLockedIndexes(lockedOptionIndexes, nextOptions.length);
+        const excludedIds = new Set(
+            currentOptions
+                .filter((_, index) => lockedIndexes.has(index))
+                .map((option) => option.card.id)
+        );
+        if (selectedCardId) excludedIds.add(selectedCardId);
+
+        for (let index = 0; index < nextOptions.length; index++) {
+            if (lockedIndexes.has(index) && nextOptions[index]?.card.id !== selectedCardId) continue;
+            nextOptions[index] = this.rerollUpgradeOption(playerLevel, Array.from(excludedIds));
+            excludedIds.add(nextOptions[index].card.id);
+        }
+
+        return nextOptions;
+    }
+
     public getCardById(cardId: string): UpgradeCard | undefined {
         return UPGRADE_CARDS.find((card) => card.id === cardId);
     }
@@ -100,5 +124,13 @@ export class UpgradeManager {
         }
 
         return UPGRADE_CARDS[0];
+    }
+
+    private normalizeLockedIndexes(indexes: Iterable<number>, optionCount: number): Set<number> {
+        const result = new Set<number>();
+        for (const index of indexes) {
+            if (Number.isInteger(index) && index >= 0 && index < optionCount) result.add(index);
+        }
+        return result;
     }
 }

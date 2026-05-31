@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import type { CardRarity, EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
+import type { BarrelConfig, CardRarity, EnemyType, GameState, ProjectileFaction } from '../../shared/Types';
 import type { ProjectileVisualId } from '../../shared/ProjectileVisuals';
 import { COLORS, DEATH_ANIMATION_DURATION_MS, VISUAL } from '../constants/GameConstants';
 import { HealthBarRenderer } from './HealthBarRenderer';
@@ -277,7 +277,7 @@ export class GameRenderer {
             angle = Math.atan2(worldPoint.y - y, worldPoint.x - x);
         }
 
-        this.drawPlayerBarrel(radius, angle, this.playerBarrelRetraction.value);
+        this.drawPlayerBarrels(radius, angle, player.barrels ?? [], player.lastFiredBarrelId ?? null);
 
         const resolvedPlayerColor = playerColor ?? COLORS.PLAYER;
         this.drawPlayerBody(radius, resolvedPlayerColor);
@@ -313,7 +313,7 @@ export class GameRenderer {
         const barrelRetraction = this.enemyBarrelRetractions.get(id)?.value ?? 0;
         const angle = aimAngle ?? 0;
 
-        this.drawEnemyBarrel(x, y, radius, angle, barrelRetraction);
+        this.drawWorldPlayerBarrels(x, y, radius, angle, player.barrels ?? [], player.lastFiredBarrelId ?? null, barrelRetraction);
         this.drawCircle(x, y, radius, resolvedColor, VISUAL.STROKE.player);
         this.rememberEntitySnapshot(id, x, y, radius, resolvedColor, VISUAL.STROKE.player);
 
@@ -680,19 +680,59 @@ export class GameRenderer {
     /**
      * Helper: desenha cano do player
      */
-    private drawPlayerBarrel(radius: number, angle: number, retraction: number) {
-        const barrelMetrics = this.getBarrelMetrics(radius, retraction);
-        const bx = Math.cos(angle) * barrelMetrics.offset;
-        const by = Math.sin(angle) * barrelMetrics.offset;
+    private drawPlayerBarrels(radius: number, angle: number, barrels: BarrelConfig[], lastFiredBarrelId: string | null): void {
+        const equipped = barrels.length > 0 ? barrels : [{ id: 'fallback', offsetX: 34, offsetY: 0, angleOffset: 0, recoilForce: 20, damageMultiplier: 1, speedMultiplier: 1, lifespanMultiplier: 1 }];
+        for (const barrel of equipped) {
+            const retraction = barrel.id === lastFiredBarrelId ? this.playerBarrelRetraction.value : 0;
+            this.drawConfiguredBarrel(this.gfxPlayer, 0, 0, radius, angle, barrel, retraction);
+        }
+    }
 
-        this.gfxPlayer.fillStyle(COLORS.PLAYER_BARREL);
-        this.gfxPlayer.lineStyle(2, COLORS.BARREL_OUTLINE, 1);
-        this.gfxPlayer.save();
-        this.gfxPlayer.translateCanvas(bx, by);
-        this.gfxPlayer.rotateCanvas(angle);
-        this.gfxPlayer.fillRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
-        this.gfxPlayer.strokeRect(0, -barrelMetrics.width / 2, barrelMetrics.length, barrelMetrics.width);
-        this.gfxPlayer.restore();
+    private drawWorldPlayerBarrels(
+        x: number,
+        y: number,
+        radius: number,
+        angle: number,
+        barrels: BarrelConfig[],
+        lastFiredBarrelId: string | null,
+        activeRetraction: number
+    ): void {
+        const equipped = barrels.length > 0 ? barrels : [{ id: 'fallback', offsetX: 34, offsetY: 0, angleOffset: 0, recoilForce: 20, damageMultiplier: 1, speedMultiplier: 1, lifespanMultiplier: 1 }];
+        for (const barrel of equipped) {
+            const retraction = barrel.id === lastFiredBarrelId ? activeRetraction : 0;
+            this.drawConfiguredBarrel(this.gfxGame, x, y, radius, angle, barrel, retraction);
+        }
+    }
+
+    private drawConfiguredBarrel(
+        gfx: Phaser.GameObjects.Graphics,
+        x: number,
+        y: number,
+        radius: number,
+        aimAngle: number,
+        barrel: BarrelConfig,
+        retraction: number
+    ): void {
+        const shotAngle = aimAngle + barrel.angleOffset;
+        const forwardX = Math.cos(aimAngle);
+        const forwardY = Math.sin(aimAngle);
+        const rightX = -forwardY;
+        const rightY = forwardX;
+        const clampedRetraction = Phaser.Math.Clamp(retraction, 0, radius * 0.62);
+        const visualOffset = Math.max(radius * 0.08, radius * VISUAL.PLAYER.barrelOffsetFactor - (clampedRetraction * 0.45));
+        const bx = x + (forwardX * visualOffset) + (rightX * barrel.offsetY);
+        const by = y + (forwardY * visualOffset) + (rightY * barrel.offsetY);
+        const length = Math.max(radius * 0.44, radius * VISUAL.PLAYER.barrelLengthFactor - clampedRetraction);
+        const width = radius * VISUAL.PLAYER.barrelWidthFactor;
+
+        gfx.fillStyle(COLORS.PLAYER_BARREL);
+        gfx.lineStyle(2, COLORS.BARREL_OUTLINE, 1);
+        gfx.save();
+        gfx.translateCanvas(bx, by);
+        gfx.rotateCanvas(shotAngle);
+        gfx.fillRect(0, -width / 2, length, width);
+        gfx.strokeRect(0, -width / 2, length, width);
+        gfx.restore();
     }
 
     private drawPlayerBody(radius: number, color: number): void {

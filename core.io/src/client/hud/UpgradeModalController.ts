@@ -10,7 +10,7 @@ import { emitGameEvent, GameEvents, onGameEvent } from '../../shared/EventBus';
 import { PLAYER_IDS, type EntityStats, type PlayerId, type UpgradeRollOption } from '../../shared/Types';
 import type { HudController } from './HudController';
 
-export type UpgradeUiMode = 'INITIAL_MENU' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'GAME_OVER';
+export type UpgradeUiMode = 'INITIAL_MENU' | 'IN_GAME' | 'PAUSED' | 'UPGRADE' | 'TANK_EVOLUTION' | 'GAME_OVER';
 export type UpgradeGamepadActionKey = 'up' | 'down' | 'left' | 'right' | 'confirm';
 export type UpgradeGamepadActionState = Record<UpgradeGamepadActionKey, boolean>;
 
@@ -23,7 +23,7 @@ interface UpgradeModalControllerOptions {
 }
 
 const UPGRADE_GAMEPAD_GRID_COLUMNS = 3;
-const DEFAULT_UPGRADE_REROLLS = 1;
+const DEFAULT_UPGRADE_REROLLS = 0;
 const RARITY_CARD_COLORS: Record<UpgradeRollOption['card']['rarity'], string> = {
     COMMON: '#9aa7bd',
     UNCOMMON: '#44cc66',
@@ -46,8 +46,6 @@ export class UpgradeModalController {
         player_3: DEFAULT_UPGRADE_REROLLS,
         player_4: DEFAULT_UPGRADE_REROLLS
     };
-    private readonly rerollUsedThisPhaseByPlayer = new Set<PlayerId>();
-    private readonly upgradePhasePlayerIds = new Set<PlayerId>();
     private readonly unsubscribers: Array<() => void> = [];
 
     private waitingSelection = false;
@@ -55,8 +53,8 @@ export class UpgradeModalController {
     private activeOptions: UpgradeRollOption[] = [];
     private lockedOptionIndexes = new Set<number>();
     private preserveRerollStateOnNextOptions = false;
-    private phaseRerollTrackingActive = false;
     private gamepadCardIndex = 0;
+    private isShop = false;
 
     constructor(private readonly options: UpgradeModalControllerOptions) {
         this.bindDomEvents();
@@ -76,9 +74,7 @@ export class UpgradeModalController {
     public resetForRun(): void {
         this.close();
         for (const playerId of PLAYER_IDS) this.rerollsByPlayer[playerId] = DEFAULT_UPGRADE_REROLLS;
-        this.rerollUsedThisPhaseByPlayer.clear();
-        this.upgradePhasePlayerIds.clear();
-        this.phaseRerollTrackingActive = false;
+        this.isShop = false;
     }
 
     public close(): void {
@@ -128,14 +124,21 @@ export class UpgradeModalController {
         this.btnUpgradeBank?.addEventListener('click', () => {
             const mode = this.options.getUiMode();
             if (mode === 'INITIAL_MENU' || mode === 'GAME_OVER') return;
+            if (!this.isShop) return;
             emitGameEvent(GameEvents.UPGRADE_REOPEN_REQUESTED, undefined);
         });
         this.btnUpgradeBank?.addEventListener('pointerdown', (event) => event.stopPropagation());
 
         this.btnUpgradeDefer?.addEventListener('click', () => {
             if (!this.activePlayerId || this.waitingSelection) return;
+            const playerId = this.activePlayerId;
+            const lockedOptionIndexes = Array.from(this.lockedOptionIndexes);
             this.options.hudController.clearStatPreview();
-            emitGameEvent(GameEvents.UPGRADE_DEFERRED, { playerId: this.activePlayerId });
+            this.hideDeferredModal();
+            emitGameEvent(GameEvents.UPGRADE_DEFERRED, {
+                playerId,
+                lockedOptionIndexes
+            });
         });
         this.btnUpgradeDefer?.addEventListener('pointerdown', (event) => event.stopPropagation());
 
@@ -144,24 +147,26 @@ export class UpgradeModalController {
     }
 
     private bindGameEvents(): void {
-        this.unsubscribers.push(onGameEvent(GameEvents.UPGRADE_PHASE_STARTED, () => {
-            this.phaseRerollTrackingActive = true;
-            this.upgradePhasePlayerIds.clear();
-            this.rerollUsedThisPhaseByPlayer.clear();
+        this.unsubscribers.push(onGameEvent(GameEvents.STATE_UPDATE, (state) => {
+            this.isShop = state.isShop ?? false;
+        }));
+
+        this.unsubscribers.push(onGameEvent(GameEvents.UPGRADE_PHASE_STARTED, ({ rerollPlayerIds }) => {
+            for (const playerId of new Set(rerollPlayerIds)) {
+                this.rerollsByPlayer[playerId] += 1;
+            }
+            this.updateRerollButton();
         }));
 
         this.unsubscribers.push(onGameEvent(GameEvents.SHOW_UPGRADE_MODAL, ({ playerId, upgradesRemaining }) => {
-            this.trackUpgradePhasePlayer(playerId);
             this.open(playerId, upgradesRemaining, null);
         }));
 
-        this.unsubscribers.push(onGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, ({ playerId, upgradesRemaining, options }) => {
-            this.trackUpgradePhasePlayer(playerId);
-            this.open(playerId, upgradesRemaining, options);
+        this.unsubscribers.push(onGameEvent(GameEvents.UPDATE_UPGRADE_MODAL, ({ playerId, upgradesRemaining, options, lockedOptionIndexes }) => {
+            this.open(playerId, upgradesRemaining, options, lockedOptionIndexes);
         }));
 
         this.unsubscribers.push(onGameEvent(GameEvents.HIDE_UPGRADE_MODAL, () => {
-            this.rewardUnusedPhaseRerolls();
             this.close();
             const mode = this.options.getUiMode();
             if (mode === 'GAME_OVER' || mode === 'INITIAL_MENU') return;
@@ -169,7 +174,7 @@ export class UpgradeModalController {
         }));
     }
 
-    private open(playerId: PlayerId, upgradesRemaining: number, options: UpgradeRollOption[] | null): void {
+    private open(playerId: PlayerId, upgradesRemaining: number, options: UpgradeRollOption[] | null, lockedOptionIndexes?: number[]): void {
         this.setVisible(true);
         this.setSelectionOwner(playerId);
         this.options.hudController.setStatsPinned(true, 'upgrade');
@@ -179,7 +184,11 @@ export class UpgradeModalController {
         this.gamepadCardIndex = 0;
 
         if (options) {
-            if (!this.preserveRerollStateOnNextOptions) this.lockedOptionIndexes = new Set<number>();
+            if (lockedOptionIndexes) {
+                this.lockedOptionIndexes = new Set(lockedOptionIndexes);
+            } else if (!this.preserveRerollStateOnNextOptions) {
+                this.lockedOptionIndexes = new Set<number>();
+            }
             this.preserveRerollStateOnNextOptions = false;
             this.renderCards(options);
             this.setCardsDisabled(false);
@@ -192,22 +201,20 @@ export class UpgradeModalController {
         this.options.setUiMode('UPGRADE');
     }
 
-    private trackUpgradePhasePlayer(playerId: PlayerId): void {
-        if (this.phaseRerollTrackingActive) this.upgradePhasePlayerIds.add(playerId);
-    }
-
-    private rewardUnusedPhaseRerolls(): void {
-        if (!this.phaseRerollTrackingActive) return;
-        for (const playerId of this.upgradePhasePlayerIds) {
-            if (!this.rerollUsedThisPhaseByPlayer.has(playerId)) this.rerollsByPlayer[playerId] += 1;
-        }
-        this.phaseRerollTrackingActive = false;
-        this.upgradePhasePlayerIds.clear();
-        this.rerollUsedThisPhaseByPlayer.clear();
-    }
-
     private setVisible(visible: boolean): void {
         this.upgradeModal?.classList.toggle('is-visible', visible);
+    }
+
+    private hideDeferredModal(): void {
+        this.setVisible(false);
+        this.setSelectionOwner(null);
+        this.options.hudController.clearStatPreview();
+        this.options.hudController.setStatsPinned(false);
+        this.preserveRerollStateOnNextOptions = true;
+        const mode = this.options.getUiMode();
+        if (mode !== 'GAME_OVER' && mode !== 'INITIAL_MENU') {
+            this.options.setUiMode(this.options.isPauseMenuVisible() ? 'PAUSED' : 'IN_GAME');
+        }
     }
 
     private setRemaining(value: number): void {
@@ -307,10 +314,16 @@ export class UpgradeModalController {
             this.waitingSelection = true;
             this.setCardsDisabled(true);
             this.options.hudController.clearStatPreview();
+            const lockedOptionIndexes = Array.from(this.lockedOptionIndexes);
+            if (this.lockedOptionIndexes.has(index)) {
+                this.lockedOptionIndexes.delete(index);
+            }
+            this.preserveRerollStateOnNextOptions = true;
             emitGameEvent(GameEvents.CARD_SELECTED, {
                 playerId: this.activePlayerId,
                 cardId: option.card.id,
-                colorHex: option.colorHex
+                colorHex: option.colorHex,
+                lockedOptionIndexes
             });
         });
 
@@ -379,7 +392,6 @@ export class UpgradeModalController {
         if (this.activeOptions.length > 0 && this.lockedOptionIndexes.size >= this.activeOptions.length) return;
 
         this.rerollsByPlayer[this.activePlayerId] = Math.max(0, this.rerollsByPlayer[this.activePlayerId] - 1);
-        this.rerollUsedThisPhaseByPlayer.add(this.activePlayerId);
         this.preserveRerollStateOnNextOptions = true;
         this.updateRerollButton();
 

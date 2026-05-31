@@ -44,6 +44,10 @@ body {
     z-index: 1;
 }
 
+#game-container canvas {
+    transition: filter 220ms ease, opacity 220ms ease, transform 220ms ease;
+}
+
 #ui-layer {
     position: absolute;
     top: 0;
@@ -52,6 +56,38 @@ body {
     height: 100%;
     z-index: 10;
     pointer-events: none;
+}
+
+:root.is-run-starting #game-container canvas {
+    animation: run-start-canvas 520ms ease both;
+}
+
+:root.is-run-starting #ui-layer {
+    animation: run-start-ui 520ms ease both;
+}
+
+@keyframes run-start-canvas {
+    0% {
+        opacity: 0.72;
+        filter: blur(3px);
+        transform: scale(1.012);
+    }
+    100% {
+        opacity: 1;
+        filter: blur(0);
+        transform: scale(1);
+    }
+}
+
+@keyframes run-start-ui {
+    0% {
+        opacity: 0.68;
+        transform: scale(0.992);
+    }
+    100% {
+        opacity: 1;
+        transform: scale(1);
+    }
 }
 
 @media (max-height: 1120px) {

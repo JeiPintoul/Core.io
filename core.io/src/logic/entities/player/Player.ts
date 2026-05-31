@@ -1,8 +1,9 @@
 import { Entity } from '../Entity';
 import { emitGameEvent, GameEvents } from '../../../shared/EventBus';
-import type { EntityStats, InputState, StatModifiers } from '../../../shared/Types';
+import type { EntityStats, InputState, StatModifiers, TankFormId } from '../../../shared/Types';
 import { MAX_RELOAD_POINTS } from '../../../shared/Types';
 import { getColorDefinition } from '../../constants/ColorConfig';
+import { PlayerTankFormManager } from './PlayerTankFormManager';
 
 const ZERO_BONUS_STATS: EntityStats = {
     maxHealth: 0,
@@ -57,6 +58,9 @@ export class Player extends Entity {
     public readonly appliedUpgradeColors: number[];
     public bonusStats: StatModifiers;
     public colorBonusStats: StatModifiers;
+    public tankFormId: TankFormId = 'basic';
+    public lastFiredBarrelId: string | null = null;
+    public readonly tankFormManager = new PlayerTankFormManager();
     private readonly progressionEnabled: boolean;
     private primaryColorHex: string | null = null;
     private selectedUpgradeColorHexes: string[] = [];
@@ -102,18 +106,7 @@ export class Player extends Entity {
         this.appliedUpgradeColors = [];
         this.bonusStats = { ...ZERO_BONUS_STATS };
         this.colorBonusStats = {};
-        this.setBarrels([
-            {
-                id: 'player_front_barrel',
-                offsetX: 34,
-                offsetY: 0,
-                angleOffset: 0,
-                recoilForce: 20,
-                damageMultiplier: 1,
-                speedMultiplier: 1,
-                lifespanMultiplier: 1
-            }
-        ]);
+        this.tankFormManager.applyInitialForm(this);
     }
 
     public override get contactDamage(): number {

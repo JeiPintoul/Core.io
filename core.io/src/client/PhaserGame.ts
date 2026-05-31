@@ -12,7 +12,7 @@ export function createPhaserGame(): Phaser.Game {
         parent: 'game-container',       // div do index.html
         width: 1920,
         height: 1080,
-        resolution: window.devicePixelRatio || 1,
+        resolution: Math.min(window.devicePixelRatio || 1, 2),
         roundPixels: false,
         backgroundColor: '#1a1a2e',
         scene: [GameScene],
