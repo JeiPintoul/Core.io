@@ -35,7 +35,7 @@ Sua atuação incluiu:
 
 - Definição do escopo, ideias, planejamento e roadmap.
 - Escolha das tecnologias, definição da arquitetura e criação da estrutura inicial.
-- Implementação da maior parte da lógica de jogo e das regras, além de toda a interface.
+- Implementação de parte da lógica de jogo e das regras, além da interface.
 - Divisão de tarefas e organização do trabalho em branches individuais.
 - Definição do fluxo de pull requests, revisão e integração das contribuições da equipe.
 
@@ -43,7 +43,7 @@ Outros integrantes também contribuíram com o projeto, incluindo sua publicaç�
 
 ## Desenvolvimento assistido por IA
 
-A implementação foi realizada majoritariamente com apoio de IA generativa, utilizada para desenvolver funcionalidades e auxiliar na revisão de pull requests. A definição de requisitos, a organização do trabalho e as decisões técnicas foram conduzidas pela liderança do projeto.
+A implementação contou com apoio de IA generativa, utilizada para ajudar no desenvolvimento de algumas funcionalidades e auxiliar na revisão de pull requests. A definição de requisitos, a organização do trabalho e as decisões técnicas foram conduzidas pela liderança do projeto.
 
 Os comportamentos dos inimigos presentes no código são implementados por regras e estados programados.
 
